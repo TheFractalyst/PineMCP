@@ -1,0 +1,4082 @@
+{
+  "total_entries": 3464,
+  "by_source": {
+    "local_docs": 707,
+    "local_docs, tradingview_live": 533,
+    "tradingview_live": 410,
+    "user_docs": 1814
+  },
+  "by_category": {
+    "example": 356,
+    "function": 689,
+    "constant": 283,
+    "type": 58,
+    "operator": 26,
+    "variable": 208,
+    "keyword": 20,
+    "annotation": 10,
+    "concept": 351,
+    "visual": 483,
+    "guide": 498,
+    "release_note": 15,
+    "reference": 467
+  },
+  "type1": {
+    "duplicate_names": 253,
+    "excess_entries": 262,
+    "identical_content_pairs": 9,
+    "different_content_pairs": 262,
+    "top_duplicates": [
+      {
+        "name": "line",
+        "count": 3,
+        "ids": [
+          "type_line",
+          "function_line",
+          "variable_line"
+        ],
+        "categories": [
+          "type",
+          "function",
+          "variable"
+        ],
+        "sources": [
+          "local_docs",
+          "local_docs, tradingview_live",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "float",
+        "count": 3,
+        "ids": [
+          "function_float",
+          "variable_float",
+          "type_float"
+        ],
+        "categories": [
+          "function",
+          "variable",
+          "type"
+        ],
+        "sources": [
+          "local_docs, tradingview_live",
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "color",
+        "count": 3,
+        "ids": [
+          "variable_color",
+          "type_color",
+          "function_color"
+        ],
+        "categories": [
+          "variable",
+          "type",
+          "function"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs",
+          "local_docs, tradingview_live"
+        ],
+        "identical": true
+      },
+      {
+        "name": "int",
+        "count": 3,
+        "ids": [
+          "type_int",
+          "function_int",
+          "variable_int"
+        ],
+        "categories": [
+          "type",
+          "function",
+          "variable"
+        ],
+        "sources": [
+          "local_docs",
+          "local_docs, tradingview_live",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "table",
+        "count": 3,
+        "ids": [
+          "type_table",
+          "variable_table",
+          "function_table"
+        ],
+        "categories": [
+          "type",
+          "variable",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live",
+          "local_docs, tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "string",
+        "count": 3,
+        "ids": [
+          "function_string",
+          "variable_string",
+          "type_string"
+        ],
+        "categories": [
+          "function",
+          "variable",
+          "type"
+        ],
+        "sources": [
+          "local_docs, tradingview_live",
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "box",
+        "count": 3,
+        "ids": [
+          "function_box",
+          "type_box",
+          "variable_box"
+        ],
+        "categories": [
+          "function",
+          "type",
+          "variable"
+        ],
+        "sources": [
+          "local_docs, tradingview_live",
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "linefill",
+        "count": 3,
+        "ids": [
+          "function_linefill",
+          "type_linefill",
+          "variable_linefill"
+        ],
+        "categories": [
+          "function",
+          "type",
+          "variable"
+        ],
+        "sources": [
+          "local_docs, tradingview_live",
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "label",
+        "count": 3,
+        "ids": [
+          "function_label",
+          "type_label",
+          "variable_label"
+        ],
+        "categories": [
+          "function",
+          "type",
+          "variable"
+        ],
+        "sources": [
+          "local_docs, tradingview_live",
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "strategy.commission.percent",
+        "count": 2,
+        "ids": [
+          "constant_strategy.commission.percent",
+          "function_strategy.commission.percent"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "text.align_top",
+        "count": 2,
+        "ids": [
+          "function_text.align_top",
+          "constant_text.align_top"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "backadjustment.on",
+        "count": 2,
+        "ids": [
+          "function_backadjustment.on",
+          "constant_backadjustment.on"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "true",
+        "count": 2,
+        "ids": [
+          "constant_true",
+          "type_true"
+        ],
+        "categories": [
+          "constant",
+          "type"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "label.style_diamond",
+        "count": 2,
+        "ids": [
+          "constant_label.style_diamond",
+          "function_label.style_diamond"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "currency.EGP",
+        "count": 2,
+        "ids": [
+          "function_currency.egp",
+          "constant_currency.egp"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "alert.freq_once_per_bar_close",
+        "count": 2,
+        "ids": [
+          "function_alert.freq_once_per_bar_close",
+          "constant_alert.freq_once_per_bar_close"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "hline.style_solid",
+        "count": 2,
+        "ids": [
+          "constant_hline.style_solid",
+          "function_hline.style_solid"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "display.pane",
+        "count": 2,
+        "ids": [
+          "operator_display.pane",
+          "constant_display.pane"
+        ],
+        "categories": [
+          "operator",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "display.all",
+        "count": 2,
+        "ids": [
+          "constant_display.all",
+          "function_display.all"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "shape.labelup",
+        "count": 2,
+        "ids": [
+          "constant_shape.labelup",
+          "function_shape.labelup"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "timeframe.main_period",
+        "count": 2,
+        "ids": [
+          "variable_timeframe.main_period",
+          "function_timeframe.main_period"
+        ],
+        "categories": [
+          "variable",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "text.wrap_none",
+        "count": 2,
+        "ids": [
+          "function_text.wrap_none",
+          "constant_text.wrap_none"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "==",
+        "count": 2,
+        "ids": [
+          "operator_==",
+          "constant_=="
+        ],
+        "categories": [
+          "operator",
+          "constant"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "currency.MYR",
+        "count": 2,
+        "ids": [
+          "function_currency.myr",
+          "constant_currency.myr"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "position.top_right",
+        "count": 2,
+        "ids": [
+          "function_position.top_right",
+          "constant_position.top_right"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "import",
+        "count": 2,
+        "ids": [
+          "function_import",
+          "keyword_import"
+        ],
+        "categories": [
+          "function",
+          "keyword"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": true
+      },
+      {
+        "name": "chart.is_range",
+        "count": 2,
+        "ids": [
+          "constant_chart.is_range",
+          "variable_chart.is_range"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "size.small",
+        "count": 2,
+        "ids": [
+          "constant_size.small",
+          "function_size.small"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ],
+        "sources": [
+          "local_docs",
+          "tradingview_live"
+        ],
+        "identical": false
+      },
+      {
+        "name": "strategy.oca.reduce",
+        "count": 2,
+        "ids": [
+          "function_strategy.oca.reduce",
+          "constant_strategy.oca.reduce"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      },
+      {
+        "name": "chart.is_pnf",
+        "count": 2,
+        "ids": [
+          "constant_chart.is_pnf",
+          "variable_chart.is_pnf"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ],
+        "sources": [
+          "tradingview_live",
+          "local_docs"
+        ],
+        "identical": false
+      }
+    ]
+  },
+  "type2": {
+    "total_example_entries": 356,
+    "redundant_parents": 153,
+    "redundant_entries": 153,
+    "top_redundant": [
+      {
+        "parent": "for...in",
+        "count": 1,
+        "ids": [
+          "example_for...in\u2014example1"
+        ]
+      },
+      {
+        "parent": "@enum",
+        "count": 1,
+        "ids": [
+          "example_@enum\u2014example1"
+        ]
+      },
+      {
+        "parent": "@version=",
+        "count": 1,
+        "ids": [
+          "example_@version=\u2014example1"
+        ]
+      },
+      {
+        "parent": "[]",
+        "count": 1,
+        "ids": [
+          "example_[]\u2014example1"
+        ]
+      },
+      {
+        "parent": "polyline.new()",
+        "count": 1,
+        "ids": [
+          "example_polyline.new\u2014example1"
+        ]
+      },
+      {
+        "parent": "request.financial()",
+        "count": 1,
+        "ids": [
+          "example_request.financial\u2014example1"
+        ]
+      },
+      {
+        "parent": "alert()",
+        "count": 1,
+        "ids": [
+          "example_alert\u2014example1"
+        ]
+      },
+      {
+        "parent": "strategy.opentrades.entry_comment()",
+        "count": 1,
+        "ids": [
+          "example_strategy.opentrades.entry_comment\u2014example1"
+        ]
+      },
+      {
+        "parent": "@variable",
+        "count": 1,
+        "ids": [
+          "example_@variable\u2014example1"
+        ]
+      },
+      {
+        "parent": "syminfo.recommendations_hold",
+        "count": 1,
+        "ids": [
+          "example_syminfo.recommendations_hold\u2014example1"
+        ]
+      },
+      {
+        "parent": "map.remove()",
+        "count": 1,
+        "ids": [
+          "example_map.remove\u2014example1"
+        ]
+      },
+      {
+        "parent": "input.bool()",
+        "count": 1,
+        "ids": [
+          "example_input.bool\u2014example1"
+        ]
+      },
+      {
+        "parent": "line.all",
+        "count": 1,
+        "ids": [
+          "example_line.all\u2014example1"
+        ]
+      },
+      {
+        "parent": "input.source()",
+        "count": 1,
+        "ids": [
+          "example_input.source\u2014example1"
+        ]
+      },
+      {
+        "parent": "barcolor()",
+        "count": 1,
+        "ids": [
+          "example_barcolor\u2014example1"
+        ]
+      },
+      {
+        "parent": "simple",
+        "count": 1,
+        "ids": [
+          "example_simple\u2014example1"
+        ]
+      },
+      {
+        "parent": "ta.pvi",
+        "count": 1,
+        "ids": [
+          "example_ta.pvi\u2014example1"
+        ]
+      },
+      {
+        "parent": "strategy.closedtrades.exit_bar_index()",
+        "count": 1,
+        "ids": [
+          "example_strategy.closedtrades.exit_bar_index\u2014example1"
+        ]
+      },
+      {
+        "parent": "strategy.opentrades.commission()",
+        "count": 1,
+        "ids": [
+          "example_strategy.opentrades.commission\u2014example1"
+        ]
+      },
+      {
+        "parent": "/=",
+        "count": 1,
+        "ids": [
+          "example_/=\u2014example1"
+        ]
+      },
+      {
+        "parent": "array.covariance()",
+        "count": 1,
+        "ids": [
+          "example_array.covariance\u2014example1"
+        ]
+      },
+      {
+        "parent": "syminfo.target_price_average",
+        "count": 1,
+        "ids": [
+          "example_syminfo.target_price_average\u2014example1"
+        ]
+      },
+      {
+        "parent": "str.format_time()",
+        "count": 1,
+        "ids": [
+          "example_str.format_time\u2014example1"
+        ]
+      },
+      {
+        "parent": "matrix.sort()",
+        "count": 1,
+        "ids": [
+          "example_matrix.sort\u2014example1"
+        ]
+      },
+      {
+        "parent": "+=",
+        "count": 1,
+        "ids": [
+          "example_+=\u2014example1"
+        ]
+      },
+      {
+        "parent": "request.security()",
+        "count": 1,
+        "ids": [
+          "example_request.security\u2014example1"
+        ]
+      },
+      {
+        "parent": "box.set_text_font_family()",
+        "count": 1,
+        "ids": [
+          "example_box.set_text_font_family\u2014example1"
+        ]
+      },
+      {
+        "parent": "label",
+        "count": 1,
+        "ids": [
+          "example_label\u2014example1"
+        ]
+      },
+      {
+        "parent": "map.put()",
+        "count": 1,
+        "ids": [
+          "example_map.put\u2014example1"
+        ]
+      },
+      {
+        "parent": "%=",
+        "count": 1,
+        "ids": [
+          "example_%=\u2014example1"
+        ]
+      }
+    ]
+  },
+  "type3": {
+    "unmerged_count": 229,
+    "unmerged": [
+      {
+        "name": "strategy.commission.percent",
+        "local_ids": [
+          "constant_strategy.commission.percent"
+        ],
+        "live_ids": [
+          "function_strategy.commission.percent"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "text.align_top",
+        "local_ids": [
+          "constant_text.align_top"
+        ],
+        "live_ids": [
+          "function_text.align_top"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "backadjustment.on",
+        "local_ids": [
+          "constant_backadjustment.on"
+        ],
+        "live_ids": [
+          "function_backadjustment.on"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "true",
+        "local_ids": [
+          "constant_true"
+        ],
+        "live_ids": [
+          "type_true"
+        ],
+        "categories": [
+          "constant",
+          "type"
+        ]
+      },
+      {
+        "name": "label.style_diamond",
+        "local_ids": [
+          "constant_label.style_diamond"
+        ],
+        "live_ids": [
+          "function_label.style_diamond"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.EGP",
+        "local_ids": [
+          "constant_currency.egp"
+        ],
+        "live_ids": [
+          "function_currency.egp"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "alert.freq_once_per_bar_close",
+        "local_ids": [
+          "constant_alert.freq_once_per_bar_close"
+        ],
+        "live_ids": [
+          "function_alert.freq_once_per_bar_close"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "hline.style_solid",
+        "local_ids": [
+          "constant_hline.style_solid"
+        ],
+        "live_ids": [
+          "function_hline.style_solid"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "display.pane",
+        "local_ids": [
+          "constant_display.pane"
+        ],
+        "live_ids": [
+          "operator_display.pane"
+        ],
+        "categories": [
+          "operator",
+          "constant"
+        ]
+      },
+      {
+        "name": "display.all",
+        "local_ids": [
+          "constant_display.all"
+        ],
+        "live_ids": [
+          "function_display.all"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "shape.labelup",
+        "local_ids": [
+          "constant_shape.labelup"
+        ],
+        "live_ids": [
+          "function_shape.labelup"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "timeframe.main_period",
+        "local_ids": [
+          "variable_timeframe.main_period"
+        ],
+        "live_ids": [
+          "function_timeframe.main_period"
+        ],
+        "categories": [
+          "variable",
+          "function"
+        ]
+      },
+      {
+        "name": "text.wrap_none",
+        "local_ids": [
+          "constant_text.wrap_none"
+        ],
+        "live_ids": [
+          "function_text.wrap_none"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "==",
+        "local_ids": [
+          "operator_=="
+        ],
+        "live_ids": [
+          "constant_=="
+        ],
+        "categories": [
+          "operator",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.MYR",
+        "local_ids": [
+          "constant_currency.myr"
+        ],
+        "live_ids": [
+          "function_currency.myr"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "position.top_right",
+        "local_ids": [
+          "constant_position.top_right"
+        ],
+        "live_ids": [
+          "function_position.top_right"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "import",
+        "local_ids": [
+          "keyword_import"
+        ],
+        "live_ids": [
+          "function_import"
+        ],
+        "categories": [
+          "function",
+          "keyword"
+        ]
+      },
+      {
+        "name": "chart.is_range",
+        "local_ids": [
+          "variable_chart.is_range"
+        ],
+        "live_ids": [
+          "constant_chart.is_range"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ]
+      },
+      {
+        "name": "size.small",
+        "local_ids": [
+          "constant_size.small"
+        ],
+        "live_ids": [
+          "function_size.small"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "strategy.oca.reduce",
+        "local_ids": [
+          "constant_strategy.oca.reduce"
+        ],
+        "live_ids": [
+          "function_strategy.oca.reduce"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "chart.is_pnf",
+        "local_ids": [
+          "variable_chart.is_pnf"
+        ],
+        "live_ids": [
+          "constant_chart.is_pnf"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ]
+      },
+      {
+        "name": "currency.NONE",
+        "local_ids": [
+          "constant_currency.none"
+        ],
+        "live_ids": [
+          "function_currency.none"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "?:",
+        "local_ids": [
+          "operator_?:"
+        ],
+        "live_ids": [
+          "variable_?:"
+        ],
+        "categories": [
+          "operator",
+          "variable"
+        ]
+      },
+      {
+        "name": "currency.CAD",
+        "local_ids": [
+          "constant_currency.cad"
+        ],
+        "live_ids": [
+          "function_currency.cad"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.style_label_right",
+        "local_ids": [
+          "constant_label.style_label_right"
+        ],
+        "live_ids": [
+          "function_label.style_label_right"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "map",
+        "local_ids": [
+          "type_map"
+        ],
+        "live_ids": [
+          "function_map"
+        ],
+        "categories": [
+          "function",
+          "type"
+        ]
+      },
+      {
+        "name": "scale.left",
+        "local_ids": [
+          "constant_scale.left"
+        ],
+        "live_ids": [
+          "function_scale.left"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "box.all",
+        "local_ids": [
+          "variable_box.all"
+        ],
+        "live_ids": [
+          "function_box.all"
+        ],
+        "categories": [
+          "function",
+          "variable"
+        ]
+      },
+      {
+        "name": "session.isfirstbar_regular",
+        "local_ids": [
+          "variable_session.isfirstbar_regular"
+        ],
+        "live_ids": [
+          "constant_session.isfirstbar_regular"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ]
+      },
+      {
+        "name": "export",
+        "local_ids": [
+          "keyword_export"
+        ],
+        "live_ids": [
+          "type_export"
+        ],
+        "categories": [
+          "keyword",
+          "type"
+        ]
+      },
+      {
+        "name": "shape.flag",
+        "local_ids": [
+          "constant_shape.flag"
+        ],
+        "live_ids": [
+          "function_shape.flag"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "location.abovebar",
+        "local_ids": [
+          "constant_location.abovebar"
+        ],
+        "live_ids": [
+          "function_location.abovebar"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "size.huge",
+        "local_ids": [
+          "constant_size.huge"
+        ],
+        "live_ids": [
+          "function_size.huge"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "plot.style_areabr",
+        "local_ids": [
+          "constant_plot.style_areabr"
+        ],
+        "live_ids": [
+          "function_plot.style_areabr"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "matrix",
+        "local_ids": [
+          "type_matrix"
+        ],
+        "live_ids": [
+          "function_matrix"
+        ],
+        "categories": [
+          "type",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_cross",
+        "local_ids": [
+          "constant_label.style_cross"
+        ],
+        "live_ids": [
+          "function_label.style_cross"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "line.style_arrow_both",
+        "local_ids": [
+          "constant_line.style_arrow_both"
+        ],
+        "live_ids": [
+          "function_line.style_arrow_both"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.JPY",
+        "local_ids": [
+          "constant_currency.jpy"
+        ],
+        "live_ids": [
+          "function_currency.jpy"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "earnings.estimate",
+        "local_ids": [
+          "constant_earnings.estimate"
+        ],
+        "live_ids": [
+          "function_earnings.estimate"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "!=",
+        "local_ids": [
+          "operator_!="
+        ],
+        "live_ids": [
+          "constant_!="
+        ],
+        "categories": [
+          "constant",
+          "operator"
+        ]
+      },
+      {
+        "name": "dayofweek.wednesday",
+        "local_ids": [
+          "constant_dayofweek.wednesday"
+        ],
+        "live_ids": [
+          "function_dayofweek.wednesday"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "strategy.oca.none",
+        "local_ids": [
+          "constant_strategy.oca.none"
+        ],
+        "live_ids": [
+          "function_strategy.oca.none"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "order.descending",
+        "local_ids": [
+          "constant_order.descending"
+        ],
+        "live_ids": [
+          "function_order.descending"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "while",
+        "local_ids": [
+          "keyword_while"
+        ],
+        "live_ids": [
+          "variable_while"
+        ],
+        "categories": [
+          "keyword",
+          "variable"
+        ]
+      },
+      {
+        "name": "position.bottom_center",
+        "local_ids": [
+          "constant_position.bottom_center"
+        ],
+        "live_ids": [
+          "function_position.bottom_center"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "plot.style_stepline",
+        "local_ids": [
+          "constant_plot.style_stepline"
+        ],
+        "live_ids": [
+          "function_plot.style_stepline"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "@param",
+        "local_ids": [
+          "annotation_@param"
+        ],
+        "live_ids": [
+          "function_@param"
+        ],
+        "categories": [
+          "function",
+          "annotation"
+        ]
+      },
+      {
+        "name": "earnings.standardized",
+        "local_ids": [
+          "constant_earnings.standardized"
+        ],
+        "live_ids": [
+          "function_earnings.standardized"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "settlement_as_close.inherit",
+        "local_ids": [
+          "constant_settlement_as_close.inherit"
+        ],
+        "live_ids": [
+          "function_settlement_as_close.inherit"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.initial_capital",
+        "local_ids": [
+          "variable_strategy.initial_capital"
+        ],
+        "live_ids": [
+          "function_strategy.initial_capital"
+        ],
+        "categories": [
+          "variable",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_label_upper_left",
+        "local_ids": [
+          "constant_label.style_label_upper_left"
+        ],
+        "live_ids": [
+          "function_label.style_label_upper_left"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_none",
+        "local_ids": [
+          "constant_label.style_none"
+        ],
+        "live_ids": [
+          "function_label.style_none"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "extend.left",
+        "local_ids": [
+          "constant_extend.left"
+        ],
+        "live_ids": [
+          "function_extend.left"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "polyline",
+        "local_ids": [
+          "type_polyline"
+        ],
+        "live_ids": [
+          "function_polyline"
+        ],
+        "categories": [
+          "type",
+          "function"
+        ]
+      },
+      {
+        "name": "strategy.direction.all",
+        "local_ids": [
+          "constant_strategy.direction.all"
+        ],
+        "live_ids": [
+          "function_strategy.direction.all"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.percent_of_equity",
+        "local_ids": [
+          "constant_strategy.percent_of_equity"
+        ],
+        "live_ids": [
+          "function_strategy.percent_of_equity"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "plot.style_cross",
+        "local_ids": [
+          "constant_plot.style_cross"
+        ],
+        "live_ids": [
+          "function_plot.style_cross"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "extend.none",
+        "local_ids": [
+          "constant_extend.none"
+        ],
+        "live_ids": [
+          "function_extend.none"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "font.family_default",
+        "local_ids": [
+          "constant_font.family_default"
+        ],
+        "live_ids": [
+          "function_font.family_default"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "text.format_italic",
+        "local_ids": [
+          "constant_text.format_italic"
+        ],
+        "live_ids": [
+          "function_text.format_italic"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "timenow",
+        "local_ids": [
+          "variable_timenow"
+        ],
+        "live_ids": [
+          "function_timenow"
+        ],
+        "categories": [
+          "function",
+          "variable"
+        ]
+      },
+      {
+        "name": "dayofweek.sunday",
+        "local_ids": [
+          "constant_dayofweek.sunday"
+        ],
+        "live_ids": [
+          "function_dayofweek.sunday"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "text.format_bold",
+        "local_ids": [
+          "constant_text.format_bold"
+        ],
+        "live_ids": [
+          "function_text.format_bold"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "text.align_bottom",
+        "local_ids": [
+          "constant_text.align_bottom"
+        ],
+        "live_ids": [
+          "function_text.align_bottom"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.EUR",
+        "local_ids": [
+          "constant_currency.eur"
+        ],
+        "live_ids": [
+          "function_currency.eur"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "format.inherit",
+        "local_ids": [
+          "constant_format.inherit"
+        ],
+        "live_ids": [
+          "function_format.inherit"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "position.middle_center",
+        "local_ids": [
+          "constant_position.middle_center"
+        ],
+        "live_ids": [
+          "function_position.middle_center"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_arrowup",
+        "local_ids": [
+          "constant_label.style_arrowup"
+        ],
+        "live_ids": [
+          "function_label.style_arrowup"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.USD",
+        "local_ids": [
+          "constant_currency.usd"
+        ],
+        "live_ids": [
+          "function_currency.usd"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.style_text_outline",
+        "local_ids": [
+          "constant_label.style_text_outline"
+        ],
+        "live_ids": [
+          "function_label.style_text_outline"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.ZAR",
+        "local_ids": [
+          "constant_currency.zar"
+        ],
+        "live_ids": [
+          "function_currency.zar"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "strategy.oca.cancel",
+        "local_ids": [
+          "constant_strategy.oca.cancel"
+        ],
+        "live_ids": [
+          "function_strategy.oca.cancel"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_label_up",
+        "local_ids": [
+          "constant_label.style_label_up"
+        ],
+        "live_ids": [
+          "function_label.style_label_up"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "shape.labeldown",
+        "local_ids": [
+          "constant_shape.labeldown"
+        ],
+        "live_ids": [
+          "function_shape.labeldown"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "dayofweek.thursday",
+        "local_ids": [
+          "constant_dayofweek.thursday"
+        ],
+        "live_ids": [
+          "function_dayofweek.thursday"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "settlement_as_close.off",
+        "local_ids": [
+          "constant_settlement_as_close.off"
+        ],
+        "live_ids": [
+          "function_settlement_as_close.off"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "position.bottom_right",
+        "local_ids": [
+          "constant_position.bottom_right"
+        ],
+        "live_ids": [
+          "function_position.bottom_right"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.ETH",
+        "local_ids": [
+          "constant_currency.eth"
+        ],
+        "live_ids": [
+          "function_currency.eth"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "session.ispostmarket",
+        "local_ids": [
+          "variable_session.ispostmarket"
+        ],
+        "live_ids": [
+          "constant_session.ispostmarket"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "position.top_center",
+        "local_ids": [
+          "constant_position.top_center"
+        ],
+        "live_ids": [
+          "function_position.top_center"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.commission.cash_per_order",
+        "local_ids": [
+          "constant_strategy.commission.cash_per_order"
+        ],
+        "live_ids": [
+          "function_strategy.commission.cash_per_order"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.KRW",
+        "local_ids": [
+          "constant_currency.krw"
+        ],
+        "live_ids": [
+          "function_currency.krw"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "shape.triangleup",
+        "local_ids": [
+          "constant_shape.triangleup"
+        ],
+        "live_ids": [
+          "function_shape.triangleup"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "session.ismarket",
+        "local_ids": [
+          "variable_session.ismarket"
+        ],
+        "live_ids": [
+          "constant_session.ismarket"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "format.mintick",
+        "local_ids": [
+          "constant_format.mintick"
+        ],
+        "live_ids": [
+          "function_format.mintick"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "false",
+        "local_ids": [
+          "constant_false"
+        ],
+        "live_ids": [
+          "type_false"
+        ],
+        "categories": [
+          "type",
+          "constant"
+        ]
+      },
+      {
+        "name": "plot.style_stepline_diamond",
+        "local_ids": [
+          "constant_plot.style_stepline_diamond"
+        ],
+        "live_ids": [
+          "function_plot.style_stepline_diamond"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.INR",
+        "local_ids": [
+          "constant_currency.inr"
+        ],
+        "live_ids": [
+          "function_currency.inr"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "yloc.belowbar",
+        "local_ids": [
+          "constant_yloc.belowbar"
+        ],
+        "live_ids": [
+          "function_yloc.belowbar"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "for",
+        "local_ids": [
+          "keyword_for"
+        ],
+        "live_ids": [
+          "variable_for"
+        ],
+        "categories": [
+          "variable",
+          "keyword"
+        ]
+      },
+      {
+        "name": "strategy.account_currency",
+        "local_ids": [
+          "variable_strategy.account_currency"
+        ],
+        "live_ids": [
+          "function_strategy.account_currency"
+        ],
+        "categories": [
+          "function",
+          "variable"
+        ]
+      },
+      {
+        "name": "dayofweek.saturday",
+        "local_ids": [
+          "constant_dayofweek.saturday"
+        ],
+        "live_ids": [
+          "function_dayofweek.saturday"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "plot.style_columns",
+        "local_ids": [
+          "constant_plot.style_columns"
+        ],
+        "live_ids": [
+          "function_plot.style_columns"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "barmerge.lookahead_off",
+        "local_ids": [
+          "constant_barmerge.lookahead_off"
+        ],
+        "live_ids": [
+          "function_barmerge.lookahead_off"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "session.ispremarket",
+        "local_ids": [
+          "variable_session.ispremarket"
+        ],
+        "live_ids": [
+          "constant_session.ispremarket"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "text.align_right",
+        "local_ids": [
+          "constant_text.align_right"
+        ],
+        "live_ids": [
+          "function_text.align_right"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "barmerge.lookahead_on",
+        "local_ids": [
+          "constant_barmerge.lookahead_on"
+        ],
+        "live_ids": [
+          "function_barmerge.lookahead_on"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "shape.arrowdown",
+        "local_ids": [
+          "constant_shape.arrowdown"
+        ],
+        "live_ids": [
+          "function_shape.arrowdown"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "syminfo.timezone",
+        "local_ids": [
+          "variable_syminfo.timezone"
+        ],
+        "live_ids": [
+          "function_syminfo.timezone"
+        ],
+        "categories": [
+          "function",
+          "variable"
+        ]
+      },
+      {
+        "name": "size.auto",
+        "local_ids": [
+          "constant_size.auto"
+        ],
+        "live_ids": [
+          "function_size.auto"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "backadjustment.inherit",
+        "local_ids": [
+          "constant_backadjustment.inherit"
+        ],
+        "live_ids": [
+          "function_backadjustment.inherit"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "strategy.commission.cash_per_contract",
+        "local_ids": [
+          "constant_strategy.commission.cash_per_contract"
+        ],
+        "live_ids": [
+          "function_strategy.commission.cash_per_contract"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "position.middle_left",
+        "local_ids": [
+          "constant_position.middle_left"
+        ],
+        "live_ids": [
+          "function_position.middle_left"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "@type",
+        "local_ids": [
+          "annotation_@type"
+        ],
+        "live_ids": [
+          "function_@type"
+        ],
+        "categories": [
+          "annotation",
+          "function"
+        ]
+      },
+      {
+        "name": "plot.style_histogram",
+        "local_ids": [
+          "constant_plot.style_histogram"
+        ],
+        "live_ids": [
+          "function_plot.style_histogram"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "text.wrap_auto",
+        "local_ids": [
+          "constant_text.wrap_auto"
+        ],
+        "live_ids": [
+          "function_text.wrap_auto"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "=>",
+        "local_ids": [
+          "operator_=>"
+        ],
+        "live_ids": [
+          "keyword_=>"
+        ],
+        "categories": [
+          "keyword",
+          "operator"
+        ]
+      },
+      {
+        "name": "line.style_dashed",
+        "local_ids": [
+          "constant_line.style_dashed"
+        ],
+        "live_ids": [
+          "function_line.style_dashed"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.style_arrowdown",
+        "local_ids": [
+          "constant_label.style_arrowdown"
+        ],
+        "live_ids": [
+          "function_label.style_arrowdown"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "line.style_arrow_left",
+        "local_ids": [
+          "constant_line.style_arrow_left"
+        ],
+        "live_ids": [
+          "function_line.style_arrow_left"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "[]",
+        "local_ids": [
+          "operator_[]"
+        ],
+        "live_ids": [
+          "function_[]"
+        ],
+        "categories": [
+          "operator",
+          "function"
+        ]
+      },
+      {
+        "name": "dayofweek.friday",
+        "local_ids": [
+          "constant_dayofweek.friday"
+        ],
+        "live_ids": [
+          "function_dayofweek.friday"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "display.price_scale",
+        "local_ids": [
+          "constant_display.price_scale"
+        ],
+        "live_ids": [
+          "operator_display.price_scale"
+        ],
+        "categories": [
+          "constant",
+          "operator"
+        ]
+      },
+      {
+        "name": "currency.BTC",
+        "local_ids": [
+          "constant_currency.btc"
+        ],
+        "live_ids": [
+          "function_currency.btc"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "dayofweek.monday",
+        "local_ids": [
+          "constant_dayofweek.monday"
+        ],
+        "live_ids": [
+          "function_dayofweek.monday"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "dayofweek.tuesday",
+        "local_ids": [
+          "constant_dayofweek.tuesday"
+        ],
+        "live_ids": [
+          "function_dayofweek.tuesday"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_label_center",
+        "local_ids": [
+          "constant_label.style_label_center"
+        ],
+        "live_ids": [
+          "function_label.style_label_center"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "alert.freq_once_per_bar",
+        "local_ids": [
+          "constant_alert.freq_once_per_bar"
+        ],
+        "live_ids": [
+          "function_alert.freq_once_per_bar"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "font.family_monospace",
+        "local_ids": [
+          "constant_font.family_monospace"
+        ],
+        "live_ids": [
+          "function_font.family_monospace"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "hline.style_dotted",
+        "local_ids": [
+          "constant_hline.style_dotted"
+        ],
+        "live_ids": [
+          "function_hline.style_dotted"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "position.middle_right",
+        "local_ids": [
+          "constant_position.middle_right"
+        ],
+        "live_ids": [
+          "function_position.middle_right"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "syminfo.session",
+        "local_ids": [
+          "variable_syminfo.session"
+        ],
+        "live_ids": [
+          "constant_syminfo.session"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "shape.arrowup",
+        "local_ids": [
+          "constant_shape.arrowup"
+        ],
+        "live_ids": [
+          "function_shape.arrowup"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.AUD",
+        "local_ids": [
+          "constant_currency.aud"
+        ],
+        "live_ids": [
+          "function_currency.aud"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "@enum",
+        "local_ids": [
+          "annotation_@enum"
+        ],
+        "live_ids": [
+          "keyword_@enum"
+        ],
+        "categories": [
+          "keyword",
+          "annotation"
+        ]
+      },
+      {
+        "name": "location.absolute",
+        "local_ids": [
+          "constant_location.absolute"
+        ],
+        "live_ids": [
+          "function_location.absolute"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "plot.style_circles",
+        "local_ids": [
+          "constant_plot.style_circles"
+        ],
+        "live_ids": [
+          "function_plot.style_circles"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.direction.long",
+        "local_ids": [
+          "constant_strategy.direction.long"
+        ],
+        "live_ids": [
+          "function_strategy.direction.long"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "@strategy_alert_message",
+        "local_ids": [
+          "annotation_@strategy_alert_message"
+        ],
+        "live_ids": [
+          "function_@strategy_alert_message"
+        ],
+        "categories": [
+          "annotation",
+          "function"
+        ]
+      },
+      {
+        "name": "text.align_center",
+        "local_ids": [
+          "constant_text.align_center"
+        ],
+        "live_ids": [
+          "function_text.align_center"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.CHF",
+        "local_ids": [
+          "constant_currency.chf"
+        ],
+        "live_ids": [
+          "function_currency.chf"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "@description",
+        "local_ids": [
+          "annotation_@description"
+        ],
+        "live_ids": [
+          "function_@description"
+        ],
+        "categories": [
+          "function",
+          "annotation"
+        ]
+      },
+      {
+        "name": "currency.TRY",
+        "local_ids": [
+          "constant_currency.try"
+        ],
+        "live_ids": [
+          "function_currency.try"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "barmerge.gaps_on",
+        "local_ids": [
+          "constant_barmerge.gaps_on"
+        ],
+        "live_ids": [
+          "variable_barmerge.gaps_on"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ]
+      },
+      {
+        "name": "label.style_label_upper_right",
+        "local_ids": [
+          "constant_label.style_label_upper_right"
+        ],
+        "live_ids": [
+          "function_label.style_label_upper_right"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "location.top",
+        "local_ids": [
+          "constant_location.top"
+        ],
+        "live_ids": [
+          "function_location.top"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "display.status_line",
+        "local_ids": [
+          "constant_display.status_line"
+        ],
+        "live_ids": [
+          "operator_display.status_line"
+        ],
+        "categories": [
+          "constant",
+          "operator"
+        ]
+      },
+      {
+        "name": "currency.GBP",
+        "local_ids": [
+          "constant_currency.gbp"
+        ],
+        "live_ids": [
+          "function_currency.gbp"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "chart.is_heikinashi",
+        "local_ids": [
+          "variable_chart.is_heikinashi"
+        ],
+        "live_ids": [
+          "constant_chart.is_heikinashi"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "extend.right",
+        "local_ids": [
+          "constant_extend.right"
+        ],
+        "live_ids": [
+          "function_extend.right"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "chart.is_renko",
+        "local_ids": [
+          "variable_chart.is_renko"
+        ],
+        "live_ids": [
+          "constant_chart.is_renko"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ]
+      },
+      {
+        "name": "currency.SEK",
+        "local_ids": [
+          "constant_currency.sek"
+        ],
+        "live_ids": [
+          "function_currency.sek"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "for...in",
+        "local_ids": [
+          "keyword_for...in"
+        ],
+        "live_ids": [
+          "type_for...in"
+        ],
+        "categories": [
+          "keyword",
+          "type"
+        ]
+      },
+      {
+        "name": "hline.style_dashed",
+        "local_ids": [
+          "constant_hline.style_dashed"
+        ],
+        "live_ids": [
+          "function_hline.style_dashed"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "display.data_window",
+        "local_ids": [
+          "constant_display.data_window"
+        ],
+        "live_ids": [
+          "operator_display.data_window"
+        ],
+        "categories": [
+          "operator",
+          "constant"
+        ]
+      },
+      {
+        "name": "format.volume",
+        "local_ids": [
+          "constant_format.volume"
+        ],
+        "live_ids": [
+          "function_format.volume"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "@field",
+        "local_ids": [
+          "annotation_@field"
+        ],
+        "live_ids": [
+          "keyword_@field"
+        ],
+        "categories": [
+          "annotation",
+          "keyword"
+        ]
+      },
+      {
+        "name": "earnings.actual",
+        "local_ids": [
+          "constant_earnings.actual"
+        ],
+        "live_ids": [
+          "function_earnings.actual"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.style_square",
+        "local_ids": [
+          "constant_label.style_square"
+        ],
+        "live_ids": [
+          "function_label.style_square"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.HKD",
+        "local_ids": [
+          "constant_currency.hkd"
+        ],
+        "live_ids": [
+          "function_currency.hkd"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "dividends.gross",
+        "local_ids": [
+          "constant_dividends.gross"
+        ],
+        "live_ids": [
+          "function_dividends.gross"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.all",
+        "local_ids": [
+          "variable_label.all"
+        ],
+        "live_ids": [
+          "function_label.all"
+        ],
+        "categories": [
+          "function",
+          "variable"
+        ]
+      },
+      {
+        "name": "shape.circle",
+        "local_ids": [
+          "constant_shape.circle"
+        ],
+        "live_ids": [
+          "function_shape.circle"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "table.all",
+        "local_ids": [
+          "variable_table.all"
+        ],
+        "live_ids": [
+          "function_table.all"
+        ],
+        "categories": [
+          "variable",
+          "function"
+        ]
+      },
+      {
+        "name": "shape.xcross",
+        "local_ids": [
+          "constant_shape.xcross"
+        ],
+        "live_ids": [
+          "function_shape.xcross"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "plot.style_area",
+        "local_ids": [
+          "constant_plot.style_area"
+        ],
+        "live_ids": [
+          "function_plot.style_area"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "settlement_as_close.on",
+        "local_ids": [
+          "constant_settlement_as_close.on"
+        ],
+        "live_ids": [
+          "function_settlement_as_close.on"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "yloc.abovebar",
+        "local_ids": [
+          "constant_yloc.abovebar"
+        ],
+        "live_ids": [
+          "function_yloc.abovebar"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.long",
+        "local_ids": [
+          "constant_strategy.long"
+        ],
+        "live_ids": [
+          "function_strategy.long"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "chart.is_standard",
+        "local_ids": [
+          "variable_chart.is_standard"
+        ],
+        "live_ids": [
+          "constant_chart.is_standard"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "enum",
+        "local_ids": [
+          "keyword_enum"
+        ],
+        "live_ids": [
+          "function_enum"
+        ],
+        "categories": [
+          "keyword",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_label_lower_right",
+        "local_ids": [
+          "constant_label.style_label_lower_right"
+        ],
+        "live_ids": [
+          "function_label.style_label_lower_right"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_label_lower_left",
+        "local_ids": [
+          "constant_label.style_label_lower_left"
+        ],
+        "live_ids": [
+          "function_label.style_label_lower_left"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "location.bottom",
+        "local_ids": [
+          "constant_location.bottom"
+        ],
+        "live_ids": [
+          "function_location.bottom"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "format.percent",
+        "local_ids": [
+          "constant_format.percent"
+        ],
+        "live_ids": [
+          "function_format.percent"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "size.tiny",
+        "local_ids": [
+          "constant_size.tiny"
+        ],
+        "live_ids": [
+          "function_size.tiny"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "barmerge.gaps_off",
+        "local_ids": [
+          "constant_barmerge.gaps_off"
+        ],
+        "live_ids": [
+          "function_barmerge.gaps_off"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "and",
+        "local_ids": [
+          "keyword_and"
+        ],
+        "live_ids": [
+          "constant_and"
+        ],
+        "categories": [
+          "constant",
+          "keyword"
+        ]
+      },
+      {
+        "name": "extend.both",
+        "local_ids": [
+          "constant_extend.both"
+        ],
+        "live_ids": [
+          "function_extend.both"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_triangledown",
+        "local_ids": [
+          "constant_label.style_triangledown"
+        ],
+        "live_ids": [
+          "function_label.style_triangledown"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.style_circle",
+        "local_ids": [
+          "constant_label.style_circle"
+        ],
+        "live_ids": [
+          "function_label.style_circle"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "@function",
+        "local_ids": [
+          "annotation_@function"
+        ],
+        "live_ids": [
+          "function_@function"
+        ],
+        "categories": [
+          "annotation",
+          "function"
+        ]
+      },
+      {
+        "name": "plot.style_linebr",
+        "local_ids": [
+          "constant_plot.style_linebr"
+        ],
+        "live_ids": [
+          "function_plot.style_linebr"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.style_xcross",
+        "local_ids": [
+          "constant_label.style_xcross"
+        ],
+        "live_ids": [
+          "function_label.style_xcross"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "shape.cross",
+        "local_ids": [
+          "constant_shape.cross"
+        ],
+        "live_ids": [
+          "function_shape.cross"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "session.isfirstbar",
+        "local_ids": [
+          "variable_session.isfirstbar"
+        ],
+        "live_ids": [
+          "constant_session.isfirstbar"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "array",
+        "local_ids": [
+          "type_array"
+        ],
+        "live_ids": [
+          "function_array"
+        ],
+        "categories": [
+          "function",
+          "type"
+        ]
+      },
+      {
+        "name": "location.belowbar",
+        "local_ids": [
+          "constant_location.belowbar"
+        ],
+        "live_ids": [
+          "function_location.belowbar"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "order.ascending",
+        "local_ids": [
+          "constant_order.ascending"
+        ],
+        "live_ids": [
+          "function_order.ascending"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "text.align_left",
+        "local_ids": [
+          "constant_text.align_left"
+        ],
+        "live_ids": [
+          "function_text.align_left"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "splits.numerator",
+        "local_ids": [
+          "constant_splits.numerator"
+        ],
+        "live_ids": [
+          "function_splits.numerator"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "type",
+        "local_ids": [
+          "keyword_type"
+        ],
+        "live_ids": [
+          "variable_type"
+        ],
+        "categories": [
+          "keyword",
+          "variable"
+        ]
+      },
+      {
+        "name": "shape.triangledown",
+        "local_ids": [
+          "constant_shape.triangledown"
+        ],
+        "live_ids": [
+          "function_shape.triangledown"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "chart.is_kagi",
+        "local_ids": [
+          "variable_chart.is_kagi"
+        ],
+        "live_ids": [
+          "constant_chart.is_kagi"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "syminfo.tickerid",
+        "local_ids": [
+          "variable_syminfo.tickerid"
+        ],
+        "live_ids": [
+          "function_syminfo.tickerid"
+        ],
+        "categories": [
+          "function",
+          "variable"
+        ]
+      },
+      {
+        "name": "position.bottom_left",
+        "local_ids": [
+          "constant_position.bottom_left"
+        ],
+        "live_ids": [
+          "function_position.bottom_left"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.NOK",
+        "local_ids": [
+          "constant_currency.nok"
+        ],
+        "live_ids": [
+          "function_currency.nok"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "display.none",
+        "local_ids": [
+          "constant_display.none"
+        ],
+        "live_ids": [
+          "function_display.none"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "session.islastbar",
+        "local_ids": [
+          "variable_session.islastbar"
+        ],
+        "live_ids": [
+          "constant_session.islastbar"
+        ],
+        "categories": [
+          "constant",
+          "variable"
+        ]
+      },
+      {
+        "name": "currency.PLN",
+        "local_ids": [
+          "constant_currency.pln"
+        ],
+        "live_ids": [
+          "function_currency.pln"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "format.price",
+        "local_ids": [
+          "constant_format.price"
+        ],
+        "live_ids": [
+          "function_format.price"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "dividends.net",
+        "local_ids": [
+          "constant_dividends.net"
+        ],
+        "live_ids": [
+          "function_dividends.net"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_label_left",
+        "local_ids": [
+          "constant_label.style_label_left"
+        ],
+        "live_ids": [
+          "function_label.style_label_left"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "shape.square",
+        "local_ids": [
+          "constant_shape.square"
+        ],
+        "live_ids": [
+          "function_shape.square"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "alert.freq_all",
+        "local_ids": [
+          "constant_alert.freq_all"
+        ],
+        "live_ids": [
+          "function_alert.freq_all"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "backadjustment.off",
+        "local_ids": [
+          "constant_backadjustment.off"
+        ],
+        "live_ids": [
+          "function_backadjustment.off"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "shape.diamond",
+        "local_ids": [
+          "constant_shape.diamond"
+        ],
+        "live_ids": [
+          "function_shape.diamond"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "size.large",
+        "local_ids": [
+          "constant_size.large"
+        ],
+        "live_ids": [
+          "function_size.large"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.fixed",
+        "local_ids": [
+          "constant_strategy.fixed"
+        ],
+        "live_ids": [
+          "function_strategy.fixed"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.PKR",
+        "local_ids": [
+          "constant_currency.pkr"
+        ],
+        "live_ids": [
+          "function_currency.pkr"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "@returns",
+        "local_ids": [
+          "annotation_@returns"
+        ],
+        "live_ids": [
+          "function_@returns"
+        ],
+        "categories": [
+          "function",
+          "annotation"
+        ]
+      },
+      {
+        "name": "chart.point",
+        "local_ids": [
+          "type_chart.point"
+        ],
+        "live_ids": [
+          "function_chart.point"
+        ],
+        "categories": [
+          "function",
+          "type"
+        ]
+      },
+      {
+        "name": "plot.style_line",
+        "local_ids": [
+          "constant_plot.style_line"
+        ],
+        "live_ids": [
+          "function_plot.style_line"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "line.style_arrow_right",
+        "local_ids": [
+          "constant_line.style_arrow_right"
+        ],
+        "live_ids": [
+          "function_line.style_arrow_right"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.USDT",
+        "local_ids": [
+          "constant_currency.usdt"
+        ],
+        "live_ids": [
+          "function_currency.usdt"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "label.style_flag",
+        "local_ids": [
+          "constant_label.style_flag"
+        ],
+        "live_ids": [
+          "function_label.style_flag"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "currency.RUB",
+        "local_ids": [
+          "constant_currency.rub"
+        ],
+        "live_ids": [
+          "function_currency.rub"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "position.top_left",
+        "local_ids": [
+          "constant_position.top_left"
+        ],
+        "live_ids": [
+          "function_position.top_left"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "plot.style_steplinebr",
+        "local_ids": [
+          "constant_plot.style_steplinebr"
+        ],
+        "live_ids": [
+          "function_plot.style_steplinebr"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "line.style_solid",
+        "local_ids": [
+          "constant_line.style_solid"
+        ],
+        "live_ids": [
+          "function_line.style_solid"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.NZD",
+        "local_ids": [
+          "constant_currency.nzd"
+        ],
+        "live_ids": [
+          "function_currency.nzd"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "currency.SGD",
+        "local_ids": [
+          "constant_currency.sgd"
+        ],
+        "live_ids": [
+          "function_currency.sgd"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "text.format_none",
+        "local_ids": [
+          "constant_text.format_none"
+        ],
+        "live_ids": [
+          "function_text.format_none"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "yloc.price",
+        "local_ids": [
+          "constant_yloc.price"
+        ],
+        "live_ids": [
+          "function_yloc.price"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "session.islastbar_regular",
+        "local_ids": [
+          "variable_session.islastbar_regular"
+        ],
+        "live_ids": [
+          "constant_session.islastbar_regular"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.cash",
+        "local_ids": [
+          "constant_strategy.cash"
+        ],
+        "live_ids": [
+          "function_strategy.cash"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "scale.right",
+        "local_ids": [
+          "constant_scale.right"
+        ],
+        "live_ids": [
+          "function_scale.right"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.direction.short",
+        "local_ids": [
+          "constant_strategy.direction.short"
+        ],
+        "live_ids": [
+          "function_strategy.direction.short"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "label.style_label_down",
+        "local_ids": [
+          "constant_label.style_label_down"
+        ],
+        "live_ids": [
+          "function_label.style_label_down"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "line.all",
+        "local_ids": [
+          "variable_line.all"
+        ],
+        "live_ids": [
+          "function_line.all"
+        ],
+        "categories": [
+          "variable",
+          "function"
+        ]
+      },
+      {
+        "name": "size.normal",
+        "local_ids": [
+          "constant_size.normal"
+        ],
+        "live_ids": [
+          "function_size.normal"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "chart.is_linebreak",
+        "local_ids": [
+          "variable_chart.is_linebreak"
+        ],
+        "live_ids": [
+          "constant_chart.is_linebreak"
+        ],
+        "categories": [
+          "variable",
+          "constant"
+        ]
+      },
+      {
+        "name": "scale.none",
+        "local_ids": [
+          "constant_scale.none"
+        ],
+        "live_ids": [
+          "function_scale.none"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      },
+      {
+        "name": "polyline.all",
+        "local_ids": [
+          "variable_polyline.all"
+        ],
+        "live_ids": [
+          "type_polyline.all"
+        ],
+        "categories": [
+          "type",
+          "variable"
+        ]
+      },
+      {
+        "name": "line.style_dotted",
+        "local_ids": [
+          "constant_line.style_dotted"
+        ],
+        "live_ids": [
+          "function_line.style_dotted"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "splits.denominator",
+        "local_ids": [
+          "constant_splits.denominator"
+        ],
+        "live_ids": [
+          "function_splits.denominator"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "or",
+        "local_ids": [
+          "keyword_or"
+        ],
+        "live_ids": [
+          "constant_or"
+        ],
+        "categories": [
+          "constant",
+          "keyword"
+        ]
+      },
+      {
+        "name": "label.style_triangleup",
+        "local_ids": [
+          "constant_label.style_triangleup"
+        ],
+        "live_ids": [
+          "function_label.style_triangleup"
+        ],
+        "categories": [
+          "function",
+          "constant"
+        ]
+      },
+      {
+        "name": "strategy.short",
+        "local_ids": [
+          "constant_strategy.short"
+        ],
+        "live_ids": [
+          "function_strategy.short"
+        ],
+        "categories": [
+          "constant",
+          "function"
+        ]
+      }
+    ]
+  },
+  "type4": {
+    "total_user_docs": 1814,
+    "exact_overlap": 0,
+    "near_matches": 2
+  },
+  "type5": {
+    "near_duplicate_pairs": 1523,
+    "pairs": [
+      {
+        "id1": "function_text.align_top",
+        "id2": "function_text.align_bottom",
+        "name1": "text.align_top",
+        "name2": "text.align_bottom",
+        "category": "function",
+        "similarity": 0.9832,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_strategy.closedtrades.max_runup_percent",
+        "id2": "function_strategy.opentrades.max_runup_percent",
+        "name1": "strategy.closedtrades.max_runup_percent",
+        "name2": "strategy.opentrades.max_runup_percent",
+        "category": "function",
+        "similarity": 0.952,
+        "source1": "local_docs, tradingview_live",
+        "source2": "local_docs, tradingview_live"
+      },
+      {
+        "id1": "function_backadjustment.on",
+        "id2": "function_backadjustment.inherit",
+        "name1": "backadjustment.on",
+        "name2": "backadjustment.inherit",
+        "category": "function",
+        "similarity": 0.9637,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_backadjustment.on",
+        "id2": "function_backadjustment.off",
+        "name1": "backadjustment.on",
+        "name2": "backadjustment.off",
+        "category": "function",
+        "similarity": 0.9153,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_table.cell_set_text_formatting",
+        "id2": "function_box.set_text_formatting",
+        "name1": "table.cell_set_text_formatting()",
+        "name2": "box.set_text_formatting()",
+        "category": "function",
+        "similarity": 0.9157,
+        "source1": "local_docs",
+        "source2": "local_docs"
+      },
+      {
+        "id1": "function_table.cell_set_text_formatting",
+        "id2": "function_label.set_text_formatting",
+        "name1": "table.cell_set_text_formatting()",
+        "name2": "label.set_text_formatting()",
+        "category": "function",
+        "similarity": 0.9349,
+        "source1": "local_docs",
+        "source2": "local_docs"
+      },
+      {
+        "id1": "function_box.get_bottom",
+        "id2": "function_box.get_top",
+        "name1": "box.get_bottom",
+        "name2": "box.get_top",
+        "category": "function",
+        "similarity": 0.949,
+        "source1": "local_docs, tradingview_live",
+        "source2": "local_docs, tradingview_live"
+      },
+      {
+        "id1": "function_text.wrap_none",
+        "id2": "function_text.wrap_auto",
+        "name1": "text.wrap_none",
+        "name2": "text.wrap_auto",
+        "category": "function",
+        "similarity": 0.9381,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_log.error",
+        "id2": "function_log.warning",
+        "name1": "log.error",
+        "name2": "log.warning",
+        "category": "function",
+        "similarity": 0.9943,
+        "source1": "local_docs, tradingview_live",
+        "source2": "local_docs, tradingview_live"
+      },
+      {
+        "id1": "function_log.error",
+        "id2": "function_log.info",
+        "name1": "log.error",
+        "name2": "log.info",
+        "category": "function",
+        "similarity": 0.9957,
+        "source1": "local_docs, tradingview_live",
+        "source2": "local_docs, tradingview_live"
+      },
+      {
+        "id1": "function_ta.lowest",
+        "id2": "function_ta.lowestbars",
+        "name1": "ta.lowest",
+        "name2": "ta.lowestbars",
+        "category": "function",
+        "similarity": 0.9216,
+        "source1": "local_docs, tradingview_live",
+        "source2": "local_docs, tradingview_live"
+      },
+      {
+        "id1": "function_currency.cad",
+        "id2": "function_currency.twd",
+        "name1": "currency.CAD",
+        "name2": "currency.TWD",
+        "category": "function",
+        "similarity": 0.9012,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_currency.cad",
+        "id2": "function_currency.aud",
+        "name1": "currency.CAD",
+        "name2": "currency.AUD",
+        "category": "function",
+        "similarity": 0.9259,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_line.set_x2",
+        "id2": "function_line.set_x1",
+        "name1": "line.set_x2()",
+        "name2": "line.set_x1()",
+        "category": "function",
+        "similarity": 0.9524,
+        "source1": "local_docs",
+        "source2": "local_docs"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.arrowdown",
+        "name1": "shape.flag",
+        "name2": "shape.arrowdown",
+        "category": "function",
+        "similarity": 0.9447,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.arrowup",
+        "name1": "shape.flag",
+        "name2": "shape.arrowup",
+        "category": "function",
+        "similarity": 0.9543,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.labeldown",
+        "name1": "shape.flag",
+        "name2": "shape.labeldown",
+        "category": "function",
+        "similarity": 0.9548,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.triangledown",
+        "name1": "shape.flag",
+        "name2": "shape.triangledown",
+        "category": "function",
+        "similarity": 0.9307,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.xcross",
+        "name1": "shape.flag",
+        "name2": "shape.xcross",
+        "category": "function",
+        "similarity": 0.949,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.labelup",
+        "name1": "shape.flag",
+        "name2": "shape.labelup",
+        "category": "function",
+        "similarity": 0.9645,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.cross",
+        "name1": "shape.flag",
+        "name2": "shape.cross",
+        "category": "function",
+        "similarity": 0.9538,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.triangleup",
+        "name1": "shape.flag",
+        "name2": "shape.triangleup",
+        "category": "function",
+        "similarity": 0.94,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.diamond",
+        "name1": "shape.flag",
+        "name2": "shape.diamond",
+        "category": "function",
+        "similarity": 0.9543,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.square",
+        "name1": "shape.flag",
+        "name2": "shape.square",
+        "category": "function",
+        "similarity": 0.9592,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_shape.flag",
+        "id2": "function_shape.circle",
+        "name1": "shape.flag",
+        "name2": "shape.circle",
+        "category": "function",
+        "similarity": 0.9592,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_line.set_y1",
+        "id2": "function_line.set_y2",
+        "name1": "line.set_y1",
+        "name2": "line.set_y2",
+        "category": "function",
+        "similarity": 0.9431,
+        "source1": "local_docs, tradingview_live",
+        "source2": "local_docs, tradingview_live"
+      },
+      {
+        "id1": "function_earnings.estimate",
+        "id2": "function_earnings.standardized",
+        "name1": "earnings.estimate",
+        "name2": "earnings.standardized",
+        "category": "function",
+        "similarity": 0.937,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_order.descending",
+        "id2": "function_order.ascending",
+        "name1": "order.descending",
+        "name2": "order.ascending",
+        "category": "function",
+        "similarity": 0.948,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_currency.cop",
+        "id2": "function_currency.clp",
+        "name1": "currency.COP",
+        "name2": "currency.CLP",
+        "category": "function",
+        "similarity": 0.9359,
+        "source1": "tradingview_live",
+        "source2": "tradingview_live"
+      },
+      {
+        "id1": "function_ta.highest",
+        "id2": "function_ta.highestbars",
+        "name1": "ta.highest",
+        "name2": "ta.highestbars",
+        "category": "function",
+        "similarity": 0.9202,
+        "source1": "local_docs, tradingview_live",
+        "source2": "local_docs, tradingview_live"
+      }
+    ]
+  },
+  "type6": {
+    "minified_pairs": 0,
+    "details": []
+  }
+}

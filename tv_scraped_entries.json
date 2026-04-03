@@ -367,7 +367,7 @@
     "namespace": "chart",
     "syntax": null,
     "overloads": [],
-    "description": null,
+    "description": "Returns true when the chart type is Heikin Ashi.",
     "parameters": [],
     "returns": "Returns true if the chart type is Heikin Ashi, false otherwise.",
     "remarks": null,
@@ -394,7 +394,7 @@
     "namespace": "chart",
     "syntax": null,
     "overloads": [],
-    "description": null,
+    "description": "Returns true when the chart type is Kagi.",
     "parameters": [],
     "returns": "Returns true if the chart type is Kagi, false otherwise.",
     "remarks": null,
@@ -421,7 +421,7 @@
     "namespace": "chart",
     "syntax": null,
     "overloads": [],
-    "description": null,
+    "description": "Returns true when the chart type is Line Break.",
     "parameters": [],
     "returns": "Returns true if the chart type is Line break, false otherwise.",
     "remarks": null,
@@ -448,7 +448,7 @@
     "namespace": "chart",
     "syntax": null,
     "overloads": [],
-    "description": null,
+    "description": "Returns true when the chart type is Point and Figure.",
     "parameters": [],
     "returns": "Returns true if the chart type is Point & figure, false otherwise.",
     "remarks": null,
@@ -475,7 +475,7 @@
     "namespace": "chart",
     "syntax": null,
     "overloads": [],
-    "description": null,
+    "description": "Returns true when the chart type is Range.",
     "parameters": [],
     "returns": "Returns true if the chart type is Range, false otherwise.",
     "remarks": null,
@@ -502,7 +502,7 @@
     "namespace": "chart",
     "syntax": null,
     "overloads": [],
-    "description": null,
+    "description": "Returns true when the chart type is Renko.",
     "parameters": [],
     "returns": "Returns true if the chart type is Renko, false otherwise.",
     "remarks": null,
@@ -529,7 +529,7 @@
     "namespace": "chart",
     "syntax": null,
     "overloads": [],
-    "description": null,
+    "description": "Returns true when the chart type is standard candles (Japanese candlestick).",
     "parameters": [],
     "returns": "Returns true if the chart type is not one of the following: Renko, Kagi, Line break, Point & figure, Range, Heikin Ashi; false otherwise.",
     "remarks": null,
@@ -5350,7 +5350,7 @@
     "namespace": "currency",
     "syntax": null,
     "overloads": [],
-    "description": "Bitcoin.",
+    "description": "Bitcoin cryptocurrency ticker code.",
     "parameters": [],
     "returns": null,
     "remarks": null,
@@ -5557,7 +5557,7 @@
     "namespace": "currency",
     "syntax": null,
     "overloads": [],
-    "description": "Ethereum.",
+    "description": "Ethereum cryptocurrency ticker code.",
     "parameters": [],
     "returns": null,
     "remarks": null,
@@ -5580,7 +5580,7 @@
     "namespace": "currency",
     "syntax": null,
     "overloads": [],
-    "description": "Euro.",
+    "description": "Euro fiat currency ticker code.",
     "parameters": [],
     "returns": null,
     "remarks": null,
@@ -6408,7 +6408,7 @@
     "namespace": "currency",
     "syntax": null,
     "overloads": [],
-    "description": "Tether.",
+    "description": "Tether USD cryptocurrency stablecoin ticker code.",
     "parameters": [],
     "returns": null,
     "remarks": null,
@@ -15964,7 +15964,7 @@
     "namespace": null,
     "syntax": "hour(time, timezone) → series int",
     "overloads": [],
-    "description": null,
+    "description": "Returns the current bar's hour in the exchange's timezone.",
     "parameters": [
       {
         "name": "time",
@@ -23076,7 +23076,7 @@
     "namespace": null,
     "syntax": "minute(time, timezone) → series int",
     "overloads": [],
-    "description": null,
+    "description": "Returns the current bar's minute in the exchange's timezone.",
     "parameters": [
       {
         "name": "time",
@@ -23121,7 +23121,7 @@
     "namespace": null,
     "syntax": "month(time, timezone) → series int",
     "overloads": [],
-    "description": null,
+    "description": "Returns the current bar's month in the exchange's timezone.",
     "parameters": [
       {
         "name": "time",
@@ -24872,7 +24872,7 @@
     "namespace": null,
     "syntax": "second(time, timezone) → series int",
     "overloads": [],
-    "description": null,
+    "description": "Returns the current bar's second in the exchange's timezone.",
     "parameters": [
       {
         "name": "time",
@@ -25552,7 +25552,7 @@
       "str.tostring(value) → simple string",
       "str.tostring(value) → series string"
     ],
-    "description": null,
+    "description": "Converts a value to its string representation. Supports format strings for float values. This is a legacy function; use str.format() for more formatting options.",
     "parameters": [
       {
         "name": "value",
@@ -28407,7 +28407,7 @@
     "namespace": "ta",
     "syntax": "ta.cross(source1, source2) → series bool",
     "overloads": [],
-    "description": null,
+    "description": "Returns true if source1 and source2 cross each other on the current bar. Equivalent to ta.crossover() or ta.crossunder() but returns true for crossings in either direction.",
     "parameters": [
       {
         "name": "source1",
@@ -29926,7 +29926,7 @@
     "namespace": "ta",
     "syntax": "ta.stdev(source, length, biased) → series float",
     "overloads": [],
-    "description": null,
+    "description": "Returns the standard deviation of source for length bars. By default, calculates sample standard deviation (biased=false). Use biased=true for population standard deviation.",
     "parameters": [
       {
         "name": "source",
@@ -32845,7 +32845,7 @@
     "namespace": null,
     "syntax": "year(time, timezone) → series int",
     "overloads": [],
-    "description": null,
+    "description": "Returns the current bar's year in the exchange's timezone.",
     "parameters": [
       {
         "name": "time",
@@ -34564,6 +34564,172 @@
     "deprecated": false,
     "url": "https://www.tradingview.com/pine-script-reference/v6/#an_@version=",
     "scraped_at": "2026-04-03T07:33:57.729738+00:00",
+    "source": "tradingview_live",
+    "scrape_error": null
+  },
+  {
+    "id": "fun_input.resolution",
+    "name": "input.resolution",
+    "category": "function",
+    "namespace": "input",
+    "syntax": "input.resolution(defval, title, tooltip, inline, group, confirm, display, active) -> simple string",
+    "overloads": [],
+    "description": "Adds an input to the Inputs tab for selecting a chart resolution/timeframe. The user can choose from available resolutions. This is a legacy function; input.timeframe() is the recommended replacement.",
+    "parameters": [
+      {
+        "name": "defval",
+        "type": "simple string",
+        "default": "",
+        "description": "Default value for the input."
+      },
+      {
+        "name": "title",
+        "type": "simple string",
+        "default": "''",
+        "description": "Title of the input in the Inputs tab."
+      },
+      {
+        "name": "tooltip",
+        "type": "simple string",
+        "default": "''",
+        "description": "Tooltip for the input."
+      },
+      {
+        "name": "inline",
+        "type": "simple string",
+        "default": "'None'",
+        "description": "Combines this input with the previous one on the same line."
+      },
+      {
+        "name": "group",
+        "type": "simple string",
+        "default": "''",
+        "description": "Groups this input with others under a common header."
+      },
+      {
+        "name": "confirm",
+        "type": "simple bool",
+        "default": "false",
+        "description": "Requires user confirmation before running the script."
+      },
+      {
+        "name": "display",
+        "type": "simple string",
+        "default": "''",
+        "description": "Controls how the input value is displayed."
+      },
+      {
+        "name": "active",
+        "type": "simple bool",
+        "default": "true",
+        "description": "Whether the input is active."
+      }
+    ],
+    "returns": "simple string",
+    "remarks": "This function is deprecated. Use input.timeframe() instead.",
+    "type_fields": [],
+    "type_methods": [],
+    "examples": [
+      "//@version=6\nindicator('Resolution Input')\nres = input.resolution('D', 'Resolution')\nplot(close, color=res == 'D' ? color.blue : color.red)"
+    ],
+    "see_also": [
+      "input.timeframe",
+      "input.int",
+      "input.string"
+    ],
+    "deprecated": true,
+    "url": "https://www.tradingview.com/pine-script-reference/v6/#fun_input.resolution",
+    "scraped_at": "2026-04-03T00:00:00.000000+00:00",
+    "source": "tradingview_live",
+    "scrape_error": null
+  },
+  {
+    "id": "fun_line.set_xy",
+    "name": "line.set_xy",
+    "category": "function",
+    "namespace": "line",
+    "syntax": "line.set_xy(id, x1, y1, x2, y2) -> void",
+    "overloads": [],
+    "description": "Changes the x1, y1, x2, and y2 coordinates of a line. This is a convenience function equivalent to calling line.set_x1(), line.set_y1(), line.set_x2(), and line.set_y2() in sequence.",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "line",
+        "default": "",
+        "description": "The line object whose coordinates will be changed."
+      },
+      {
+        "name": "x1",
+        "type": "series int",
+        "default": "",
+        "description": "New x1 (bar index) coordinate."
+      },
+      {
+        "name": "y1",
+        "type": "series float",
+        "default": "",
+        "description": "New y1 (price) coordinate."
+      },
+      {
+        "name": "x2",
+        "type": "series int",
+        "default": "",
+        "description": "New x2 (bar index) coordinate."
+      },
+      {
+        "name": "y2",
+        "type": "series float",
+        "default": "",
+        "description": "New y2 (price) coordinate."
+      }
+    ],
+    "returns": "void",
+    "remarks": "",
+    "type_fields": [],
+    "type_methods": [],
+    "examples": [
+      "//@version=6\nindicator('line.set_xy Example', overlay=true)\nvar myLine = line.new(bar_index, close, bar_index + 10, close)\nif barstate.islast\n    line.set_xy(myLine, bar_index - 5, high, bar_index + 5, low)"
+    ],
+    "see_also": [
+      "line.new",
+      "line.set_x1",
+      "line.set_y1",
+      "line.set_x2",
+      "line.set_y2"
+    ],
+    "deprecated": false,
+    "url": "https://www.tradingview.com/pine-script-reference/v6/#fun_line.set_xy",
+    "scraped_at": "2026-04-03T00:00:00.000000+00:00",
+    "source": "tradingview_live",
+    "scrape_error": null
+  },
+  {
+    "id": "fun_strategy.risk_allow_entry_in",
+    "name": "strategy.risk_allow_entry_in",
+    "category": "function",
+    "namespace": "strategy",
+    "syntax": "strategy.risk_allow_entry_in(direction) -> void",
+    "overloads": [],
+    "description": "Deprecated alias for strategy.risk.allow_entry_in(). Controls whether the strategy is allowed to enter positions in the specified direction(s). Use strategy.risk.allow_entry_in() in new scripts.",
+    "parameters": [
+      {
+        "name": "direction",
+        "type": "simple string",
+        "default": "",
+        "description": "Direction(s) to allow: 'long', 'short', or 'all'."
+      }
+    ],
+    "returns": "void",
+    "remarks": "This is a deprecated alias. Use strategy.risk.allow_entry_in() instead.",
+    "type_fields": [],
+    "type_methods": [],
+    "examples": [],
+    "see_also": [
+      "strategy.risk.allow_entry_in"
+    ],
+    "deprecated": true,
+    "url": "https://www.tradingview.com/pine-script-reference/v6/#fun_strategy.risk_allow_entry_in",
+    "scraped_at": "2026-04-03T00:00:00.000000+00:00",
     "source": "tradingview_live",
     "scrape_error": null
   }

@@ -1,21 +1,23 @@
 """
 merge_and_index.py
 ─────────────────────────────────────────────────────────────────────────────
-STAGE 3: Merge local docs (1,242 entries) + TradingView live scrape into a
-unified ChromaDB collection. One collection. All data.
+STAGE 3: Merge local docs (1,242 entries) + TradingView live scrape + user
+documentation chunks into a unified ChromaDB collection. One collection. All data.
 
 INPUT FILES:
   - pinescript_chunks.json     (local, already exists)
   - tv_scraped_entries.json    (live scrape, from scrape_entries.py)
+  - user_docs_chunks.json      (user docs, from index_user_docs.py)
 
 Usage:
-    python merge_and_index.py [--local FILE] [--live FILE] [--db PATH]
+    python merge_and_index.py [--local FILE] [--live FILE] [--docs FILE] [--db PATH]
     python merge_and_index.py --reset
     python merge_and_index.py --dry-run
 
 Options:
     --local    Local chunks file         (default: pinescript_chunks.json)
     --live     Live scrape file          (default: tv_scraped_entries.json)
+    --docs     User docs chunks file     (default: user_docs_chunks.json)
     --db       ChromaDB path             (default: ./pinescript_db)
     --reset    Wipe collection and re-index from scratch
     --dry-run  Print merge stats without writing to DB
@@ -37,6 +39,7 @@ logger.add(sys.stderr, format="{time:HH:mm:ss} | {level:<8} | {message}", level=
 
 DEFAULT_LOCAL = Path(__file__).parent / "pinescript_chunks.json"
 DEFAULT_LIVE = Path(__file__).parent / "tv_scraped_entries.json"
+DEFAULT_DOCS = Path(__file__).parent / "user_docs_chunks.json"
 DEFAULT_DB = Path(__file__).parent / "pinescript_db"
 COLLECTION_NAME = "pinescript_v6"
 EMBED_MODEL = "all-MiniLM-L6-v2"
@@ -252,6 +255,10 @@ def flatten_metadata(entry: dict[str, Any]) -> dict[str, Any]:
     else:
         meta["raw_see_also"] = str(see_also)
 
+    # User docs specific fields
+    meta["file"] = entry.get("file") or ""
+    meta["heading"] = entry.get("heading") or ""
+
     return meta
 
 
@@ -324,7 +331,13 @@ def index_to_chromadb(
             # Ensure unique ID by using category + name (source IDs can have collisions)
             name = entry.get("name", "").lower().strip().replace(" ", "").replace("()", "").replace("`", "")
             category = entry.get("category", "unknown")
-            entry_id = f"{category}_{name}"
+
+            # Use separate ID prefix for user_docs to avoid collisions with API entries
+            sources = entry.get("sources", [])
+            if "user_docs" in sources or entry.get("source") == "user_docs":
+                entry_id = f"doc_{category}_{name}"
+            else:
+                entry_id = f"{category}_{name}"
             # Store back for reference
             entry["id"] = entry_id
 
@@ -458,6 +471,10 @@ def main():
         help=f"Live scrape file (default: {DEFAULT_LIVE})",
     )
     parser.add_argument(
+        "--docs", type=Path, default=DEFAULT_DOCS,
+        help=f"User docs chunks file (default: {DEFAULT_DOCS})",
+    )
+    parser.add_argument(
         "--db", type=Path, default=DEFAULT_DB,
         help=f"ChromaDB path (default: {DEFAULT_DB})",
     )
@@ -491,12 +508,30 @@ def main():
     else:
         logger.warning(f"Live scrape file not found: {args.live}")
 
-    if not local_entries and not live_entries:
+    # Load user docs
+    docs_entries: list[dict[str, Any]] = []
+    if args.docs.exists():
+        docs_entries = json.loads(args.docs.read_text(encoding="utf-8"))
+        logger.info(f"User docs:       {len(docs_entries)}")
+    else:
+        logger.warning(f"User docs file not found: {args.docs}")
+
+    if not local_entries and not live_entries and not docs_entries:
         logger.error("No entries to merge. Provide at least one input file.")
         sys.exit(1)
 
-    # Merge
+    # Merge local + live
     merged = merge_entries(local_entries, live_entries)
+
+    # Add user docs entries with source tagging
+    if docs_entries:
+        logger.info(f"Merging {len(docs_entries)} user doc chunks...")
+        for doc_entry in docs_entries:
+            entry = doc_entry.copy()
+            entry["sources"] = ["user_docs"]
+            entry["id"] = f"doc_{entry.get('name', '')}"
+            merged.append(entry)
+        logger.info(f"Total after docs: {len(merged)}")
 
     if args.dry_run:
         logger.info("Dry run — skipping ChromaDB indexing.")

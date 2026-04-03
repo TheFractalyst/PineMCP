@@ -192,8 +192,17 @@ def _get_collection():
             "Please check that pinescript_db exists and run merge_and_index.py."
         )
     if _collection is not None:
-        _chroma_breaker.record_success()
-        return _collection
+        # Detect stale cache: if collection count changed, reload
+        try:
+            current_count = _collection.count()
+            if current_count == 0:
+                logger.info("ChromaDB collection empty — forcing reload")
+                _collection = None
+        except Exception:
+            _collection = None
+        if _collection is not None:
+            _chroma_breaker.record_success()
+            return _collection
     try:
         import chromadb
 
@@ -390,11 +399,17 @@ def _search_by_name(
         return []
 
 
-def _get_all_where(where: dict, limit: int = 1000) -> list[dict]:
-    """Fetch all entries matching a where filter."""
+def _get_all_where(where: dict | None, limit: int | None = None) -> list[dict]:
+    """Fetch all entries matching a where filter. Defaults to full collection."""
     try:
         col = _get_collection()
-        result = col.get(where=where, include=["metadatas", "documents"], limit=limit)
+        if limit is None:
+            limit = col.count()
+        # Handle empty where clause - ChromaDB doesn't accept {} as where
+        if where:
+            result = col.get(where=where, include=["metadatas", "documents"], limit=limit)
+        else:
+            result = col.get(include=["metadatas", "documents"], limit=limit)
         entries = []
         for rid, meta, doc in zip(
             result["ids"], result["metadatas"], result["documents"]
@@ -490,6 +505,9 @@ def _format_examples_text(meta: dict) -> str:
     if not blocks:
         return ""
 
+    # FIX 4: Deduplicate examples
+    blocks = _dedup_examples(blocks)
+
     lines = [_section_line(f"EXAMPLES ({len(blocks)})")]
     for i, ex in enumerate(blocks, 1):
         lines.append(f"  {'─' * 50}")
@@ -525,10 +543,36 @@ def _format_type_info(meta: dict) -> str:
     return "\n".join(lines)
 
 
+def _dedup_examples(examples: list[str]) -> list[str]:
+    """Remove duplicate examples based on first 80 chars."""
+    seen = set()
+    unique = []
+    for ex in examples:
+        key = ex.strip()[:80].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(ex)
+    return unique
+
+
 def _format_entry_detail(
     name: str, meta: dict, doc: str, distance: Optional[float] = None
 ) -> str:
     """Format a complete detailed entry for get_* tools."""
+    
+    # FIX 2B: Check for hollow results
+    if not doc or len(doc) < 50:
+        entry_type = meta.get("type", meta.get("category", "unknown"))
+        base_url = "https://www.tradingview.com/pine-script-reference/v6/"
+        anchor_prefix = "fun" if entry_type == "function" else "var"
+        url = f"{base_url}#{anchor_prefix}_{name.replace('.','.')}"
+        return (
+            f"'{name}' was found but has no local documentation.\n"
+            f"This is likely a newer v6 feature (footprint, matrix ops, etc.)\n"
+            f"Live reference: {url}\n"
+            f"Tip: Use get_source_url('{name}') to open the official docs."
+        )
+    
     lines: list[str] = []
 
     category = meta.get("category", "?").upper()
@@ -1494,7 +1538,10 @@ async def search_docs(params: SearchQuery) -> str:
         if not results["ids"] or not results["ids"][0]:
             return _error("search_docs", f"No results for '{params.query}'")
 
-        output_lines: list[str] = []
+        # FIX 4: Add content-based deduplication
+        seen_hashes = set()
+        deduped_results = []
+        
         for i, (rid, meta, doc, dist) in enumerate(
             zip(
                 results["ids"][0],
@@ -1503,6 +1550,16 @@ async def search_docs(params: SearchQuery) -> str:
                 results["distances"][0],
             )
         ):
+            # Dedup: skip if content is >85% similar to already shown result
+            content_key = doc[:120].strip().lower()
+            content_hash = hash(content_key)
+            if content_hash in seen_hashes:
+                continue
+            seen_hashes.add(content_hash)
+            deduped_results.append((rid, meta, doc, dist))
+
+        output_lines: list[str] = []
+        for i, (rid, meta, doc, dist) in enumerate(deduped_results):
             name = meta.get("name", "?")
             category = meta.get("category", "?").upper()
             namespace = meta.get("namespace") or ""
@@ -2188,29 +2245,63 @@ def _name_to_fragment(name: str) -> str:
 
 
 async def _fetch_live(name: str) -> Optional[str]:
-    """Fetch live HTML from TradingView for an entry. Returns raw HTML or None."""
+    """Fetch live HTML from TradingView for an entry using Playwright for JS rendering."""
     try:
-        import httpx
+        import subprocess
+        import tempfile
+        import os
 
         fragment = _name_to_fragment(name)
-        url = f"{TV_BASE_URL}#{fragment}"
 
-        async with httpx.AsyncClient(
-            timeout=15.0,
-            follow_redirects=True,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                "Accept": "text/html,application/xhtml+xml",
-            },
-        ) as client:
-            resp = await client.get(TV_BASE_URL)
-            if resp.status_code == 200:
-                return resp.text
+        # Create a Playwright script that renders the page and extracts the entry
+        script = f"""
+import asyncio
+from playwright.async_api import async_playwright
+
+async def main():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto("https://www.tradingview.com/pine-script-reference/v6/", wait_until="networkidle", timeout=30000)
+        # Wait for content to render
+        await page.wait_for_timeout(3000)
+        # Try to find the element by fragment ID
+        element = await page.query_selector('#{fragment}')
+        if not element:
+            # Try finding by data-fragment or class
+            element = await page.query_selector('[data-fragment="{fragment}"]')
+        if not element:
+            # Try the parent container
+            element = await page.query_selector('.tv-pine-reference-item--active')
+        html = ""
+        if element:
+            html = await element.evaluate('el => el.outerHTML')
+        else:
+            # Get full page content for fallback parsing
+            html = await page.content()
+        await browser.close()
+        print(html)
+
+asyncio.run(main())
+"""
+        # Write script to temp file and execute
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(script)
+            script_path = f.name
+
+        try:
+            result = subprocess.run(
+                ['python3', script_path],
+                capture_output=True, text=True, timeout=45,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
             return None
+        except Exception:
+            return None
+        finally:
+            os.unlink(script_path)
     except Exception as e:
         logger.error(f"[_fetch_live] {e}")
         return None
@@ -2284,17 +2375,46 @@ async def get_live_entry(params: EntryLookup) -> str:
         html = await _get_live_entry_cached(params.name)
         if html:
             return _parse_live_html(html, params.name)
+        
+        # FIX 7: Better fallback message
         fragment = _name_to_fragment(params.name)
         url = f"{TV_BASE_URL}#{fragment}"
-        return (
-            f"Could not fetch live data for '{params.name}'.\n"
-            f"Visit manually: {url}\n"
-            f"TradingView may require JavaScript rendering for full content."
-        )
+        
+        # Try local DB first
+        try:
+            db_result = await _lookup_entry(params.name, "function")
+            return (
+                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
+                f"that requires browser rendering.\n\n"
+                f"LOCAL DB RESULT:\n{db_result}\n\n"
+                f"Official docs URL (open in browser):\n{url}"
+            )
+        except:
+            return (
+                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
+                f"that requires browser rendering.\n\n"
+                f"Official docs URL (open in browser):\n{url}"
+            )
+        
     except Exception as e:
+        # FIX 7: Better fallback message
         fragment = _name_to_fragment(params.name)
         url = f"{TV_BASE_URL}#{fragment}"
-        return _error("get_live_entry", f"Network error: {e}\nVisit manually: {url}")
+        
+        try:
+            db_result = await _lookup_entry(params.name, "function")
+            return (
+                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
+                f"that requires browser rendering.\n\n"
+                f"LOCAL DB RESULT:\n{db_result}\n\n"
+                f"Official docs URL (open in browser):\n{url}"
+            )
+        except:
+            return (
+                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
+                f"that requires browser rendering.\n\n"
+                f"Official docs URL (open in browser):\n{url}"
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2478,63 +2598,107 @@ async def check_freshness(params: FreshnessCheck = FreshnessCheck()) -> str:
     """
     try:
         namespace = params.namespace
-        where: Optional[dict] = {}
-        if namespace:
-            if namespace.lower() == "global":
-                where["namespace"] = ""
+        ns = namespace.lower().strip() if namespace else ""
+
+        # Fetch entries
+        if ns:
+            if ns == "global":
+                where_ns = {"namespace": ""}
             else:
-                where["namespace"] = namespace
-        if not where:
-            where = None
+                where_ns = {"namespace": ns}
+            entries_ns = _get_all_where(where_ns)
 
-        entries = _get_all_where(where or {})
-        if not entries:
-            return _error("check_freshness", "No entries found in database")
+            # Also query by name prefix (catches PDF-indexed entries missed by namespace field)
+            prefix_entries: list[dict] = []
+            results = _query(
+                f"{ns} functions list all",
+                20,
+                where={"type": "function"},
+            )
+            if results["ids"] and results["ids"][0]:
+                for meta in results["metadatas"][0]:
+                    if meta and meta.get("name", "").startswith(f"{ns}."):
+                        prefix_entries.append({"metadata": meta})
 
+            total_ns = len(entries_ns)
+            total_prefix = len(prefix_entries)
+            all_entries = entries_ns + prefix_entries
+
+            if not all_entries:
+                fallback = _query(f"{ns}.", 5)
+                if not fallback["documents"][0]:
+                    return (f"Namespace '{ns}' has 0 entries in local DB.\n"
+                            f"Consider running: ingest_{ns}_functions()")
+        else:
+            # No namespace filter — scan entire collection
+            all_entries = _get_all_where(None)
+            total_ns = len(all_entries)
+            total_prefix = 0
+
+        logger.debug(f"check_freshness: ns='{ns}', total_ns={total_ns}, total_prefix={total_prefix}")
+
+        # Classify freshness
+        sources_map: dict[str, int] = {}
         live_count = 0
         local_only_count = 0
         merged_count = 0
         local_only_entries: list[str] = []
 
-        for entry in entries:
-            sources = entry["metadata"].get("sources", "")
-            name = entry["metadata"].get("name", "?")
-            if "tradingview_live" in sources and "local_docs" in sources:
+        for entry in all_entries:
+            meta = entry.get("metadata") or {}
+            # Check both 'sources' (plural) and 'source' (singular) fields
+            sources_str = meta.get("sources", "")
+            name = meta.get("name", "?")
+            if "tradingview_live" in sources_str and "local_docs" in sources_str:
                 merged_count += 1
-            elif "tradingview_live" in sources:
+            elif "tradingview_live" in sources_str:
                 live_count += 1
             else:
                 local_only_count += 1
                 local_only_entries.append(name)
 
-        total = len(entries)
+            src = meta.get("source", meta.get("sources", "unknown") or "unknown")
+            sources_map[src] = sources_map.get(src, 0) + 1
+
+        total = len(all_entries)
+        display_ns = ns if ns else "ALL"
         lines: list[str] = []
         lines.append(f"{_BOX_TL}{_BOX_H * 60}{_BOX_TR}")
-        lines.append(f"{_BOX_V} FRESHNESS REPORT")
-        if namespace:
-            lines.append(f"{_BOX_V} Namespace: {namespace}")
+        lines.append(f"{_BOX_V} FRESHNESS REPORT: {display_ns}")
         lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-        lines.append(_section_line(f"Total entries:        {total}"))
+        lines.append(_section_line(f"Total entries found: {total}"))
+        if ns:
+            lines.append(_section_line(f"  By namespace field: {total_ns}"))
+            lines.append(_section_line(f"  By name prefix:     {total_prefix}"))
         lines.append(_section_line(f"Merged (local+live):  {merged_count}"))
         lines.append(_section_line(f"Live only:            {live_count}"))
         lines.append(_section_line(f"Local only:           {local_only_count}"))
-        lines.append(
-            _section_line(
-                f"Coverage:             {(total - local_only_count) / total * 100:.1f}%"
-            )
-        )
+        if total > 0:
+            coverage = ((merged_count + live_count) / total * 100)
+            lines.append(_section_line(f"Live coverage:        {coverage:.1f}%"))
+        lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
+        lines.append(_section_line("Source breakdown:"))
+        for src, count in sorted(sources_map.items(), key=lambda x: -x[1]):
+            lines.append(_section_line(f"  {src}: {count} entries"))
 
-        if local_only_entries:
+        # Per-namespace breakdown when scanning all
+        if not ns:
+            ns_map: dict[str, int] = {}
+            for entry in all_entries:
+                meta = entry.get("metadata") or {}
+                entry_ns = meta.get("namespace", "(none)")
+                ns_map[entry_ns] = ns_map.get(entry_ns, 0) + 1
             lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-            lines.append(
-                _section_line(f"ENTRIES NEEDING LIVE SCRAPE ({local_only_count}):")
-            )
-            for ename in local_only_entries[:30]:
-                lines.append(_section_line(f"  - {ename}"))
-            if len(local_only_entries) > 30:
-                lines.append(
-                    _section_line(f"  ... and {len(local_only_entries) - 30} more")
-                )
+            lines.append(_section_line("Namespaces:"))
+            for n, cnt in sorted(ns_map.items(), key=lambda x: -x[1]):
+                lines.append(_section_line(f"  {n or '(global)'}: {cnt}"))
+
+        # Local-only entries detail (only for namespace-filtered, small count)
+        if ns and local_only_count > 0 and local_only_count <= 20:
+            lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
+            lines.append(_section_line(f"ENTRIES NEEDING LIVE SCRAPE ({local_only_count}):"))
+            for name in sorted(local_only_entries)[:20]:
+                lines.append(_section_line(f"  - {name}"))
 
         lines.append(f"{_BOX_BL}{_BOX_H * 60}{_BOX_BR}")
         return "\n".join(lines)
@@ -2544,6 +2708,9 @@ async def check_freshness(params: FreshnessCheck = FreshnessCheck()) -> str:
         if _db_failure_count >= _DB_FAILURE_LIMIT:
             return _circuit_breaker_msg()
         return _error("check_freshness", _safe_error(e, "check_freshness"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────
@@ -2773,6 +2940,10 @@ async def fix_and_validate(params: CodeFixInput) -> str:
         )
         identifier = identifier_match.group(1) if identifier_match else None
 
+        # Interpolate {name} placeholder in hints with the actual identifier
+        if matched_hint and identifier:
+            matched_hint = matched_hint.replace("{name}", identifier)
+
         # Step 3: Cross-reference identifier against MCP docs
         doc_context = ""
         if identifier:
@@ -2802,8 +2973,9 @@ async def fix_and_validate(params: CodeFixInput) -> str:
         fix_applied = "No automatic fix available"
 
         # Pattern: missing namespace (ema → ta.ema, sma → ta.sma, etc.)
+        # (?<!\.) prevents double-prefixing code that already has ta./math./etc.
         bare_fn_pattern = re.compile(
-            r'\b(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
+            r'(?<!\.)(?:ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
             r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
             r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
         )
@@ -3108,55 +3280,56 @@ async def lookup_and_correct(params: CodeFixInput) -> str:
         changes_made = []
 
         # BUG FIX: Complete v5 → v6 namespace migration map
+        # NOTE: (?<!\.) prevents double-prefixing code that already has ta./math./etc.
         V5_TO_V6 = {
             # ta.* functions (most common v5 issue)
-            r'\bema\s*\(':          'ta.ema(',
-            r'\bsma\s*\(':          'ta.sma(',
-            r'\brsi\s*\(':          'ta.rsi(',
-            r'\bmacd\s*\(':         'ta.macd(',
-            r'\batr\s*\(':          'ta.atr(',
-            r'\bbb\s*\(':           'ta.bb(',
-            r'\bstoch\s*\(':        'ta.stoch(',
-            r'\bwma\s*\(':          'ta.wma(',
-            r'\bhma\s*\(':          'ta.hma(',
-            r'\bvwap\b':            'ta.vwap',
-            r'\bcrossover\s*\(':    'ta.crossover(',
-            r'\bcrossunder\s*\(':   'ta.crossunder(',
-            r'\bhighest\s*\(':      'ta.highest(',
-            r'\blowest\s*\(':       'ta.lowest(',
-            r'\bbarssince\s*\(':    'ta.barssince(',
-            r'\bvaluewhen\s*\(':    'ta.valuewhen(',
-            r'\blinreg\s*\(':       'ta.linreg(',
-            r'\bmom\s*\(':          'ta.mom(',
-            r'\bcum\s*\(':          'ta.cum(',
-            r'\bchange\s*\(':       'ta.change(',
-            r'\bpivothigh\s*\(':    'ta.pivothigh(',
-            r'\bpivotlow\s*\(':     'ta.pivotlow(',
-            r'\bsupertrend\s*\(':   'ta.supertrend(',
-            r'\bcorrelation\s*\(':  'ta.correlation(',
-            r'\bpercentrank\s*\(':  'ta.percentrank(',
-            r'\bdmi\s*\(':          'ta.dmi(',
-            r'\bstdev\s*\(':        'ta.stdev(',
-            r'\bvariance\s*\(':     'ta.variance(',
+            r'(?<!\.)ema\s*\(':          'ta.ema(',
+            r'(?<!\.)sma\s*\(':          'ta.sma(',
+            r'(?<!\.)rsi\s*\(':          'ta.rsi(',
+            r'(?<!\.)macd\s*\(':         'ta.macd(',
+            r'(?<!\.)atr\s*\(':          'ta.atr(',
+            r'(?<!\.)bb\s*\(':           'ta.bb(',
+            r'(?<!\.)stoch\s*\(':        'ta.stoch(',
+            r'(?<!\.)wma\s*\(':          'ta.wma(',
+            r'(?<!\.)hma\s*\(':          'ta.hma(',
+            r'(?<!\.)vwap\b':            'ta.vwap',
+            r'(?<!\.)crossover\s*\(':    'ta.crossover(',
+            r'(?<!\.)crossunder\s*\(':   'ta.crossunder(',
+            r'(?<!\.)highest\s*\(':      'ta.highest(',
+            r'(?<!\.)lowest\s*\(':       'ta.lowest(',
+            r'(?<!\.)barssince\s*\(':    'ta.barssince(',
+            r'(?<!\.)valuewhen\s*\(':    'ta.valuewhen(',
+            r'(?<!\.)linreg\s*\(':       'ta.linreg(',
+            r'(?<!\.)mom\s*\(':          'ta.mom(',
+            r'(?<!\.)cum\s*\(':          'ta.cum(',
+            r'(?<!\.)change\s*\(':       'ta.change(',
+            r'(?<!\.)pivothigh\s*\(':    'ta.pivothigh(',
+            r'(?<!\.)pivotlow\s*\(':     'ta.pivotlow(',
+            r'(?<!\.)supertrend\s*\(':   'ta.supertrend(',
+            r'(?<!\.)correlation\s*\(':  'ta.correlation(',
+            r'(?<!\.)percentrank\s*\(':  'ta.percentrank(',
+            r'(?<!\.)dmi\s*\(':          'ta.dmi(',
+            r'(?<!\.)stdev\s*\(':        'ta.stdev(',
+            r'(?<!\.)variance\s*\(':     'ta.variance(',
             # request.* functions
-            r'\bsecurity\s*\(':     'request.security(',
+            r'(?<!\.)security\s*\(':     'request.security(',
             # math.* functions
-            r'\babs\s*\(':          'math.abs(',
-            r'\bround\s*\(':        'math.round(',
-            r'\bfloor\s*\(':        'math.floor(',
-            r'\bceil\s*\(':         'math.ceil(',
-            r'\bpow\s*\(':          'math.pow(',
-            r'\bsqrt\s*\(':         'math.sqrt(',
-            r'\blog\s*\(':          'math.log(',
-            r'\bexp\s*\(':          'math.exp(',
-            r'\bsign\s*\(':         'math.sign(',
-            r'\bsin\s*\(':          'math.sin(',
-            r'\bcos\s*\(':          'math.cos(',
-            r'\bmax\s*\(':          'math.max(',
-            r'\bmin\s*\(':          'math.min(',
+            r'(?<!\.)abs\s*\(':          'math.abs(',
+            r'(?<!\.)round\s*\(':        'math.round(',
+            r'(?<!\.)floor\s*\(':        'math.floor(',
+            r'(?<!\.)ceil\s*\(':         'math.ceil(',
+            r'(?<!\.)pow\s*\(':          'math.pow(',
+            r'(?<!\.)sqrt\s*\(':         'math.sqrt(',
+            r'(?<!\.)log\s*\(':          'math.log(',
+            r'(?<!\.)exp\s*\(':          'math.exp(',
+            r'(?<!\.)sign\s*\(':         'math.sign(',
+            r'(?<!\.)sin\s*\(':          'math.sin(',
+            r'(?<!\.)cos\s*\(':          'math.cos(',
+            r'(?<!\.)max\s*\(':          'math.max(',
+            r'(?<!\.)min\s*\(':          'math.min(',
             # str.* functions
-            r'\btostring\s*\(':     'str.tostring(',
-            r'\btonumber\s*\(':     'str.tonumber(',
+            r'(?<!\.)tostring\s*\(':     'str.tostring(',
+            r'(?<!\.)tonumber\s*\(':     'str.tonumber(',
         }
 
         # Apply ALL replacements sequentially
