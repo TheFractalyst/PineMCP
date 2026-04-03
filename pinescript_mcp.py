@@ -332,7 +332,7 @@ def _search_by_name(
             # Try with type=function specifically
             try:
                 typed = col.get(
-                    where={"$and": [{"name": name_lower}, {"type": "function"}]},
+                    where={"$and": [{"name": name_lower}, {"category": "function"}]},
                     include=["metadatas", "documents"]
                 )
                 if typed["ids"]:
@@ -1799,7 +1799,7 @@ async def get_type(params: EntryLookup) -> str:
         await _ensure_hot_cache()
         # Step 0: Check hot cache first (sub-ms for priority entries)
         cached = cache_lookup(params.name)
-        if cached and cached["metadata"].get("type") == "type":
+        if cached and cached["metadata"].get("category") == "type":
             result = _format_entry_detail(
                 cached["metadata"].get("name", params.name),
                 cached["metadata"],
@@ -1807,16 +1807,16 @@ async def get_type(params: EntryLookup) -> str:
             )
             return result
 
-        # BUG FIX: Always filter by type="type" — never return function entries
+        # Filter by category="type" — never return function entries
         col = _get_collection()
         name_lower = params.name.lower().strip()
 
-        # Always filter by type="type" — never return function entries
+        # Always filter by category="type" — never return function entries
         try:
             result = col.get(
                 where={"$and": [
                     {"name": {"$in": [name_lower, f"type.{name_lower}"]}},
-                    {"type": "type"}
+                    {"category": "type"}
                 ]},
                 include=["documents", "metadatas"]
             )
@@ -1831,11 +1831,11 @@ async def get_type(params: EntryLookup) -> str:
         except Exception:
             pass
 
-        # Semantic fallback — still enforce type filter
+        # Semantic fallback — still enforce category filter
         results = _query(
             f"type {name_lower} definition fields methods",
             5,
-            where={"type": "type"}
+            where={"category": "type"}
         )
         if results["documents"][0]:
             top_meta = results["metadatas"][0][0]
@@ -2434,14 +2434,14 @@ async def get_source_url(params: EntryLookup) -> str:
 
         BASE = "https://www.tradingview.com/pine-script-reference/v6/"
 
-        # BUG FIX: Construct URL from entry type (more reliable than stored metadata)
+        # Construct URL from entry category (more reliable than stored metadata)
         try:
-            col = _get_collection()
-            results = await _search_by_name(name_lower, col)
+            results = _search_by_name(name_lower)
 
             if results:
-                meta = results[0].get("metadata", {})
-                etype = meta.get("type", "")
+                best_sim, best_entry = results[0]
+                meta = best_entry.get("metadata", {})
+                etype = meta.get("category", "")
 
                 # Build anchor deterministically from name + type
                 # TradingView anchor format:
@@ -2613,7 +2613,7 @@ async def check_freshness(params: FreshnessCheck = FreshnessCheck()) -> str:
             results = _query(
                 f"{ns} functions list all",
                 20,
-                where={"type": "function"},
+                where={"category": "function"},
             )
             if results["ids"] and results["ids"][0]:
                 for meta in results["metadatas"][0]:
@@ -2948,21 +2948,22 @@ async def fix_and_validate(params: CodeFixInput) -> str:
         doc_context = ""
         if identifier:
             try:
-                col = _get_collection()
-                results = await _search_by_name(identifier, col)
+                results = _search_by_name(identifier)
                 if results:
+                    best_sim, best_entry = results[0]
                     doc_context = (
                         f"\nDOC REFERENCE for '{identifier}':\n"
-                        f"{results[0].get('document', '')[:300]}"
+                        f"{best_entry.get('document', '')[:300]}"
                     )
                 else:
                     # Try with common namespaces
                     for ns in ["ta", "strategy", "math", "array", "str"]:
-                        ns_results = await _search_by_name(f"{ns}.{identifier}", col)
+                        ns_results = _search_by_name(f"{ns}.{identifier}")
                         if ns_results:
+                            best_sim, best_entry = ns_results[0]
                             doc_context = (
                                 f"\nSUGGESTION: Did you mean '{ns}.{identifier}'?\n"
-                                f"{ns_results[0].get('document', '')[:200]}"
+                                f"{best_entry.get('document', '')[:200]}"
                             )
                             break
             except Exception:
@@ -2975,7 +2976,7 @@ async def fix_and_validate(params: CodeFixInput) -> str:
         # Pattern: missing namespace (ema → ta.ema, sma → ta.sma, etc.)
         # (?<!\.) prevents double-prefixing code that already has ta./math./etc.
         bare_fn_pattern = re.compile(
-            r'(?<!\.)(?:ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
+            r'(?<!\.)(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
             r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
             r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
         )
@@ -3054,21 +3055,89 @@ async def generate_indicator(params: IndicatorGenInput) -> str:
         # Build input lines
         input_lines = []
         if params.inputs:
-            for inp in params.inputs:
-                inp_lower = inp.lower()
-                if "length" in inp_lower or "period" in inp_lower:
-                    input_lines.append(
-                        f'int {inp.replace(" ", "_").replace("-", "_")} = input.int(20, "{inp}")'
-                    )
-                elif "source" in inp_lower:
-                    input_lines.append(f'src = input.source(close, "{inp}")')
-                elif "mult" in inp_lower or "factor" in inp_lower:
-                    input_lines.append(
-                        f'float {inp.replace(" ", "_").replace("-", "_")} = input.float(2.0, "{inp}")'
-                    )
+            for raw_inp in params.inputs.split(","):
+                raw_inp = raw_inp.strip()
+                if not raw_inp:
+                    continue
+                # Parse key=value pairs (e.g. "rsiLength=14", "src=close", "mult=2.0")
+                pine_type = "float"
+                default_val = "1.0"
+                var_name = ""
+                display_name = raw_inp
+
+                if "=" in raw_inp:
+                    key, val = raw_inp.split("=", 1)
+                    key = key.strip()
+                    val = val.strip()
+                    var_name = key.replace(" ", "_").replace("-", "_")
+                    display_name = key
+                    inp_lower = key.lower()
+
+                    # Infer Pine type and default from the value
+                    if val.startswith('"') or val.startswith("'"):
+                        pine_type = "string"
+                        default_val = val
+                    elif val in ("close", "open", "high", "low", "hl2", "hlc3", "ohlc4"):
+                        pine_type = "source"
+                        default_val = val
+                    elif val.lower() in ("true", "false"):
+                        pine_type = "bool"
+                        default_val = val.lower()
+                    elif "." in val:
+                        pine_type = "float"
+                        default_val = val
+                    else:
+                        try:
+                            int(val)
+                            pine_type = "int"
+                            default_val = val
+                        except ValueError:
+                            pine_type = "float"
+                            default_val = val
                 else:
+                    # Bare name — infer type from semantic hints
+                    inp_lower = raw_inp.lower()
+                    var_name = raw_inp.replace(" ", "_").replace("-", "_")
+                    if any(k in inp_lower for k in ("length", "period", "len")):
+                        pine_type = "int"
+                        default_val = "20"
+                    elif any(k in inp_lower for k in ("source", "src")):
+                        pine_type = "source"
+                        default_val = "close"
+                    elif any(k in inp_lower for k in ("mult", "factor", "multiplier")):
+                        pine_type = "float"
+                        default_val = "2.0"
+                    elif any(k in inp_lower for k in ("color", "colour")):
+                        pine_type = "color"
+                        default_val = "color.blue"
+                    elif any(k in inp_lower for k in ("enable", "use", "show")):
+                        pine_type = "bool"
+                        default_val = "true"
+
+                # Generate the input.*() call
+                if pine_type == "source":
                     input_lines.append(
-                        f'float {inp.replace(" ", "_").replace("-", "_")} = input.float(1.0, "{inp}")'
+                        f'{var_name} = input.source({default_val}, "{display_name}")'
+                    )
+                elif pine_type == "int":
+                    input_lines.append(
+                        f'int {var_name} = input.int({default_val}, "{display_name}")'
+                    )
+                elif pine_type == "float":
+                    input_lines.append(
+                        f'float {var_name} = input.float({default_val}, "{display_name}")'
+                    )
+                elif pine_type == "bool":
+                    input_lines.append(
+                        f'bool {var_name} = input.bool({default_val}, "{display_name}")'
+                    )
+                elif pine_type == "string":
+                    input_lines.append(
+                        f'string {var_name} = input.string({default_val}, "{display_name}")'
+                    )
+                elif pine_type == "color":
+                    input_lines.append(
+                        f'{var_name} = input.color({default_val}, "{display_name}")'
                     )
 
         # Build relevant function list
