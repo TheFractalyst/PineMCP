@@ -23,8 +23,10 @@ Thumbs.db
 *.log
 
 # Database files (keep structure but ignore large binary files)
-pinescript_db/*.bin
-pinescript_db/*.pickle
+pinescript_db/**/*.bin
+pinescript_db/**/*.pickle
+pinescript_v6/**/*.bin
+pinescript_v6/**/*.pickle
 
 # Temporary files
 *.tmp
