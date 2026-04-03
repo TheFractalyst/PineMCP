@@ -1,0 +1,118 @@
+//@version=6
+// ══════════════════════════════════════════════════════════════════════════════
+// Base Strategy Template — PineScript v6
+// Generated via: generate_strategy("Base Strategy Template", "starting point", 10000, 0.1)
+// Validated: pine-facade ✅ 0 errors
+// MCP source: pinescript-v6 MCP server (1,647 entries)
+// ══════════════════════════════════════════════════════════════════════════════
+
+strategy(
+     title               = "Strategy Title",
+     shorttitle          = "STRAT",
+     overlay             = true,
+     initial_capital     = 10000,
+     commission_type     = strategy.commission.percent,
+     commission_value    = 0.1,
+     default_qty_type    = strategy.percent_of_equity,
+     default_qty_value   = 100,
+     pyramiding          = 1,
+     calc_on_every_tick  = false,
+     max_labels_count    = 500,
+     max_lines_count     = 500
+     )
+
+// ── INPUTS ────────────────────────────────────────────────────────────────────
+
+// Direction toggles
+i_enable_long  = input.bool(true,  title = "Enable Long",  group = "Direction")
+i_enable_short = input.bool(true,  title = "Enable Short", group = "Direction")
+
+// Source and lengths
+i_src        = input.source(close,  title = "Source",         group = "Signal")
+i_fast_len   = input.int(9,         title = "Fast Length",    group = "Signal", minval = 1)
+i_slow_len   = input.int(21,        title = "Slow Length",    group = "Signal", minval = 1)
+
+// Risk management
+i_sl_mult    = input.float(1.5,     title = "Stop Loss ATR ×",   group = "Risk", minval = 0.1, step = 0.1)
+i_tp_mult    = input.float(3.0,     title = "Take Profit ATR ×", group = "Risk", minval = 0.1, step = 0.1)
+i_atr_len    = input.int(14,        title = "ATR Length",         group = "Risk", minval = 1)
+
+// Visual
+i_col_long   = input.color(color.new(color.green, 80), title = "Long BG",  group = "Visual")
+i_col_short  = input.color(color.new(color.red,   80), title = "Short BG", group = "Visual")
+
+// ── CALCULATIONS ──────────────────────────────────────────────────────────────
+
+fast_ma = ta.ema(i_src, i_fast_len)
+slow_ma = ta.ema(i_src, i_slow_len)
+atr_val = ta.atr(i_atr_len)
+
+// ── ENTRY CONDITIONS ─────────────────────────────────────────────────────────
+// Replace these with your actual signal logic.
+// CRITICAL: always gate entries with barstate.isconfirmed to prevent repainting.
+
+long_condition  = ta.crossover(fast_ma, slow_ma)
+short_condition = ta.crossunder(fast_ma, slow_ma)
+
+// ── POSITION SIZING ───────────────────────────────────────────────────────────
+// ATR-based stop distance for position sizing reference
+long_stop_price  = strategy.position_avg_price - atr_val * i_sl_mult
+long_tp_price    = strategy.position_avg_price + atr_val * i_tp_mult
+short_stop_price = strategy.position_avg_price + atr_val * i_sl_mult
+short_tp_price   = strategy.position_avg_price - atr_val * i_tp_mult
+
+// ── ENTRIES ───────────────────────────────────────────────────────────────────
+
+if barstate.isconfirmed
+    if i_enable_long and long_condition
+        strategy.entry("Long", strategy.long)
+
+    if i_enable_short and short_condition
+        strategy.entry("Short", strategy.short)
+
+// ── EXITS ─────────────────────────────────────────────────────────────────────
+
+// Exit long: stop loss + take profit via strategy.exit
+strategy.exit(
+     id          = "Long Exit",
+     from_entry  = "Long",
+     stop        = long_stop_price,
+     limit       = long_tp_price,
+     comment     = "Long SL/TP"
+     )
+
+// Exit short: stop loss + take profit via strategy.exit
+strategy.exit(
+     id          = "Short Exit",
+     from_entry  = "Short",
+     stop        = short_stop_price,
+     limit       = short_tp_price,
+     comment     = "Short SL/TP"
+     )
+
+// Close all positions on the last historical bar
+if barstate.islast
+    strategy.close_all(comment = "End of data")
+
+// ── PLOTS ─────────────────────────────────────────────────────────────────────
+
+plot(fast_ma, title = "Fast MA", color = color.new(color.blue,  0), linewidth = 1)
+plot(slow_ma, title = "Slow MA", color = color.new(color.orange, 0), linewidth = 1)
+
+// Background color when in position
+bgcolor(strategy.position_size > 0 ? i_col_long  : na, title = "Long BG")
+bgcolor(strategy.position_size < 0 ? i_col_short : na, title = "Short BG")
+
+// ── ALERTS ────────────────────────────────────────────────────────────────────
+
+alertcondition(
+     barstate.isconfirmed and long_condition and i_enable_long,
+     title   = "Long Entry Signal",
+     message = "Long Entry — " + syminfo.tickerid + " @ " + str.tostring(close, "#.####")
+     )
+
+alertcondition(
+     barstate.isconfirmed and short_condition and i_enable_short,
+     title   = "Short Entry Signal",
+     message = "Short Entry — " + syminfo.tickerid + " @ " + str.tostring(close, "#.####")
+     )
