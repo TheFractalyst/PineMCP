@@ -1,0 +1,2 @@
+[  229305ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ https://telemetry.tradingview.com/site-free/report:0
+[  229310ms] [ERROR] 2026-04-02T21:32:34.901Z:Fetch:POST https://telemetry.tradingview.com/site-free/report. TypeError: Failed to fetch @ https://static.tradingview.com/static/bundles/97680.0e1fb95100c983cb390c.js:13

@@ -1,0 +1,33 @@
+{
+  "tools": {
+    "pinescript-v6": {
+      "autoApprove": [
+        "get_function",
+        "get_variable",
+        "get_type",
+        "get_constant",
+        "get_keyword",
+        "get_operator",
+        "search_docs",
+        "get_examples",
+        "search_by_return_type",
+        "list_namespace",
+        "get_source_url",
+        "suggest_functions",
+        "get_namespace_cheatsheet",
+        "validate_syntax",
+        "validate_and_explain",
+        "generate_indicator",
+        "generate_strategy",
+        "check_freshness",
+        "diff_entry",
+        "debug_pine_facade"
+      ],
+      "requireApproval": [
+        "fix_and_validate",
+        "lookup_and_correct",
+        "get_live_entry"
+      ]
+    }
+  }
+}

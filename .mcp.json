@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "pinescript-v6": {
+      "command": "/Users/fractalyst/Downloads/pinescript_mcp/.venv/bin/python",
+      "args": ["/Users/fractalyst/Downloads/pinescript_mcp/pinescript_mcp.py"],
+      "env": {
+        "PINESCRIPT_DB_PATH": "/Users/fractalyst/Downloads/pinescript_mcp/pinescript_db",
+        "PINESCRIPT_COLLECTION": "pinescript_v6",
+        "PINESCRIPT_EMBED_MODEL": "all-MiniLM-L6-v2",
+        "PINESCRIPT_MAX_RESULTS": "20",
+        "PINE_FACADE_TIMEOUT": "20",
+        "VALIDATION_CACHE_TTL": "300",
+        "HOT_CACHE_NAMESPACES": "ta,strategy,math,array,str,matrix,map",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
