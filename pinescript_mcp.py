@@ -2,20 +2,16 @@
 pinescript_mcp.py
 ─────────────────────────────────────────────────────────────────────────────
 PineScript v6 Complete Knowledge MCP Server
-FastMCP 3.0 · Transport: stdio · 23 tools + 1 resource
+FastMCP 3.0 · Transport: stdio · 19 tools + 1 resource
 
 Serves PineScript v6 reference documentation via semantic-search tools
-backed by a local ChromaDB vector store populated from:
-  1. Local parsed documentation (1,215+ entries from Markdown reference)
-  2. Live-scraped TradingView reference (~1,360 entries)
+backed by a local ChromaDB vector store (3,400+ entries, 100% local).
 
-Tools (23 total):
+Tools (19 total):
   LOOKUP (6):   get_function, get_variable, get_type, get_constant,
                 get_keyword, get_operator
   SEARCH (4):   search_docs, get_examples, search_by_return_type,
                 list_namespace
-  LIVE (2):     get_live_entry, get_source_url
-  MAINT (2):    diff_entry, check_freshness
   VALIDATE (4): validate_syntax, validate_and_explain, fix_and_validate,
                 debug_pine_facade
   CODEGEN (3):  generate_indicator, generate_strategy, lookup_and_correct
@@ -30,16 +26,19 @@ import asyncio
 import atexit
 import json
 import os
+import random
 import re
 import sys
 import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
 import httpx
 from loguru import logger
+
+from pine_linter import lint as _pine_lint
 
 logger.remove()
 logger.add(
@@ -49,7 +48,7 @@ logger.add(
 )
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -62,8 +61,10 @@ DB_PATH = os.getenv(
 COLLECTION = os.getenv("PINESCRIPT_COLLECTION", "pinescript_v6")
 EMBED_MODEL = os.getenv("PINESCRIPT_EMBED_MODEL", "all-MiniLM-L6-v2")
 MAX_RESULTS = int(os.getenv("PINESCRIPT_MAX_RESULTS", "30"))
-TV_BASE_URL = "https://www.tradingview.com/pine-script-reference/v6/"
-PINE_FACADE_URL = "https://pine-facade.tradingview.com/pine-facade/translate_light?user_name=admin&v=3"
+PINE_FACADE_URL = os.getenv(
+    "PINE_FACADE_URL",
+    "https://pine-facade.tradingview.com/pine-facade/translate_light?user_name=admin&v=3",
+)
 PINE_FACADE_TIMEOUT = int(os.getenv("PINE_FACADE_TIMEOUT", "20"))
 VALIDATION_CACHE_TTL = int(os.getenv("VALIDATION_CACHE_TTL", "300"))
 VALIDATION_CACHE_MAX_SIZE = int(os.getenv("VALIDATION_CACHE_SIZE", "500"))
@@ -83,10 +84,9 @@ technical indicators, strategies, and libraries that run on the TradingView
 platform. Version 6 (v6) is the current production release and introduces
 UDTs (user-defined types), methods, enums, polylines, and improved performance.
 
-This server combines two data sources:
-1. Local parsed documentation (1,242 entries from PDF/Markdown)
-2. Live-scraped TradingView reference (~1,360 entries)
-Merged total: ~1,400-1,600 unique entries.
+This server provides complete local PineScript v6 reference documentation
+via a ChromaDB vector store with 3,400+ entries covering all functions,
+variables, types, constants, keywords, operators, and user guides.
 
 WHEN TO USE EACH TOOL
 ──────────────────────
@@ -104,14 +104,6 @@ SEARCH TOOLS (use when you don't know exact name):
   search_by_return_type(type)      Find functions returning a type
   list_namespace(namespace)        All members of a namespace
 
-LIVE DATA TOOLS (use for most current information):
-  get_live_entry(name)   Real-time fetch from TradingView site
-  get_source_url(name)   Get direct TradingView URL for manual lookup
-
-MAINTENANCE TOOLS:
-  diff_entry(name)       Compare indexed vs live TradingView data
-  check_freshness()      See which entries have live vs local data only
-
 IMPORTANT NOTES
 ───────────────
 - All code examples returned are real, working PineScript from the official
@@ -121,23 +113,66 @@ IMPORTANT NOTES
 - Use the `var` keyword for variables that should preserve state across bars.
 - Strategy scripts require //@version=6 and strategy() declaration.
 - Indicator scripts require //@version=6 and indicator() declaration.
-- ALWAYS cite the source when answering: note if data is from local docs,
-  live TradingView, or both. Include the TradingView URL when available.
 """
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def _startup_lifespan(server):
+    """Preload embedding model, ChromaDB collection, name index, and hot cache at startup."""
+    logger.info("Preloading embedding model...")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(_model_executor, _get_model)
+    _embedding_model_ready.set()
+    logger.info("Embedding model ready")
+
+    logger.info("Preloading ChromaDB collection...")
+    _get_collection()
+    logger.info("ChromaDB collection ready")
+
+    logger.info("Building name index...")
+    _build_name_index()
+    logger.info("Name index ready")
+
+    logger.info("Building hot cache...")
+    success = await build_hot_cache()
+    global _hot_cache_built
+    if success:
+        _hot_cache_built = True
+    logger.info("Hot cache ready")
+
+    yield  # server runs here
+
+    # Shutdown: close HTTP client
+    _shutdown_http_client()
+
 
 mcp = FastMCP(
     name="PineScript v6 Complete Reference",
     instructions=INSTRUCTIONS,
+    lifespan=_startup_lifespan,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ChromaDB + Embedding singleton — with circuit-breaker
 # ─────────────────────────────────────────────────────────────────────────────
 
-_db_failure_count: int = 0
-_DB_FAILURE_LIMIT: int = 3
+# Removed: _db_failure_count / _DB_FAILURE_LIMIT — replaced by ChromaDBCircuitBreaker
 _collection = None
 _embed_model = None
+
+# Name index for O(1) exact lookups — built at startup
+_name_index: dict[str, list[dict]] = {}  # lowercase name -> [{id, metadata, document}]
+_name_index_built: bool = False
+
+# Common PineScript parameter names that should NOT trigger doc lookups
+_COMMON_PARAM_NAMES = frozenset({
+    "length", "len", "period", "source", "src", "mult", "multiplier", "factor",
+    "offset", "basis", "dev", "deviation", "signal", "fast", "slow", "size",
+    "threshold", "limit", "color", "title", "minval", "maxval", "step",
+    "defval", "group", "inline", "confirm", "options", "tooltip",
+    "bar_index", "gap", "style", "width", "transparency",
+})
 
 # ── C1: ChromaDB circuit breaker with cooldown + auto-reset ────────────
 
@@ -176,6 +211,28 @@ class ChromaDBCircuitBreaker:
 
 _chroma_breaker = ChromaDBCircuitBreaker(threshold=3, cooldown=30)
 
+
+def _build_name_index() -> None:
+    """Build in-memory name->entry index for O(1) exact lookups."""
+    global _name_index, _name_index_built
+    if _name_index_built:
+        return
+    try:
+        col = _get_collection()
+        total = col.count()
+        result = col.get(include=["metadatas", "documents"], limit=total)
+        for rid, meta, doc in zip(result["ids"], result["metadatas"], result["documents"]):
+            key = (meta.get("name") or "").lower().strip()
+            if key:
+                entry = {"id": rid, "metadata": meta, "document": doc}
+                if key not in _name_index:
+                    _name_index[key] = []
+                _name_index[key].append(entry)
+        _name_index_built = True
+        logger.info(f"Name index built: {len(_name_index)} unique names from {total} entries")
+    except Exception as e:
+        logger.error(f"Failed to build name index: {e}")
+
 # ── H5: Non-blocking embedding model loader ────────────────────────────
 _model_executor = ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="embedding"
@@ -185,11 +242,11 @@ _embedding_model_ready = asyncio.Event()
 
 def _get_collection():
     """Return the ChromaDB collection, initializing lazily. Circuit-breaker aware."""
-    global _collection, _db_failure_count
-    if _db_failure_count >= _DB_FAILURE_LIMIT:
+    global _collection
+    if _chroma_breaker.is_open():
         raise RuntimeError(
-            "ChromaDB has failed too many times. "
-            "Please check that pinescript_db exists and run merge_and_index.py."
+            "ChromaDB circuit breaker is open (cooldown). "
+            "Please wait and try again."
         )
     if _collection is not None:
         # Detect stale cache: if collection count changed, reload
@@ -212,10 +269,8 @@ def _get_collection():
         _chroma_breaker.record_success()
         return _collection
     except Exception as e:
-        _db_failure_count += 1
-        logger.error(
-            f"ChromaDB init failed ({_db_failure_count}/{_DB_FAILURE_LIMIT}): {e}"
-        )
+        _chroma_breaker.record_failure(e)
+        logger.error(f"ChromaDB init failed: {e}")
         raise
 
 
@@ -239,7 +294,7 @@ async def _ensure_embedding_model():
     """Load SentenceTransformer in thread pool — never blocks event loop."""
     if _embedding_model_ready.is_set():
         return
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(_model_executor, _get_model)
     _embedding_model_ready.set()
 
@@ -327,8 +382,8 @@ def _search_by_name(
                             exact["ids"], exact["metadatas"], exact["documents"]
                         )
                     ]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Qualified lookup failed: {e}")
             # Try with type=function specifically
             try:
                 typed = col.get(
@@ -349,17 +404,33 @@ def _search_by_name(
                             typed["ids"], typed["metadatas"], typed["documents"]
                         )
                     ]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Typed lookup failed: {e}")
             # No result — return empty (do NOT fall through to namespace match)
             return []
 
-        # Strategy 1: exact metadata match (fast, uses index) - only for non-qualified names
+        # Fast path: O(1) lookup from pre-built name index
+        if _name_index_built:
+            hits = _name_index.get(name_lower)
+            if hits:
+                if where:
+                    cat = where.get("category")
+                    if cat:
+                        hits = [h for h in hits if h["metadata"].get("category") == cat]
+                    for clause in where.get("$and", []):
+                        if "category" in clause:
+                            hits = [h for h in hits if h["metadata"].get("category") == clause["category"]]
+                if hits:
+                    return [(100.0, h) for h in hits]
+
+        # Strategy 1: exact metadata match (fast, uses ChromaDB index)
         try:
-            exact_kwargs: dict = dict(include=["metadatas", "documents"])
+            exact_where: dict = {"name": name_lower}
             if where:
-                exact_kwargs["where"] = where
-            exact = col.get(where={"name": name_lower}, include=["metadatas", "documents"])
+                cat = where.get("category")
+                if cat:
+                    exact_where = {"$and": [{"name": name_lower}, {"category": cat}]}
+            exact = col.get(where=exact_where, include=["metadatas", "documents"])
             if exact["ids"]:
                 return [
                     (
@@ -374,8 +445,8 @@ def _search_by_name(
                         exact["ids"], exact["metadatas"], exact["documents"]
                     )
                 ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Exact unqualified lookup failed: {e}")
 
         # Strategy 2: fuzzy — fetch ALL, filter in Python
         total = col.count()
@@ -446,19 +517,11 @@ def _section_line(text: str = "") -> str:
 
 
 def _source_tag(meta: dict) -> str:
-    sources = meta.get("sources", "")
-    if "tradingview_live" in sources:
-        return "[Live]"
     return "[Local]"
 
 
 def _source_line(meta: dict) -> str:
-    tag = _source_tag(meta)
-    url = meta.get("url", "")
-    parts = [_section_line(f"SOURCE: {tag}")]
-    if url:
-        parts.append(_section_line(f"URL: {url}"))
-    return "\n".join(parts)
+    return _section_line("SOURCE: [Local]")
 
 
 def _format_params_text(meta: dict) -> str:
@@ -544,15 +607,19 @@ def _format_type_info(meta: dict) -> str:
 
 
 def _dedup_examples(examples: list[str]) -> list[str]:
-    """Remove duplicate examples based on first 80 chars."""
-    seen = set()
-    unique = []
+    """Remove duplicate examples by comparing whitespace-normalized content.
+    Prefers formatted versions (more newlines) over collapsed ones."""
+    seen: dict[str, str] = {}  # normalized_key -> best example
     for ex in examples:
-        key = ex.strip()[:80].lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(ex)
-    return unique
+        key = re.sub(r'\s+', '', ex).lower()[:120]
+        existing = seen.get(key)
+        if existing is None:
+            seen[key] = ex
+        else:
+            # Prefer the version with more newlines (formatted over collapsed)
+            if ex.count("\n") > existing.count("\n"):
+                seen[key] = ex
+    return list(seen.values())
 
 
 def _format_entry_detail(
@@ -563,14 +630,9 @@ def _format_entry_detail(
     # FIX 2B: Check for hollow results
     if not doc or len(doc) < 50:
         entry_type = meta.get("type", meta.get("category", "unknown"))
-        base_url = "https://www.tradingview.com/pine-script-reference/v6/"
-        anchor_prefix = "fun" if entry_type == "function" else "var"
-        url = f"{base_url}#{anchor_prefix}_{name.replace('.','.')}"
         return (
             f"'{name}' was found but has no local documentation.\n"
-            f"This is likely a newer v6 feature (footprint, matrix ops, etc.)\n"
-            f"Live reference: {url}\n"
-            f"Tip: Use get_source_url('{name}') to open the official docs."
+            f"This is likely a newer v6 feature not yet indexed."
         )
     
     lines: list[str] = []
@@ -685,42 +747,6 @@ def _sanitize_pine_string(s: str) -> str:
     return s[:100]
 
 
-# H4: Live fetch cache + rate limiting
-_LIVE_CACHE: OrderedDict[str, tuple[float, str]] = OrderedDict()
-_LIVE_CACHE_TTL = 3600
-_LIVE_CACHE_MAX = 200
-_LIVE_RATE_LIMIT = 1.0
-_last_live_call = 0.0
-
-
-async def _get_live_entry_cached(name: str) -> Optional[str]:
-    """Fetch live HTML with TTL cache and rate limiting."""
-    global _last_live_call
-
-    if name in _LIVE_CACHE:
-        ts, content = _LIVE_CACHE[name]
-        if time.time() - ts < _LIVE_CACHE_TTL:
-            _LIVE_CACHE.move_to_end(name)
-            logger.debug(f"Live cache HIT: {name}")
-            return content
-        else:
-            del _LIVE_CACHE[name]
-
-    elapsed = time.time() - _last_live_call
-    if elapsed < _LIVE_RATE_LIMIT:
-        await asyncio.sleep(_LIVE_RATE_LIMIT - elapsed)
-
-    _last_live_call = time.time()
-    html = await _fetch_live(name)
-
-    if html:
-        if len(_LIVE_CACHE) >= _LIVE_CACHE_MAX:
-            _LIVE_CACHE.popitem(last=False)
-        _LIVE_CACHE[name] = (time.time(), html)
-
-    return html
-
-
 def _circuit_breaker_msg() -> str:
     return (
         "DATABASE UNAVAILABLE\n"
@@ -762,15 +788,25 @@ class PineFacadeCircuitBreaker:
     def record_network_failure(self) -> None:
         """Record a network-level failure (timeout, connection refused, DNS).
         These indicate the service is unreachable and SHOULD trip the breaker.
+        Uses exponential backoff with jitter: 60s, 120s, 240s... ±15% jitter.
         """
         self.network_failures += 1
         self.total_network_errors += 1
         self.total_calls += 1
         if self.network_failures >= self.threshold:
-            self.open_until = time.time() + self.cooldown
+            # Exponential backoff: base * 2^(failure_count - threshold)
+            backoff_power = min(self.network_failures - self.threshold, 5)
+            base_cooldown = self.cooldown * (2 ** backoff_power)
+            # Cap at 10 minutes
+            base_cooldown = min(base_cooldown, 600)
+            # ±15% jitter to avoid thundering herd
+            jitter = base_cooldown * 0.15 * (random.random() * 2 - 1)
+            actual_cooldown = max(30, base_cooldown + jitter)
+            self.open_until = time.time() + actual_cooldown
             logger.warning(
-                f"Pine-facade circuit OPEN for {self.cooldown}s "
-                f"({self.network_failures} consecutive network failures)"
+                f"Pine-facade circuit OPEN for {actual_cooldown:.0f}s "
+                f"({self.network_failures} consecutive network failures, "
+                f"backoff power={backoff_power})"
             )
 
     def record_compiler_error(self) -> None:
@@ -850,12 +886,14 @@ def _get_facade_client() -> httpx.AsyncClient:
                 keepalive_expiry=30.0,
             ),
             headers={
+                "Origin": "https://www.tradingview.com",
                 "Referer": "https://www.tradingview.com/",
                 "User-Agent": (
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/138.0.0.0 Safari/537.36"
                 ),
+                "Accept": "application/json",
                 "DNT": "1",
             },
         )
@@ -866,13 +904,16 @@ def _shutdown_http_client():
     global _facade_http_client
     if _facade_http_client and not _facade_http_client.is_closed:
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        try:
             if loop.is_running():
                 loop.create_task(_facade_http_client.aclose())
             else:
                 loop.run_until_complete(_facade_http_client.aclose())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"HTTP shutdown error: {e}")
 
 
 atexit.register(_shutdown_http_client)
@@ -882,13 +923,18 @@ def _lookup_fix_hint(error_text: str) -> str:
     """Match an error message against known patterns and return a fix hint."""
     for pattern, hint in _FIX_HINTS.items():
         if pattern.lower() in error_text.lower():
+            # Resolve {name} placeholder in hint using identifier from error text
+            name_match = re.search(r"'([a-zA-Z_][a-zA-Z0-9_.]*)'", error_text)
+            if name_match:
+                hint = hint.replace("{name}", name_match.group(1))
+            else:
+                hint = hint.replace("{name}", "value")
             return hint
     return "Check the PineScript v6 reference for the correct syntax."
 
 
 def _extract_name_from_error(error_text: str) -> Optional[str]:
     """Extract a likely PineScript name from a compiler error message."""
-    import re
 
     # Pattern: "Undeclared identifier 'ta.supertrend'" → ta.supertrend
     m = re.search(r"'([a-zA-Z_][a-zA-Z0-9_.]*)'", error_text)
@@ -970,6 +1016,16 @@ def _normalize_facade_response(raw: dict) -> dict:
     raw_errors = result_obj.get("errors", []) if isinstance(result_obj, dict) else []
 
     def normalize_error(e: dict) -> dict:
+        text = e.get("text") or e.get("message") or e.get("msg") or str(e)
+        # TradingView pine-facade returns template variables like {kind}, {fullName},
+        # {funId}, {argDisplayName}, {argumentType}, {identifier}, etc.
+        # Step 1: Resolve from error object fields
+        for key, val in e.items():
+            if isinstance(val, (str, int, float)) and key not in ("line", "column", "col",
+                "lineNumber", "type", "severity", "start", "end"):
+                placeholder = f"{{{key}}}"
+                if placeholder in text:
+                    text = text.replace(placeholder, str(val))
         return {
             "line": e.get("line")
             or e.get("lineNumber")
@@ -977,7 +1033,7 @@ def _normalize_facade_response(raw: dict) -> dict:
             "column": e.get("column")
             or e.get("col")
             or e.get("start", {}).get("column", 0),
-            "text": e.get("text") or e.get("message") or e.get("msg") or str(e),
+            "text": text,
             "type": e.get("type") or "error",
         }
 
@@ -1004,8 +1060,60 @@ def _normalize_facade_response(raw: dict) -> dict:
     }
 
 
+def _enrich_error_with_code(errors: list[dict], code: str) -> list[dict]:
+    """Resolve remaining {placeholder} vars in error text using source code context."""
+    if not code:
+        return errors
+    code_lines = code.splitlines()
+    placeholder_re = re.compile(r"\{(\w+)\}")
+
+    for err in errors:
+        text = err.get("text", "")
+        if not placeholder_re.search(text):
+            continue
+
+        # Extract identifier/expression at error position from source code
+        line_num = err.get("line", 0)
+        col_num = err.get("column", 0)
+        ident = ""
+        line_text = ""
+        if isinstance(line_num, int) and 0 < line_num <= len(code_lines):
+            line_text = code_lines[line_num - 1]
+            if isinstance(col_num, int) and 0 < col_num <= len(line_text):
+                i = col_num - 1
+                while i < len(line_text) and (line_text[i].isalnum() or line_text[i] in "_."):
+                    ident += line_text[i]
+                    i += 1
+
+        # Resolve known placeholders using extracted context
+        replacements = {
+            "identifier": ident or "value",
+            "name": ident or "value",
+            "kind": "identifier",
+            "fullName": ident or "value",
+            "funId": ident or "function",
+            "funName": ident or "function",
+            "argDisplayName": ident or "argument",
+            "argUserFriendlyRepresentation": ident or "value",
+            "argumentType": "type",
+            "currentTypeDocStr": "expected type",
+            "typePostfix": "",
+            "scope": "scope",
+        }
+        for ph_key, ph_val in replacements.items():
+            text = text.replace(f"{{{ph_key}}}", ph_val)
+
+        # Catch any remaining unknown {placeholders}
+        text = placeholder_re.sub(lambda m: m.group(1), text)
+        err["text"] = text
+    return errors
+
+
 async def _call_pine_facade(code: str) -> dict:
     """POST code to pine-facade compiler. Returns normalized response dict.
+
+    Runs local Tier 1 linter first (instant), then attempts remote compile.
+    If remote fails, returns local linter results as fallback.
 
     Returns:
         {
@@ -1016,12 +1124,26 @@ async def _call_pine_facade(code: str) -> dict:
             "raw_response": dict
         }
     """
+    # Tier 1: Run local linter (instant, always available)
+    local_result = _pine_lint(code)
+
     if _pine_cb.is_open():
-        raise RuntimeError(
-            "Pine-facade compiler temporarily unavailable (circuit breaker open). "
-            f"Stats: {_pine_cb.stats()} "
-            "Validate manually at https://www.tradingview.com/pine-editor/"
-        )
+        # Remote unavailable — return local linter results as fallback
+        logger.info("Circuit breaker open, returning local linter results")
+        lint_dict = local_result.to_dict()
+        lint_dict["meta"]["fallback"] = "local_linter_tier1"
+        lint_dict["meta"]["note"] = "Remote compiler unavailable. Local linter catches ~50% of errors."
+        return lint_dict
+
+    # Guard: reject empty/whitespace-only code before sending to API
+    if not code or not code.strip():
+        return {
+            "success": False,
+            "errors": [{"line": 0, "column": 0, "text": "No code provided — empty source", "type": "error"}],
+            "warnings": [],
+            "meta": {},
+            "raw_response": {},
+        }
 
     cached = _get_cached_validation(code)
     if cached:
@@ -1036,25 +1158,40 @@ async def _call_pine_facade(code: str) -> dict:
             files={"source": (None, code)},
         )
 
+        if resp.status_code == 403:
+            # 403 is most likely anti-automation/auth rejection, not rate limiting.
+            logger.warning(
+                f"pine-facade 403 — headers: {dict(resp.headers)} | "
+                f"body: {resp.text[:200]}"
+            )
+            _pine_cb.record_network_failure()
+            # Return local linter results as fallback
+            lint_dict = local_result.to_dict()
+            lint_dict["meta"]["fallback"] = "local_linter_tier1"
+            lint_dict["meta"]["note"] = (
+                "Remote compiler returned HTTP 403 (access denied). "
+                "Showing local linter results — catches ~50% of common errors. "
+                "Validate in TradingView's Pine Editor for full compilation."
+            )
+            lint_dict["raw_response"] = {
+                "http_status": resp.status_code,
+                "body": resp.text[:200],
+            }
+            return lint_dict
+
         if resp.status_code in (502, 503, 504):
             _pine_cb.record_network_failure()
-            return {
-                "success": False,
-                "errors": [
-                    {
-                        "line": 0,
-                        "column": 0,
-                        "text": f"Pine-facade returned HTTP {resp.status_code}",
-                        "type": "network",
-                    }
-                ],
-                "warnings": [],
-                "meta": {},
-                "raw_response": {
-                    "http_status": resp.status_code,
-                    "body": resp.text[:200],
-                },
+            lint_dict = local_result.to_dict()
+            lint_dict["meta"]["fallback"] = "local_linter_tier1"
+            lint_dict["meta"]["note"] = (
+                f"Remote compiler returned HTTP {resp.status_code} (service unavailable). "
+                "Showing local linter results."
+            )
+            lint_dict["raw_response"] = {
+                "http_status": resp.status_code,
+                "body": resp.text[:200],
             }
+            return lint_dict
 
         if resp.status_code != 200:
             if resp.status_code in (400, 429):
@@ -1063,8 +1200,8 @@ async def _call_pine_facade(code: str) -> dict:
                     normalized = _normalize_facade_response(data)
                     _cache_validation(code, json.dumps(normalized))
                     return normalized
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Cache write failed: {e}")
             else:
                 _pine_cb.record_network_failure()
 
@@ -1128,36 +1265,24 @@ async def _call_pine_facade(code: str) -> dict:
     ) as e:
         _pine_cb.record_network_failure()
         logger.error(f"[_call_pine_facade] network error: {e}")
-        return {
-            "success": False,
-            "errors": [
-                {
-                    "line": 0,
-                    "column": 0,
-                    "text": f"Network error: {type(e).__name__}: {e}",
-                    "type": "network",
-                }
-            ],
-            "warnings": [],
-            "meta": {},
-            "raw_response": {"exception": str(e)},
-        }
+        lint_dict = local_result.to_dict()
+        lint_dict["meta"]["fallback"] = "local_linter_tier1"
+        lint_dict["meta"]["note"] = (
+            f"Remote compiler unreachable ({type(e).__name__}). "
+            "Showing local linter results — catches ~50% of common errors."
+        )
+        lint_dict["raw_response"] = {"exception": str(e)}
+        return lint_dict
     except Exception as e:
         logger.error(f"[_call_pine_facade] unexpected: {e}")
-        return {
-            "success": False,
-            "errors": [
-                {
-                    "line": 0,
-                    "column": 0,
-                    "text": f"Unexpected error: {type(e).__name__}: {e}",
-                    "type": "internal",
-                }
-            ],
-            "warnings": [],
-            "meta": {},
-            "raw_response": {"exception": str(e)},
-        }
+        lint_dict = local_result.to_dict()
+        lint_dict["meta"]["fallback"] = "local_linter_tier1"
+        lint_dict["meta"]["note"] = (
+            f"Remote compiler error ({type(e).__name__}). "
+            "Showing local linter results."
+        )
+        lint_dict["raw_response"] = {"exception": str(e)}
+        return lint_dict
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1257,8 +1382,8 @@ async def build_hot_cache() -> bool:
                         "metadata": result["metadatas"][0],
                     }
                     count += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Hot cache load failed for '{name}': {e}")
 
         logger.info(f"Hot cache ready: {count} entries loaded into memory")
         return True
@@ -1296,183 +1421,16 @@ async def _ensure_hot_cache():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Pydantic input models
+# Tool parameter helpers (strip/normalize applied inline in each tool)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _norm_name(name: str) -> str:
+    """Normalize entry name: strip whitespace and trailing parens."""
+    return name.strip().rstrip("()")
 
-class SearchQuery(BaseModel):
-    query: str = Field(
-        ...,
-        min_length=1,
-        max_length=500,
-        description="Natural language or code query about PineScript v6",
-    )
-    n_results: int = Field(
-        default=5, ge=1, le=30, description="Number of results (1-30, default 5)"
-    )
-    source_filter: str | None = Field(
-        default=None, description="'live', 'local', or None (both)"
-    )
-    category_filter: str | None = Field(
-        default=None, description="'function','variable','type',etc."
-    )
-    namespace_filter: str | None = Field(
-        default=None, description="Namespace e.g. 'ta', 'strategy'"
-    )
-
-    @field_validator("query")
-    @classmethod
-    def strip_query(cls, v: str) -> str:
-        return v.strip()
-
-
-class EntryLookup(BaseModel):
-    name: str = Field(
-        ...,
-        min_length=1,
-        max_length=200,
-        description="Entry name e.g. 'ta.ema', 'close', 'array'",
-    )
-
-    @field_validator("name")
-    @classmethod
-    def normalize_name(cls, v: str) -> str:
-        return v.strip().rstrip("()")
-
-
-class NamespaceLookup(BaseModel):
-    namespace: str = Field(
-        ..., min_length=1, max_length=50, description="Namespace e.g. 'ta', 'strategy'"
-    )
-    category_filter: str | None = Field(
-        default=None, description="Optional category filter"
-    )
-
-    @field_validator("namespace")
-    @classmethod
-    def normalize_ns(cls, v: str) -> str:
-        return v.strip().lower().rstrip(".")
-
-
-class ReturnTypeLookup(BaseModel):
-    return_type: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        description="Return type e.g. 'series float', 'line'",
-    )
-    n_results: int = Field(default=10, ge=1, le=50)
-
-    @field_validator("return_type")
-    @classmethod
-    def strip_rt(cls, v: str) -> str:
-        return v.strip()
-
-
-class CodeInput(BaseModel):
-    code: str = Field(
-        ...,
-        min_length=1,
-        max_length=50000,
-        description="Complete PineScript v6 source code to validate",
-    )
-
-    @field_validator("code")
-    @classmethod
-    def strip_code(cls, v: str) -> str:
-        return v.strip()
-
-
-class CodeFixInput(BaseModel):
-    code: str = Field(
-        ...,
-        min_length=1,
-        max_length=50000,
-        description="The failing PineScript v6 code",
-    )
-    error_description: str = Field(
-        ...,
-        min_length=1,
-        max_length=500,
-        description="The error message or what's wrong",
-    )
-
-    @field_validator("code")
-    @classmethod
-    def strip_code(cls, v: str) -> str:
-        return v.strip()
-
-    @field_validator("error_description")
-    @classmethod
-    def strip_desc(cls, v: str) -> str:
-        return v.strip()
-
-
-class IndicatorGenInput(BaseModel):
-    name: str = Field(
-        ..., min_length=1, max_length=100, description="Indicator display name"
-    )
-    description: str = Field(
-        default="", max_length=500, description="What the indicator calculates"
-    )
-    inputs: str | None = Field(
-        default=None,
-        description="Comma-separated input descriptions, e.g. 'length=14,src=close,mult=2.0'",
-    )
-    overlay: bool = Field(
-        default=False, description="True if indicator overlays the price chart"
-    )
-
-
-class StrategyGenInput(BaseModel):
-    name: str = Field(
-        ..., min_length=1, max_length=100, description="Strategy display name"
-    )
-    description: str = Field(
-        default="", max_length=500, description="What the strategy does"
-    )
-    initial_capital: int = Field(default=10000, ge=1, le=1000000)
-    commission_pct: float = Field(default=0.1, ge=0.0, le=1.0)
-    pyramiding: int = Field(default=1, ge=1, le=10)
-
-
-class SuggestFunctionsInput(BaseModel):
-    context: str = Field(
-        ...,
-        min_length=1,
-        max_length=500,
-        description="What you're trying to accomplish",
-    )
-    current_line: str | None = Field(
-        default=None,
-        max_length=200,
-        description="The current line being written (optional)",
-    )
-    n_results: int = Field(default=8, ge=1, le=20)
-
-
-class ExamplesQuery(BaseModel):
-    query: str = Field(
-        ...,
-        min_length=1,
-        max_length=500,
-        description="Concept to find code examples for",
-    )
-    n_results: int = Field(
-        default=4, ge=1, le=20, description="Number of examples to return"
-    )
-
-
-class FreshnessCheck(BaseModel):
-    namespace: Optional[str] = Field(
-        default=None, max_length=50, description="Namespace to filter (e.g. 'ta')"
-    )
-
-
-class CheatsheetLookup(BaseModel):
-    namespace: str = Field(
-        ..., min_length=1, max_length=50, description="Namespace e.g. 'ta', 'strategy'"
-    )
+def _norm_ns(ns: str) -> str:
+    """Normalize namespace: strip, lowercase, remove trailing dot."""
+    return ns.strip().lower().rstrip(".")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1481,7 +1439,27 @@ class CheatsheetLookup(BaseModel):
 
 
 @mcp.tool
-async def search_docs(params: SearchQuery) -> str:
+async def search_docs(
+    query: Annotated[str, Field(
+        min_length=1,
+        max_length=500,
+        description="Natural language or code query about PineScript v6",
+    )],
+    n_results: Annotated[int, Field(
+        default=5,
+        ge=1,
+        le=30,
+        description="Number of results (1-30, default 5)",
+    )] = 5,
+    category_filter: Annotated[str | None, Field(
+        default=None,
+        description="'function','variable','type',etc.",
+    )] = None,
+    namespace_filter: Annotated[str | None, Field(
+        default=None,
+        description="Namespace e.g. 'ta', 'strategy'",
+    )] = None,
+) -> str:
     """
     Semantic search across the complete PineScript v6 knowledge base.
     Searches functions, variables, types, constants, keywords, and operators.
@@ -1489,17 +1467,17 @@ async def search_docs(params: SearchQuery) -> str:
     Args:
         query: Natural language or code query about PineScript v6
         n_results: Number of results (1-30, default 5)
-        source_filter: 'live', 'local', or None (both)
         category_filter: Filter by entry type ('function','variable',etc.)
         namespace_filter: Filter by namespace (e.g. 'ta', 'strategy')
     """
     try:
+        query = query.strip()
         await _ensure_hot_cache()
         where_clauses: list[dict] = []
-        if params.category_filter:
-            where_clauses.append({"category": params.category_filter})
-        if params.namespace_filter:
-            where_clauses.append({"namespace": params.namespace_filter})
+        if category_filter:
+            where_clauses.append({"category": category_filter})
+        if namespace_filter:
+            where_clauses.append({"namespace": namespace_filter})
 
         where: Optional[dict] = None
         if len(where_clauses) == 1:
@@ -1507,36 +1485,10 @@ async def search_docs(params: SearchQuery) -> str:
         elif len(where_clauses) > 1:
             where = {"$and": where_clauses}
 
-        # H1: Fetch 3x results if source_filter active (Python-side filter)
-        fetch_n = params.n_results * 3 if params.source_filter else params.n_results
-        results = _query(params.query, fetch_n, where=where)
-
-        # Python-side source filtering (handles multi-value source strings)
-        if params.source_filter and results["ids"] and results["ids"][0]:
-            filter_val = (
-                "tradingview_live"
-                if params.source_filter == "live"
-                else "local_docs"
-            )
-            filtered = list(
-                zip(
-                    results["documents"][0],
-                    results["metadatas"][0],
-                    results["distances"][0],
-                )
-            )
-            filtered = [
-                (doc, meta, dist)
-                for doc, meta, dist in filtered
-                if filter_val in (meta.get("sources") or "")
-            ]
-            cap = params.n_results
-            results["documents"] = [[x[0] for x in filtered[:cap]]]
-            results["metadatas"] = [[x[1] for x in filtered[:cap]]]
-            results["distances"] = [[x[2] for x in filtered[:cap]]]
+        results = _query(query, n_results, where=where)
 
         if not results["ids"] or not results["ids"][0]:
-            return _error("search_docs", f"No results for '{params.query}'")
+            return _error("search_docs", f"No results for '{query}'")
 
         # FIX 4: Add content-based deduplication
         seen_hashes = set()
@@ -1571,13 +1523,10 @@ async def search_docs(params: SearchQuery) -> str:
             )
             rel = _relevance_pct(dist)
             tag = _source_tag(meta)
-            url = meta.get("url", "")
 
             output_lines.append(_DIVIDER)
             output_lines.append(f"[{i + 1}] {ns}{name} | {category} | Relevance: {rel}")
             output_lines.append(f"  {tag}")
-            if url:
-                output_lines.append(f"  URL: {url}")
 
             desc = meta.get("raw_description", "")
             if desc:
@@ -1604,7 +1553,7 @@ async def search_docs(params: SearchQuery) -> str:
 
     except Exception as e:
         logger.error(f"[search_docs] {e}")
-        if "ChromaDB" in str(e) or _db_failure_count >= _DB_FAILURE_LIMIT:
+        if "ChromaDB" in str(e) or _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("search_docs", _safe_error(e, "search_docs"))
 
@@ -1702,7 +1651,7 @@ async def _lookup_entry(name: str, category: str) -> str:
 
     except Exception as e:
         logger.error(f"[_lookup_entry] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error(category, str(e))
 
@@ -1713,7 +1662,13 @@ async def _lookup_entry(name: str, category: str) -> str:
 
 
 @mcp.tool
-async def get_function(params: EntryLookup) -> str:
+async def get_function(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=200,
+        description="Entry name e.g. 'ta.ema', 'close', 'array'",
+    )],
+) -> str:
     """
     Get complete documentation for a PineScript v6 function.
     Returns all overloads, every parameter with type and description,
@@ -1723,20 +1678,21 @@ async def get_function(params: EntryLookup) -> str:
     Example: get_function("ta.ema"), get_function("strategy.entry")
     """
     try:
+        name = _norm_name(name)
         await _ensure_hot_cache()
         # Step 0: Check hot cache first (sub-ms for priority entries)
-        cached = cache_lookup(params.name)
+        cached = cache_lookup(name)
         if cached and cached["metadata"].get("category") == "function":
             result = _format_entry_detail(
-                cached["metadata"].get("name", params.name),
+                cached["metadata"].get("name", name),
                 cached["metadata"],
                 cached["document"],
             )
             return result
 
         # BUG FIX: For function lookups, always try exact match with category=function first
-        name_lower = params.name.lower().strip()
-        
+        name_lower = name.lower().strip()
+
         # Try exact function match first
         try:
             col = _get_collection()
@@ -1751,19 +1707,19 @@ async def get_function(params: EntryLookup) -> str:
                 best_meta = exact_func["metadatas"][0]
                 best_doc = exact_func["documents"][0]
                 return _format_entry_detail(
-                    best_meta.get("name", params.name),
+                    best_meta.get("name", name),
                     best_meta,
                     best_doc
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Exact function match failed: {e}")
 
         # Fall back to the general lookup
-        return await _lookup_entry(params.name, "function")
+        return await _lookup_entry(name, "function")
 
     except Exception as e:
         logger.error(f"[get_function] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("function", _safe_error(e, "get_function"))
 
@@ -1774,13 +1730,25 @@ async def get_function(params: EntryLookup) -> str:
 
 
 @mcp.tool
-async def get_variable(params: EntryLookup) -> str:
+async def get_variable(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=200,
+        description="Entry name e.g. 'ta.ema', 'close', 'array'",
+    )],
+) -> str:
     """
     Get documentation for a PineScript v6 built-in variable.
     Built-in variables: close, open, high, low, volume, time,
     bar_index, barstate.*, syminfo.*, strategy.*, etc.
     """
-    return await _lookup_entry(params.name, "variable")
+    try:
+        return await _lookup_entry(_norm_name(name), "variable")
+    except Exception as e:
+        logger.error(f"[get_variable] {e}")
+        if _chroma_breaker.is_open():
+            return _circuit_breaker_msg()
+        return _error("variable", _safe_error(e, "get_variable"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1789,19 +1757,26 @@ async def get_variable(params: EntryLookup) -> str:
 
 
 @mcp.tool
-async def get_type(params: EntryLookup) -> str:
+async def get_type(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=200,
+        description="Entry name e.g. 'ta.ema', 'close', 'array'",
+    )],
+) -> str:
     """
     Get documentation for a PineScript v6 type.
     Types: array, matrix, map, line, label, box, table, polyline,
     color, string, int, float, bool, and user-defined types.
     """
     try:
+        name = _norm_name(name)
         await _ensure_hot_cache()
         # Step 0: Check hot cache first (sub-ms for priority entries)
-        cached = cache_lookup(params.name)
+        cached = cache_lookup(name)
         if cached and cached["metadata"].get("category") == "type":
             result = _format_entry_detail(
-                cached["metadata"].get("name", params.name),
+                cached["metadata"].get("name", name),
                 cached["metadata"],
                 cached["document"],
             )
@@ -1809,7 +1784,7 @@ async def get_type(params: EntryLookup) -> str:
 
         # Filter by category="type" — never return function entries
         col = _get_collection()
-        name_lower = params.name.lower().strip()
+        name_lower = name.lower().strip()
 
         # Always filter by category="type" — never return function entries
         try:
@@ -1824,12 +1799,12 @@ async def get_type(params: EntryLookup) -> str:
                 best_meta = result["metadatas"][0]
                 best_doc = result["documents"][0]
                 return _format_entry_detail(
-                    best_meta.get("name", params.name),
+                    best_meta.get("name", name),
                     best_meta,
                     best_doc
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Exact type match failed: {e}")
 
         # Semantic fallback — still enforce category filter
         results = _query(
@@ -1842,21 +1817,21 @@ async def get_type(params: EntryLookup) -> str:
             top_doc = results["documents"][0][0]
             top_dist = results["distances"][0][0]
             return _format_entry_detail(
-                top_meta.get("name", params.name),
+                top_meta.get("name", name),
                 top_meta,
                 top_doc,
                 top_dist
             )
 
         return (
-            f"Type '{params.name}' not found in docs.\n"
+            f"Type '{name}' not found in docs.\n"
             f"Available types: array, matrix, map, line, label, "
             f"box, table, polyline, color, string, int, float, bool"
         )
 
     except Exception as e:
         logger.error(f"[get_type] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("type", _safe_error(e, "get_type"))
 
@@ -1867,13 +1842,25 @@ async def get_type(params: EntryLookup) -> str:
 
 
 @mcp.tool
-async def get_constant(params: EntryLookup) -> str:
+async def get_constant(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=200,
+        description="Entry name e.g. 'ta.ema', 'close', 'array'",
+    )],
+) -> str:
     """
     Get documentation for a PineScript v6 built-in constant.
     Examples: color.red, strategy.long, order.ascending,
     shape.circle, location.top, etc.
     """
-    return await _lookup_entry(params.name, "constant")
+    try:
+        return await _lookup_entry(_norm_name(name), "constant")
+    except Exception as e:
+        logger.error(f"[get_constant] {e}")
+        if _chroma_breaker.is_open():
+            return _circuit_breaker_msg()
+        return _error("constant", _safe_error(e, "get_constant"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1882,13 +1869,25 @@ async def get_constant(params: EntryLookup) -> str:
 
 
 @mcp.tool
-async def get_keyword(params: EntryLookup) -> str:
+async def get_keyword(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=200,
+        description="Entry name e.g. 'ta.ema', 'close', 'array'",
+    )],
+) -> str:
     """
     Get documentation for a PineScript v6 keyword.
     Keywords: if, for, while, switch, var, varip, type, method,
     import, export, and, or, not, true, false, etc.
     """
-    return await _lookup_entry(params.name, "keyword")
+    try:
+        return await _lookup_entry(_norm_name(name), "keyword")
+    except Exception as e:
+        logger.error(f"[get_keyword] {e}")
+        if _chroma_breaker.is_open():
+            return _circuit_breaker_msg()
+        return _error("keyword", _safe_error(e, "get_keyword"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1897,13 +1896,25 @@ async def get_keyword(params: EntryLookup) -> str:
 
 
 @mcp.tool
-async def get_operator(params: EntryLookup) -> str:
+async def get_operator(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=200,
+        description="Entry name e.g. 'ta.ema', 'close', 'array'",
+    )],
+) -> str:
     """
     Get documentation for a PineScript v6 operator.
     Operators: :=, +=, -=, *=, /=, %=, ==, !=, >, <, >=, <=,
     ?, =>, +, -, *, /, %, not, and, or, [], etc.
     """
-    return await _lookup_entry(params.name, "operator")
+    try:
+        return await _lookup_entry(_norm_name(name), "operator")
+    except Exception as e:
+        logger.error(f"[get_operator] {e}")
+        if _chroma_breaker.is_open():
+            return _circuit_breaker_msg()
+        return _error("operator", _safe_error(e, "get_operator"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1912,7 +1923,19 @@ async def get_operator(params: EntryLookup) -> str:
 
 
 @mcp.tool
-async def get_examples(params: ExamplesQuery) -> str:
+async def get_examples(
+    query: Annotated[str, Field(
+        min_length=1,
+        max_length=500,
+        description="Concept to find code examples for",
+    )],
+    n_results: Annotated[int, Field(
+        default=4,
+        ge=1,
+        le=20,
+        description="Number of examples to return",
+    )] = 4,
+) -> str:
     """
     Find real PineScript v6 code examples by concept.
     Returns complete, runnable code blocks from the official docs.
@@ -1921,9 +1944,10 @@ async def get_examples(params: ExamplesQuery) -> str:
              "array iteration example", "drawing lines example"
     """
     try:
-        results = _query(params.query, params.n_results, where={"has_examples": 1})
+        query = query.strip()
+        results = _query(query, n_results, where={"has_examples": 1})
         if not results["ids"] or not results["ids"][0]:
-            return _error("get_examples", f"No examples found for '{params.query}'")
+            return _error("get_examples", f"No examples found for '{query}'")
 
         output_lines: list[str] = []
         for i, (meta, doc, dist) in enumerate(
@@ -1961,7 +1985,7 @@ async def get_examples(params: ExamplesQuery) -> str:
 
     except Exception as e:
         logger.error(f"[get_examples] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("get_examples", _safe_error(e, "get_examples"))
 
@@ -1972,7 +1996,17 @@ async def get_examples(params: ExamplesQuery) -> str:
 
 
 @mcp.tool
-async def list_namespace(params: NamespaceLookup) -> str:
+async def list_namespace(
+    namespace: Annotated[str, Field(
+        min_length=1,
+        max_length=50,
+        description="Namespace e.g. 'ta', 'strategy'",
+    )],
+    category_filter: Annotated[str | None, Field(
+        default=None,
+        description="Optional category filter",
+    )] = None,
+) -> str:
     """
     List ALL members of a PineScript v6 namespace.
     Returns every function, variable, and constant in the namespace
@@ -1983,14 +2017,14 @@ async def list_namespace(params: NamespaceLookup) -> str:
     syminfo, input, runtime, polyline (and 'global' for un-namespaced)
     """
     try:
-        ns = params.namespace
+        ns = _norm_ns(namespace)
         if ns.lower() == "global":
             where: Optional[dict] = {"namespace": ""}
         else:
             where = {"namespace": ns}
 
-        if params.category_filter:
-            where["category"] = params.category_filter
+        if category_filter:
+            where["category"] = category_filter
 
         entries = _get_all_where(where)
         if not entries:
@@ -2046,7 +2080,7 @@ async def list_namespace(params: NamespaceLookup) -> str:
 
     except Exception as e:
         logger.error(f"[list_namespace] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("list_namespace", _safe_error(e, "list_namespace"))
 
@@ -2057,7 +2091,19 @@ async def list_namespace(params: NamespaceLookup) -> str:
 
 
 @mcp.tool
-async def search_by_return_type(params: ReturnTypeLookup) -> str:
+async def search_by_return_type(
+    return_type: Annotated[str, Field(
+        min_length=1,
+        max_length=100,
+        description="Return type e.g. 'series float', 'line', 'array<int>'",
+    )],
+    n_results: Annotated[int, Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Number of results (1-50, default 10)",
+    )] = 10,
+) -> str:
     """
     Find all PineScript v6 functions that return a specific type.
     Useful when you know what type you need but not which function to use.
@@ -2067,42 +2113,43 @@ async def search_by_return_type(params: ReturnTypeLookup) -> str:
               search_by_return_type("array<int>")
     """
     try:
+        return_type = return_type.strip()
         # Filter by return type metadata, fall back to semantic if empty
         where = {"category": "function"}
         # Only add returns filter if it's likely to have matches
-        ret_filter = {"returns": {"$contains": params.return_type}}
+        ret_filter = {"returns": {"$contains": return_type}}
         try:
             # Test if the filter returns results
             probe = _get_collection().get(
                 where={
                     "category": "function",
-                    "returns": {"$contains": params.return_type},
+                    "returns": {"$contains": return_type},
                 },
                 include=["documents"],
                 limit=1,
             )
             if probe["ids"]:
                 where = {"$and": [{"category": "function"}, ret_filter]}
-        except Exception:
-            pass
-        results = _query(params.return_type, params.n_results, where=where)
+        except Exception as e:
+            logger.debug(f"Return type probe failed: {e}")
+        results = _query(return_type, n_results, where=where)
 
         if not results["ids"] or not results["ids"][0]:
             # Fallback: semantic search with category filter only
             results = _query(
-                f"functions returning {params.return_type}",
-                params.n_results,
+                f"functions returning {return_type}",
+                n_results,
                 where={"category": "function"},
             )
 
         if not results["ids"] or not results["ids"][0]:
             return _error(
                 "search_by_return_type",
-                f"No functions found returning '{params.return_type}'",
+                f"No functions found returning '{return_type}'",
             )
 
         output_lines: list[str] = []
-        output_lines.append(f"Functions returning '{params.return_type}':")
+        output_lines.append(f"Functions returning '{return_type}':")
         output_lines.append("")
 
         for i, (meta, doc, dist) in enumerate(
@@ -2141,585 +2188,24 @@ async def search_by_return_type(params: ReturnTypeLookup) -> str:
 
     except Exception as e:
         logger.error(f"[search_by_return_type] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("search_by_return_type", _safe_error(e, "search_by_return_type"))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Live data tools — require httpx
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _name_to_fragment(name: str) -> str:
-    """Guess the TradingView fragment ID from an entry name."""
-    name = name.strip().rstrip("()")
-
-    # Known variable names
-    var_names = {
-        "close",
-        "open",
-        "high",
-        "low",
-        "volume",
-        "time",
-        "bar_index",
-        "last_bar_index",
-        "timeframe.period",
-        "timeframe.isdaily",
-        "timeframe.isminutes",
-        "timeframe.isseconds",
-        "timeframe.intraday",
-        "timeframe.intraday_bar_index",
-        "syminfo.ticker",
-        "syminfo.tickerid",
-        "syminfo.prefix",
-        "syminfo.type",
-        "syminfo.description",
-        "syminfo.root",
-        "syminfo.mintick",
-        "syminfo.pointvalue",
-        "syminfo.session",
-        "syminfo.timezone",
-        "syminfo.currency",
-        "strategy",
-        "strategy.equity",
-        "strategy.netprofit",
-        "strategy.openprofit",
-        "strategy.position_size",
-        "strategy.position_avg_price",
-        "strategy.long",
-        "strategy.short",
-        "strategy.closedtrades",
-        "strategy.openorders",
-        "strategy.direction",
-    }
-
-    lower = name.lower()
-    if (
-        lower in var_names
-        or lower.startswith("barstate.")
-        or lower.startswith("syminfo.")
-    ):
-        return f"var_{name}"
-    if lower.startswith("color."):
-        return f"const_{name}"
-    known_types = {
-        "array",
-        "matrix",
-        "map",
-        "line",
-        "label",
-        "box",
-        "table",
-        "polyline",
-        "chart.point",
-        "chart.bg",
-        "chart.line",
-        "chart.box",
-        "chart.label",
-        "chart.table",
-        "chart.polyline",
-    }
-    if lower in known_types:
-        return f"type_{name}"
-    if lower in (
-        "if",
-        "for",
-        "while",
-        "switch",
-        "var",
-        "varip",
-        "type",
-        "method",
-        "import",
-        "export",
-        "true",
-        "false",
-        "na",
-    ):
-        return f"kw_{name}"
-
-    # Default: assume function
-    return f"fun_{name}"
-
-
-async def _fetch_live(name: str) -> Optional[str]:
-    """Fetch live HTML from TradingView for an entry using Playwright for JS rendering."""
-    try:
-        import subprocess
-        import tempfile
-        import os
-
-        fragment = _name_to_fragment(name)
-
-        # Create a Playwright script that renders the page and extracts the entry
-        script = f"""
-import asyncio
-from playwright.async_api import async_playwright
-
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto("https://www.tradingview.com/pine-script-reference/v6/", wait_until="networkidle", timeout=30000)
-        # Wait for content to render
-        await page.wait_for_timeout(3000)
-        # Try to find the element by fragment ID
-        element = await page.query_selector('#{fragment}')
-        if not element:
-            # Try finding by data-fragment or class
-            element = await page.query_selector('[data-fragment="{fragment}"]')
-        if not element:
-            # Try the parent container
-            element = await page.query_selector('.tv-pine-reference-item--active')
-        html = ""
-        if element:
-            html = await element.evaluate('el => el.outerHTML')
-        else:
-            # Get full page content for fallback parsing
-            html = await page.content()
-        await browser.close()
-        print(html)
-
-asyncio.run(main())
-"""
-        # Write script to temp file and execute
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-            f.write(script)
-            script_path = f.name
-
-        try:
-            result = subprocess.run(
-                ['python3', script_path],
-                capture_output=True, text=True, timeout=45,
-                cwd=os.path.dirname(os.path.abspath(__file__))
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-            return None
-        except Exception:
-            return None
-        finally:
-            os.unlink(script_path)
-    except Exception as e:
-        logger.error(f"[_fetch_live] {e}")
-        return None
-
-
-def _parse_live_html(html: str, name: str) -> str:
-    """Parse what we can from TradingView static HTML."""
-    try:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html, "lxml")
-
-        # Try to find the entry section
-        fragment = _name_to_fragment(name)
-        target = soup.find(id=fragment)
-        if not target:
-            # Try finding by text content
-            target = soup.find(string=lambda t: t and name in t)
-
-        lines: list[str] = []
-        lines.append(f"{_BOX_TL}{_BOX_H * 60}{_BOX_TR}")
-        lines.append(f"{_BOX_V} LIVE FETCH: {name}")
-        lines.append(f"{_BOX_V} URL: {TV_BASE_URL}#{fragment}")
-        lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-
-        if target:
-            parent = target.parent if hasattr(target, "parent") else None
-            if parent:
-                text = parent.get_text(separator="\n", strip=True)
-                for line in text.splitlines()[:50]:
-                    lines.append(f"{_BOX_V} {line}")
-        else:
-            lines.append(
-                _section_line(
-                    "Could not locate entry in static HTML. "
-                    "TradingView is a JavaScript SPA — use the URL for full docs."
-                )
-            )
-
-        lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-        lines.append(
-            _section_line(
-                "Note: Live fetch uses static HTML. TradingView is a JS SPA — "
-                "some dynamic content may be incomplete."
-            )
-        )
-        lines.append(_section_line(f"Full docs: {TV_BASE_URL}#{fragment}"))
-        lines.append(f"{_BOX_BL}{_BOX_H * 60}{_BOX_BR}")
-        return "\n".join(lines)
-
-    except Exception as e:
-        logger.error(f"[_parse_live_html] {e}")
-        return f"Error parsing live HTML: {e}"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 11: get_live_entry
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@mcp.tool
-async def get_live_entry(params: EntryLookup) -> str:
-    """
-    Fetch the CURRENT live documentation from TradingView for any entry.
-    This bypasses the indexed database and scrapes TradingView in real-time.
-    Use when you need guaranteed up-to-date information.
-
-    Note: Slightly slower than other tools (live HTTP request).
-    """
-    try:
-        html = await _get_live_entry_cached(params.name)
-        if html:
-            return _parse_live_html(html, params.name)
-        
-        # FIX 7: Better fallback message
-        fragment = _name_to_fragment(params.name)
-        url = f"{TV_BASE_URL}#{fragment}"
-        
-        # Try local DB first
-        try:
-            db_result = await _lookup_entry(params.name, "function")
-            return (
-                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
-                f"that requires browser rendering.\n\n"
-                f"LOCAL DB RESULT:\n{db_result}\n\n"
-                f"Official docs URL (open in browser):\n{url}"
-            )
-        except:
-            return (
-                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
-                f"that requires browser rendering.\n\n"
-                f"Official docs URL (open in browser):\n{url}"
-            )
-        
-    except Exception as e:
-        # FIX 7: Better fallback message
-        fragment = _name_to_fragment(params.name)
-        url = f"{TV_BASE_URL}#{fragment}"
-        
-        try:
-            db_result = await _lookup_entry(params.name, "function")
-            return (
-                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
-                f"that requires browser rendering.\n\n"
-                f"LOCAL DB RESULT:\n{db_result}\n\n"
-                f"Official docs URL (open in browser):\n{url}"
-            )
-        except:
-            return (
-                f"⚠️  Live fetch failed: TradingView uses a JavaScript SPA "
-                f"that requires browser rendering.\n\n"
-                f"Official docs URL (open in browser):\n{url}"
-            )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 12: get_source_url
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@mcp.tool
-async def get_source_url(params: EntryLookup) -> str:
-    """
-    Get the direct TradingView documentation URL for any PineScript entry.
-    Returns the URL even if the entry is not in the database.
-    """
-    try:
-        name_clean = params.name.strip()
-        name_lower = name_clean.lower()
-
-        BASE = "https://www.tradingview.com/pine-script-reference/v6/"
-
-        # Construct URL from entry category (more reliable than stored metadata)
-        try:
-            results = _search_by_name(name_lower)
-
-            if results:
-                best_sim, best_entry = results[0]
-                meta = best_entry.get("metadata", {})
-                etype = meta.get("category", "")
-
-                # Build anchor deterministically from name + type
-                # TradingView anchor format:
-                #   functions:  #fun_{name}    e.g. #fun_ta.ema
-                #   variables:  #var_{name}    e.g. #var_close
-                #   constants:  #const_{name}  e.g. #const_color.red
-                #   types:      #type_{name}   e.g. #type_array
-                #   keywords:   #kw_{name}     e.g. #kw_if
-                #   operators:  #op_{name}
-                anchor_prefix = {
-                    "function": "fun",
-                    "variable": "var",
-                    "constant": "const",
-                    "type": "type",
-                    "keyword": "kw",
-                    "operator": "op",
-                }.get(etype, "fun")   # default to function
-
-                # Use stored name from metadata (most accurate)
-                anchor_name = meta.get("name", name_lower).replace(" ", "_")
-                url = f"{BASE}#{anchor_prefix}_{anchor_name}"
-
-                # Fallback: check if stored URL exists and seems correct
-                stored_url = meta.get("url", "")
-                if (stored_url and
-                    stored_url.startswith(BASE) and
-                    anchor_name in stored_url):
-                    url = stored_url   # stored URL is correct, use it
-
-                return f"{name_clean} URL: {url}"
-
-        except Exception:
-            pass
-
-        # Fallback: construct best-guess URL
-        anchor_name = name_lower.replace(" ", "_")
-        return f"{name_clean} URL: {BASE}#fun_{anchor_name}"
-
-    except Exception as e:
-        # Fallback URL construction even on error
-        BASE = "https://www.tradingview.com/pine-script-reference/v6/"
-        anchor_name = params.name.strip().lower().replace(" ", "_")
-        return f"{params.name} URL: {BASE}#fun_{anchor_name}"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 13: diff_entry
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@mcp.tool
-async def diff_entry(params: EntryLookup) -> str:
-    """
-    Compare the indexed documentation vs the current live TradingView page.
-    Shows what has changed since the database was last indexed.
-    Useful to detect new parameters, updated descriptions, new examples.
-    """
-    try:
-        # Get indexed entry
-        candidates = _search_by_name(params.name)
-        if not candidates or candidates[0][0] < 70:
-            return _error("diff_entry", f"'{params.name}' not found in database")
-
-        indexed = candidates[0][1]
-        indexed_meta = indexed["metadata"]
-
-        # Fetch live — failure is non-fatal (preserve indexed data)
-        html = await _get_live_entry_cached(params.name)
-        if not html:
-            fragment = _name_to_fragment(params.name)
-            return (
-                f"LOCAL ENTRY: {params.name}\n"
-                f"Indexed: {indexed_meta.get('scraped_at', 'unknown')}\n"
-                f"Source: {indexed_meta.get('sources', 'unknown')}\n\n"
-                f"[Live fetch unavailable — showing local data only]\n"
-                f"Visit manually: {TV_BASE_URL}#{fragment}"
-            )
-
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html, "lxml")
-
-        lines: list[str] = []
-        lines.append(f"{_BOX_TL}{_BOX_H * 60}{_BOX_TR}")
-        lines.append(f"{_BOX_V} DIFF: {params.name} (Indexed vs Live)")
-        lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-
-        # Compare fields
-        indexed_desc = indexed_meta.get("raw_description", "")
-        live_text = soup.get_text(separator="\n", strip=True)
-        has_name_in_live = params.name.lower() in live_text.lower()
-
-        # Description
-        lines.append(_section_line("DESCRIPTION"))
-        if indexed_desc:
-            desc_len = len(indexed_desc)
-            lines.append(_section_line(f"  Indexed: {desc_len} chars"))
-        else:
-            lines.append(_section_line("  Indexed: (none)"))
-
-        if has_name_in_live:
-            lines.append(_section_line("  Live: entry found on page"))
-        else:
-            lines.append(_section_line("  Live: entry may not be in static HTML"))
-
-        # Parameters
-        param_count = indexed_meta.get("param_count", 0)
-        lines.append(_section_line("PARAMETERS"))
-        lines.append(_section_line(f"  Indexed: {param_count}"))
-
-        # Examples
-        ex_count = indexed_meta.get("example_count", 0)
-        lines.append(_section_line("EXAMPLES"))
-        lines.append(_section_line(f"  Indexed: {ex_count}"))
-
-        # Syntax
-        syntax = indexed_meta.get("syntax", "")
-        lines.append(_section_line("SYNTAX"))
-        lines.append(_section_line(f"  Indexed: {syntax[:80] if syntax else '(none)'}"))
-
-        # Source and timestamp
-        scraped_at = indexed_meta.get("scraped_at", "")
-        sources = indexed_meta.get("sources", "")
-        lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-        lines.append(_section_line(f"INDEXED DATA:"))
-        lines.append(_section_line(f"  Sources: {sources}"))
-        lines.append(_section_line(f"  Scraped at: {scraped_at or 'unknown'}"))
-        lines.append(
-            _section_line(
-                "  Note: Full diff requires JavaScript rendering. "
-                "Use get_live_entry() for a fresh live fetch."
-            )
-        )
-        lines.append(f"{_BOX_BL}{_BOX_H * 60}{_BOX_BR}")
-
-        return "\n".join(lines)
-
-    except Exception as e:
-        logger.error(f"[diff_entry] {e}")
-        return _error("diff_entry", _safe_error(e, "diff_entry"))
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 14: check_freshness
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@mcp.tool
-async def check_freshness(params: FreshnessCheck = FreshnessCheck()) -> str:
-    """
-    Show which PineScript v6 entries have live TradingView data
-    versus local docs only. Helps identify gaps in coverage.
-    Optionally filter by namespace.
-    """
-    try:
-        namespace = params.namespace
-        ns = namespace.lower().strip() if namespace else ""
-
-        # Fetch entries
-        if ns:
-            if ns == "global":
-                where_ns = {"namespace": ""}
-            else:
-                where_ns = {"namespace": ns}
-            entries_ns = _get_all_where(where_ns)
-
-            # Also query by name prefix (catches PDF-indexed entries missed by namespace field)
-            prefix_entries: list[dict] = []
-            results = _query(
-                f"{ns} functions list all",
-                20,
-                where={"category": "function"},
-            )
-            if results["ids"] and results["ids"][0]:
-                for meta in results["metadatas"][0]:
-                    if meta and meta.get("name", "").startswith(f"{ns}."):
-                        prefix_entries.append({"metadata": meta})
-
-            total_ns = len(entries_ns)
-            total_prefix = len(prefix_entries)
-            all_entries = entries_ns + prefix_entries
-
-            if not all_entries:
-                fallback = _query(f"{ns}.", 5)
-                if not fallback["documents"][0]:
-                    return (f"Namespace '{ns}' has 0 entries in local DB.\n"
-                            f"Consider running: ingest_{ns}_functions()")
-        else:
-            # No namespace filter — scan entire collection
-            all_entries = _get_all_where(None)
-            total_ns = len(all_entries)
-            total_prefix = 0
-
-        logger.debug(f"check_freshness: ns='{ns}', total_ns={total_ns}, total_prefix={total_prefix}")
-
-        # Classify freshness
-        sources_map: dict[str, int] = {}
-        live_count = 0
-        local_only_count = 0
-        merged_count = 0
-        local_only_entries: list[str] = []
-
-        for entry in all_entries:
-            meta = entry.get("metadata") or {}
-            # Check both 'sources' (plural) and 'source' (singular) fields
-            sources_str = meta.get("sources", "")
-            name = meta.get("name", "?")
-            if "tradingview_live" in sources_str and "local_docs" in sources_str:
-                merged_count += 1
-            elif "tradingview_live" in sources_str:
-                live_count += 1
-            else:
-                local_only_count += 1
-                local_only_entries.append(name)
-
-            src = meta.get("source", meta.get("sources", "unknown") or "unknown")
-            sources_map[src] = sources_map.get(src, 0) + 1
-
-        total = len(all_entries)
-        display_ns = ns if ns else "ALL"
-        lines: list[str] = []
-        lines.append(f"{_BOX_TL}{_BOX_H * 60}{_BOX_TR}")
-        lines.append(f"{_BOX_V} FRESHNESS REPORT: {display_ns}")
-        lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-        lines.append(_section_line(f"Total entries found: {total}"))
-        if ns:
-            lines.append(_section_line(f"  By namespace field: {total_ns}"))
-            lines.append(_section_line(f"  By name prefix:     {total_prefix}"))
-        lines.append(_section_line(f"Merged (local+live):  {merged_count}"))
-        lines.append(_section_line(f"Live only:            {live_count}"))
-        lines.append(_section_line(f"Local only:           {local_only_count}"))
-        if total > 0:
-            coverage = ((merged_count + live_count) / total * 100)
-            lines.append(_section_line(f"Live coverage:        {coverage:.1f}%"))
-        lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-        lines.append(_section_line("Source breakdown:"))
-        for src, count in sorted(sources_map.items(), key=lambda x: -x[1]):
-            lines.append(_section_line(f"  {src}: {count} entries"))
-
-        # Per-namespace breakdown when scanning all
-        if not ns:
-            ns_map: dict[str, int] = {}
-            for entry in all_entries:
-                meta = entry.get("metadata") or {}
-                entry_ns = meta.get("namespace", "(none)")
-                ns_map[entry_ns] = ns_map.get(entry_ns, 0) + 1
-            lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-            lines.append(_section_line("Namespaces:"))
-            for n, cnt in sorted(ns_map.items(), key=lambda x: -x[1]):
-                lines.append(_section_line(f"  {n or '(global)'}: {cnt}"))
-
-        # Local-only entries detail (only for namespace-filtered, small count)
-        if ns and local_only_count > 0 and local_only_count <= 20:
-            lines.append(f"{_BOX_MID}{_BOX_H * 60}{_BOX_MID}")
-            lines.append(_section_line(f"ENTRIES NEEDING LIVE SCRAPE ({local_only_count}):"))
-            for name in sorted(local_only_entries)[:20]:
-                lines.append(_section_line(f"  - {name}"))
-
-        lines.append(f"{_BOX_BL}{_BOX_H * 60}{_BOX_BR}")
-        return "\n".join(lines)
-
-    except Exception as e:
-        logger.error(f"[check_freshness] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
-            return _circuit_breaker_msg()
-        return _error("check_freshness", _safe_error(e, "check_freshness"))
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 # ─────────────────────────────────────────────────────────────────────────────────────
-# TOOL 15: validate_syntax
+# TOOL 11: validate_syntax
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def validate_syntax(params: CodeInput) -> str:
+async def validate_syntax(
+    code: Annotated[str, Field(
+        min_length=1,
+        max_length=50000,
+        description="Complete PineScript v6 source code to validate",
+    )],
+) -> str:
     """
     Validate PineScript v6 code using TradingView's official pine-facade
     compiler — the exact same compiler used by TradingView's web editor.
@@ -2731,26 +2217,36 @@ async def validate_syntax(params: CodeInput) -> str:
         code: Complete PineScript v6 source code to validate
     """
     try:
-        result = await _call_pine_facade(params.code)
+        code = code.strip()
+        if not code:
+            return "ERROR: No code provided. Pass the complete PineScript v6 source code to validate."
 
-        errors = result.get("errors", [])
+        result = await _call_pine_facade(code)
+
+        errors = _enrich_error_with_code(result.get("errors", []), code)
         warnings = result.get("warnings", [])
         success = result.get("success", False)
+        meta = result.get("meta", {})
+        is_fallback = meta.get("fallback") == "local_linter_tier1"
+        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         if success and not errors and not warnings:
-            meta = result.get("meta", {})
             name = meta.get("name", "")
             extra = f"\nMeta: {name}" if name else ""
+            fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
             return (
-                f"VALID — Code compiles successfully.{extra}\n"
-                f"Compiler: TradingView pine-facade v6\n"
+                f"VALID — Code compiles successfully.{extra}{fallback_note}\n"
+                f"Compiler: {compiler_label}\n"
                 f"Errors: 0 | Warnings: 0"
             )
 
         lines = []
         total_issues = len(errors) + len(warnings)
         lines.append(f"COMPILATION ISSUES ({total_issues}):")
-        lines.append(f"Compiler: TradingView pine-facade v6")
+        lines.append(f"Compiler: {compiler_label}")
+        if is_fallback:
+            note = meta.get("note", "Local linter catches ~50% of common errors.")
+            lines.append(f"Note: {note}")
         lines.append(f"Errors: {len(errors)} | Warnings: {len(warnings)}")
         lines.append("")
 
@@ -2783,17 +2279,23 @@ async def validate_syntax(params: CodeInput) -> str:
         logger.error(f"[validate_syntax] {e}")
         return (
             f"Compiler unavailable ({type(e).__name__}: {e}).\n"
-            f"Validate manually at https://www.tradingview.com/pine-editor/"
+            f"Check your code for syntax errors."
         )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 16: validate_and_explain
+# TOOL 12: validate_and_explain
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def validate_and_explain(params: CodeInput) -> str:
+async def validate_and_explain(
+    code: Annotated[str, Field(
+        min_length=1,
+        max_length=50000,
+        description="Complete PineScript v6 source code to validate",
+    )],
+) -> str:
     """
     Validate PineScript v6 code AND cross-reference any errors against
     the documentation database to provide precise fix instructions.
@@ -2804,15 +2306,22 @@ async def validate_and_explain(params: CodeInput) -> str:
     Use when helping user debug failing PineScript code.
     """
     try:
-        result = await _call_pine_facade(params.code)
+        code = code.strip()
+        if not code:
+            return "ERROR: No code provided. Pass the complete PineScript v6 source code to validate and explain."
 
-        errors = result.get("errors", [])
+        result = await _call_pine_facade(code)
+
+        errors = _enrich_error_with_code(result.get("errors", []), code)
         warnings = result.get("warnings", [])
         success = result.get("success", False)
+        meta = result.get("meta", {})
+        is_fallback = meta.get("fallback") == "local_linter_tier1"
+        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         if success and not errors and not warnings:
             # Quick code analysis on success
-            code_lines = params.code.strip().splitlines()
+            code_lines = code.strip().splitlines()
             plots = sum(
                 1
                 for l in code_lines
@@ -2826,11 +2335,12 @@ async def validate_and_explain(params: CodeInput) -> str:
                 if is_strategy
                 else ("indicator" if is_indicator else "library")
             )
+            fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
 
             return (
                 f"VALIDATION + DEBUG REPORT\n"
                 f"{'=' * 50}\n"
-                f"Compiler: TradingView pine-facade v6\n"
+                f"Compiler: {compiler_label}\n"
                 f"Status: PASSED\n"
                 f"Errors: 0 | Warnings: 0\n\n"
                 f"Code Analysis:\n"
@@ -2844,7 +2354,10 @@ async def validate_and_explain(params: CodeInput) -> str:
         lines = []
         lines.append("VALIDATION + DEBUG REPORT")
         lines.append("=" * 50)
-        lines.append(f"Compiler: TradingView pine-facade v6")
+        lines.append(f"Compiler: {compiler_label}")
+        if is_fallback:
+            note = meta.get("note", "Local linter catches ~50% of common errors.")
+            lines.append(f"Note: {note}")
         lines.append(f"Status: FAILED")
         lines.append(f"Errors: {len(errors)} | Warnings: {len(warnings)}")
         lines.append("")
@@ -2895,17 +2408,28 @@ async def validate_and_explain(params: CodeInput) -> str:
         logger.error(f"[validate_and_explain] {e}")
         return (
             f"VALIDATION FAILED: {type(e).__name__}: {e}\n"
-            f"Validate manually at https://www.tradingview.com/pine-editor/"
+            f"Check your code for syntax errors."
         )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 17: fix_and_validate
+# TOOL 13: fix_and_validate
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def fix_and_validate(params: CodeFixInput) -> str:
+async def fix_and_validate(
+    code: Annotated[str, Field(
+        min_length=1,
+        max_length=50000,
+        description="The failing PineScript v6 code",
+    )],
+    error_description: Annotated[str, Field(
+        min_length=1,
+        max_length=500,
+        description="The error message or what's wrong",
+    )],
+) -> str:
     """
     Given PineScript code and a description of what's wrong (or the
     compiler error text), look up the correct syntax in the docs and
@@ -2918,8 +2442,15 @@ async def fix_and_validate(params: CodeFixInput) -> str:
         error_description: The error message or description of the problem
     """
     try:
+        code = code.strip()
+        error_description = error_description.strip()
+        if not code:
+            return "ERROR: No code provided. Pass the failing PineScript v6 source code."
+        if not error_description:
+            return "ERROR: No error description provided. Describe the error or paste the compiler message."
+
         # Step 1: Find best matching hint using substring scan
-        error_lower = params.error_description.lower()
+        error_lower = error_description.lower()
         matched_hint = None
         best_score = 0
 
@@ -2934,9 +2465,8 @@ async def fix_and_validate(params: CodeFixInput) -> str:
 
         # Step 2: Extract identifier from error if present
         # Common patterns: "Undeclared identifier 'foo'", "Cannot find 'bar'"
-        import re
         identifier_match = re.search(
-            r"['\"]([a-zA-Z_][\w.]*)['\"]", params.error_description
+            r"['\"]([a-zA-Z_][\w.]*)['\"]", error_description
         )
         identifier = identifier_match.group(1) if identifier_match else None
 
@@ -2946,7 +2476,7 @@ async def fix_and_validate(params: CodeFixInput) -> str:
 
         # Step 3: Cross-reference identifier against MCP docs
         doc_context = ""
-        if identifier:
+        if identifier and identifier.lower() not in _COMMON_PARAM_NAMES:
             try:
                 results = _search_by_name(identifier)
                 if results:
@@ -2966,11 +2496,11 @@ async def fix_and_validate(params: CodeFixInput) -> str:
                                 f"{best_entry.get('document', '')[:200]}"
                             )
                             break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Doc lookup for fix failed: {e}")
 
         # Step 4: Attempt auto-fix for common patterns
-        fixed_code = params.code
+        fixed_code = code
         fix_applied = "No automatic fix available"
 
         # Pattern: missing namespace (ema → ta.ema, sma → ta.sma, etc.)
@@ -2990,14 +2520,13 @@ async def fix_and_validate(params: CodeFixInput) -> str:
 
         # Step 5: Validate the fixed code
         validation_result = None
-        if fixed_code != params.code:
+        if fixed_code != code:
             try:
                 raw = await _call_pine_facade(fixed_code)
-                normalized = _normalize_facade_response(raw)
-                if normalized["success"]:
+                if raw["success"]:
                     validation_result = "✅ Fixed code compiles successfully"
                 else:
-                    errs = normalized["errors"]
+                    errs = raw["errors"]
                     validation_result = (
                         f"⚠️ Fixed code still has {len(errs)} error(s):\n" +
                         "\n".join(f"  Line {e['line']}: {e['text']}" for e in errs[:3])
@@ -3009,7 +2538,7 @@ async def fix_and_validate(params: CodeFixInput) -> str:
         lines = [
             f"FIX AND VALIDATE REPORT",
             f"{'='*50}",
-            f"Error: {params.error_description}",
+            f"Error: {error_description}",
             f"",
             f"HINT: {matched_hint or 'No specific hint — check PineScript v6 syntax'}",
             f"",
@@ -3019,7 +2548,7 @@ async def fix_and_validate(params: CodeFixInput) -> str:
             lines.append(doc_context)
         if validation_result:
             lines.extend(["", validation_result])
-        if fixed_code != params.code:
+        if fixed_code != code:
             lines.extend(["", "FIXED CODE:", "```pine", fixed_code, "```"])
 
         return "\n".join(lines)
@@ -3030,12 +2559,31 @@ async def fix_and_validate(params: CodeFixInput) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 18: generate_indicator
+# TOOL 14: generate_indicator
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def generate_indicator(params: IndicatorGenInput) -> str:
+async def generate_indicator(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=100,
+        description="Indicator display name",
+    )],
+    description: Annotated[str, Field(
+        default="",
+        max_length=500,
+        description="What the indicator calculates",
+    )] = "",
+    inputs: Annotated[str | None, Field(
+        default=None,
+        description="Comma-separated input descriptions, e.g. 'length=14,src=close,mult=2.0'",
+    )] = None,
+    overlay: Annotated[bool, Field(
+        default=False,
+        description="True if indicator overlays the price chart",
+    )] = False,
+) -> str:
     """
     Generate a syntactically correct PineScript v6 indicator template.
     Validates the output with pine-facade before returning.
@@ -3047,15 +2595,18 @@ async def generate_indicator(params: IndicatorGenInput) -> str:
         overlay: True if indicator overlays the price chart
     """
     try:
-        safe_name = _sanitize_pine_string(params.name)
+        name = name.strip()
+        if not name:
+            return "ERROR: No indicator name provided. Pass a display name for the indicator."
+        safe_name = _sanitize_pine_string(name)
 
         # Search docs for relevant functions
-        relevant = _query(params.description, 5, where={"category": "function"})
+        relevant = _query(description, 5, where={"category": "function"})
 
         # Build input lines
         input_lines = []
-        if params.inputs:
-            for raw_inp in params.inputs.split(","):
+        if inputs:
+            for raw_inp in inputs.split(","):
                 raw_inp = raw_inp.strip()
                 if not raw_inp:
                     continue
@@ -3148,9 +2699,29 @@ async def generate_indicator(params: IndicatorGenInput) -> str:
                 fsyntax = meta.get("syntax", "")
                 relevant_funcs.append(f"//   {fname}: {fsyntax[:80]}")
 
+        # Generate calculation stub from top relevant function
+        calc_stub = "plot(close, \"Price\", color.blue)"
+        if relevant.get("ids") and relevant["ids"][0]:
+            top_meta = relevant["metadatas"][0][0]
+            top_name = top_meta.get("name", "")
+            if top_name:
+                # Gather variable names from inputs
+                input_vars = []
+                for il in input_lines:
+                    parts = il.split("=")
+                    if len(parts) >= 1:
+                        var_part = parts[0].strip()
+                        tokens = var_part.split()
+                        input_vars.append(tokens[-1] if tokens else var_part)
+                args = ", ".join(input_vars) if input_vars else "close"
+                calc_stub = (
+                    f"result = {top_name}({args})\n"
+                    f"plot(result, \"Result\", color.orange)"
+                )
+
         # Generate template
         code = f"""//@version=6
-indicator("{safe_name}", overlay={str(params.overlay).lower()}, shorttitle="{safe_name[:16]}")
+indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[:16]}")
 
 // ── Inputs ──"""
         for il in input_lines:
@@ -3161,7 +2732,7 @@ indicator("{safe_name}", overlay={str(params.overlay).lower()}, shorttitle="{saf
         code += f"""
 
 // ── Calculations ──
-// {params.description}
+// {description}
 // Available functions from docs:"""
         for rf in relevant_funcs:
             code += f"\n{rf}"
@@ -3170,10 +2741,8 @@ indicator("{safe_name}", overlay={str(params.overlay).lower()}, shorttitle="{saf
                 "\n// (Use search_docs or suggest_functions to find relevant functions)"
             )
 
-        code += """
-
-// ── Plot ──
-plot(close, "Price", color.blue)
+        code += f"""
+{calc_stub}
 """
 
         # Validate
@@ -3212,12 +2781,41 @@ plot(close, "Price", color.blue)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 19: generate_strategy
+# TOOL 15: generate_strategy
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def generate_strategy(params: StrategyGenInput) -> str:
+async def generate_strategy(
+    name: Annotated[str, Field(
+        min_length=1,
+        max_length=100,
+        description="Strategy display name",
+    )],
+    description: Annotated[str, Field(
+        default="",
+        max_length=500,
+        description="Trading strategy description",
+    )] = "",
+    initial_capital: Annotated[int, Field(
+        default=10000,
+        ge=1,
+        le=1000000,
+        description="Starting capital (default 10000)",
+    )] = 10000,
+    commission_pct: Annotated[float, Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Commission percentage (default 0.1)",
+    )] = 0.1,
+    pyramiding: Annotated[int, Field(
+        default=1,
+        ge=1,
+        le=10,
+        description="Max simultaneous positions (default 1)",
+    )] = 1,
+) -> str:
     """
     Generate a syntactically correct PineScript v6 strategy template.
     Validates the output with pine-facade before returning.
@@ -3231,10 +2829,13 @@ async def generate_strategy(params: StrategyGenInput) -> str:
         pyramiding: Max simultaneous positions (default 1)
     """
     try:
-        safe_name = _sanitize_pine_string(params.name)
+        name = name.strip()
+        if not name:
+            return "ERROR: No strategy name provided. Pass a display name for the strategy."
+        safe_name = _sanitize_pine_string(name)
 
         # Search docs for strategy-related functions
-        relevant = _query(params.description, 5, where={"namespace": "strategy"})
+        relevant = _query(description, 5, where={"namespace": "strategy"})
 
         # Build relevant function list
         relevant_funcs = []
@@ -3247,12 +2848,12 @@ async def generate_strategy(params: StrategyGenInput) -> str:
         # BUG FIX: Use correct v6 input.bool syntax (default value first, then title)
         template = f"""//@version=6
 strategy("{safe_name}", overlay=true,
-    initial_capital={params.initial_capital},
+    initial_capital={initial_capital},
     commission_type=strategy.commission.percent,
-    commission_value={params.commission_pct},
+    commission_value={commission_pct},
     default_qty_type=strategy.percent_of_equity,
     default_qty_value=100,
-    pyramiding={params.pyramiding},
+    pyramiding={pyramiding},
     calc_on_every_tick=false)
 
 // ── Inputs ──────────────────────────────────────────────────
@@ -3290,11 +2891,10 @@ if barstate.islast
 
         # BUG FIX: Compile-guard: validate before returning
         validation = await _call_pine_facade(template)
-        normalized = _normalize_facade_response(validation)
-        if not normalized["success"]:
+        if not validation["success"]:
             errors_str = "\n".join(
                 f"  Line {e['line']}: {e['text']}"
-                for e in normalized["errors"][:5]
+                for e in validation["errors"][:5]
             )
             return (f"⚠️ Template generation failed validation:\n{errors_str}\n\n"
                     f"Raw template for manual fix:\n```pine\n{template}\n```")
@@ -3322,12 +2922,23 @@ if barstate.islast
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 20: lookup_and_correct
+# TOOL 16: lookup_and_correct
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def lookup_and_correct(params: CodeFixInput) -> str:
+async def lookup_and_correct(
+    code: Annotated[str, Field(
+        min_length=1,
+        max_length=50000,
+        description="The PineScript code (can be partial or full script)",
+    )],
+    error_description: Annotated[str, Field(
+        min_length=1,
+        max_length=500,
+        description="What the code is supposed to do",
+    )],
+) -> str:
     """
     Given a PineScript code snippet and what it's supposed to do,
     validates it, looks up correct syntax for any issues, and returns
@@ -3340,12 +2951,19 @@ async def lookup_and_correct(params: CodeFixInput) -> str:
         error_description: What the code is supposed to do
     """
     try:
+        code = code.strip()
+        error_description = error_description.strip()
+        if not code:
+            return "ERROR: No code provided. Pass the PineScript code snippet to look up and correct."
+        if not error_description:
+            return "ERROR: No description provided. Describe what the code is supposed to do."
+
         # Step 1: Validate
-        validation = await _call_pine_facade(params.code)
+        validation = await _call_pine_facade(code)
         errors = validation.get("errors", [])
 
         # Step 2: Apply ALL v5→v6 namespace fixes
-        fixed_code = params.code
+        fixed_code = code
         changes_made = []
 
         # BUG FIX: Complete v5 → v6 namespace migration map
@@ -3403,7 +3021,6 @@ async def lookup_and_correct(params: CodeFixInput) -> str:
 
         # Apply ALL replacements sequentially
         for pattern, replacement in V5_TO_V6.items():
-            import re
             if re.search(pattern, fixed_code):
                 fixed_code = re.sub(pattern, replacement, fixed_code)
                 changes_made.append(f"Replaced: {pattern} → {replacement}")
@@ -3413,7 +3030,7 @@ async def lookup_and_correct(params: CodeFixInput) -> str:
         errors_after = validation_after.get("errors", [])
 
         # Step 4: Search docs for intent
-        intent_results = _query(params.error_description, 3)
+        intent_results = _query(error_description, 3)
 
         lines = []
         lines.append("LOOKUP AND CORRECT REPORT")
@@ -3463,7 +3080,7 @@ async def lookup_and_correct(params: CodeFixInput) -> str:
             lines.append("")
 
         # Show relevant docs for intent
-        lines.append(f"RELEVANT DOCS FOR '{params.error_description}':")
+        lines.append(f"RELEVANT DOCS FOR '{error_description}':")
         lines.append("-" * 40)
         if intent_results.get("ids") and intent_results["ids"][0]:
             for i, (meta, doc, dist) in enumerate(
@@ -3503,12 +3120,18 @@ async def lookup_and_correct(params: CodeFixInput) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 21: debug_pine_facade
+# TOOL 17: debug_pine_facade
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def debug_pine_facade(params: CodeInput) -> str:
+async def debug_pine_facade(
+    code: Annotated[str, Field(
+        min_length=1,
+        max_length=50000,
+        description="Complete PineScript v6 source code to compile",
+    )],
+) -> str:
     """
     Diagnostic tool: compile code via pine-facade and return the FULL raw
     response alongside the normalized interpretation. Use for debugging
@@ -3518,7 +3141,11 @@ async def debug_pine_facade(params: CodeInput) -> str:
         code: Complete PineScript v6 source code to compile
     """
     try:
-        result = await _call_pine_facade(params.code)
+        code = code.strip()
+        if not code:
+            return "ERROR: No code provided. Pass the PineScript v6 source code to debug."
+
+        result = await _call_pine_facade(code)
 
         lines = []
         lines.append("DEBUG PINE-FACADE REPORT")
@@ -3583,13 +3210,30 @@ async def debug_pine_facade(params: CodeInput) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 22: suggest_functions
+# TOOL 18: suggest_functions
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def suggest_functions(params: SuggestFunctionsInput) -> str:
+async def suggest_functions(
+    context: Annotated[str, Field(
+        min_length=1,
+        max_length=500,
+        description="What you're trying to accomplish",
+    )],
+    current_line: Annotated[str | None, Field(
+        default=None,
+        max_length=200,
+        description="The current line being written (optional)",
+    )] = None,
+    n_results: Annotated[int, Field(
+        default=8,
+        ge=1,
+        le=20,
+        description="How many suggestions (default 8)",
+    )] = 8,
+) -> str:
     """
     Given what you're trying to accomplish in PineScript, suggest the
     most relevant functions with their signatures.
@@ -3602,19 +3246,19 @@ async def suggest_functions(params: SuggestFunctionsInput) -> str:
         n_results: How many suggestions (default 8)
     """
     try:
-        query_text = params.context
-        if params.current_line:
-            query_text += f" | current line: {params.current_line}"
+        query_text = context
+        if current_line:
+            query_text += f" | current line: {current_line}"
 
-        results = _query(query_text, params.n_results, where={"category": "function"})
+        results = _query(query_text, n_results, where={"category": "function"})
 
         if not results.get("ids") or not results["ids"][0]:
             return _error(
-                "suggest_functions", f"No functions found for '{params.context}'"
+                "suggest_functions", f"No functions found for '{context}'"
             )
 
         lines = []
-        lines.append(f"SUGGESTED FUNCTIONS for '{params.context}':")
+        lines.append(f"SUGGESTED FUNCTIONS for '{context}':")
         lines.append("")
 
         for i, (meta, doc, dist) in enumerate(
@@ -3653,18 +3297,24 @@ async def suggest_functions(params: SuggestFunctionsInput) -> str:
 
     except Exception as e:
         logger.error(f"[suggest_functions] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("suggest_functions", _safe_error(e, "suggest_functions"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 23: get_namespace_cheatsheet
+# TOOL 19: get_namespace_cheatsheet
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool
-async def get_namespace_cheatsheet(params: CheatsheetLookup) -> str:
+async def get_namespace_cheatsheet(
+    namespace: Annotated[str, Field(
+        min_length=1,
+        max_length=50,
+        description="Namespace e.g. 'ta', 'strategy'",
+    )],
+) -> str:
     """
     Get a compact cheatsheet for an entire namespace — all functions
     with signatures and one-line descriptions in a scannable format.
@@ -3674,7 +3324,7 @@ async def get_namespace_cheatsheet(params: CheatsheetLookup) -> str:
     chart, line, label, box, table, request, ticker, timeframe, syminfo
     """
     try:
-        ns = params.namespace.strip().lower().rstrip(".")
+        ns = _norm_ns(namespace)
         if ns == "global":
             where: Optional[dict] = {"namespace": ""}
         else:
@@ -3742,7 +3392,7 @@ async def get_namespace_cheatsheet(params: CheatsheetLookup) -> str:
 
     except Exception as e:
         logger.error(f"[get_namespace_cheatsheet] {e}")
-        if _db_failure_count >= _DB_FAILURE_LIMIT:
+        if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
         return _error("get_namespace_cheatsheet", _safe_error(e, "get_namespace_cheatsheet"))
 
@@ -3765,11 +3415,10 @@ async def get_stats() -> str:
                 "hot_cache_entries": len(HOT_CACHE),
                 "pine_facade_circuit_open": _pine_cb.is_open(),
                 "chroma_circuit_open": _chroma_breaker.is_open(),
-                "live_cache_entries": len(_LIVE_CACHE),
                 "validation_cache_entries": len(_VALIDATION_CACHE),
                 "embedding_model_ready": _embedding_model_ready.is_set(),
-                "total_tools": 23,
-                "version": "3.0",
+                "total_tools": 19,
+                "version": "4.0",
             },
             indent=2,
         )
@@ -3778,8 +3427,8 @@ async def get_stats() -> str:
         return json.dumps(
             {
                 "error": _safe_error(e, "get_stats"),
-                "total_tools": 23,
-                "version": "3.0",
+                "total_tools": 19,
+                "version": "4.0",
             },
             indent=2,
         )
@@ -3790,5 +3439,5 @@ async def get_stats() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logger.info("Starting PineScript v6 Complete Reference MCP server v3.0 (23 tools)")
+    logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (19 tools, 100% local)")
     mcp.run(transport="stdio")

@@ -23,7 +23,18 @@ Thumbs.db
 *.log
 
 # Database files (ChromaDB — keep sqlite3 for one-step restore, ignore temp dirs)
+pinescript_db/
 pinescript_v6/
+
+# Playwright MCP snapshots
+.playwright-mcp/
+
+# Scraped data
+tv_entry_index.json
+tv_scraped_entries.json
+scrape_report.json
+quick_audit_report.json
+duplication_report.json
 
 # Temporary files
 *.tmp
