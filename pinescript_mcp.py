@@ -2784,8 +2784,156 @@ async def fix_and_validate(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL 14: generate_indicator
+# TOOL 14: generate_indicator  (helpers + fallback templates)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Known-correct fallback templates for common indicator types.
+# Keys are lowercased indicator-family names; values are (calc_stub, overlay_default).
+_INDICATOR_TEMPLATES: dict[str, tuple[str, bool]] = {
+    "rsi": (
+        "rsiValue = ta.rsi(src, length)\nplot(rsiValue, \"RSI\", color.orange)\n"
+        "hline(70, \"Overbought\", color.red, hline.style_dashed)\n"
+        "hline(30, \"Oversold\", color.green, hline.style_dashed)",
+        False,
+    ),
+    "macd": (
+        "[macdLine, signalLine, histLine] = ta.macd(src, fastLength, slowLength, signalLength)\n"
+        "plot(macdLine, \"MACD\", color.blue)\nplot(signalLine, \"Signal\", color.orange)\n"
+        "plot(histLine, \"Histogram\", color.red, style=plot.style_histogram)",
+        False,
+    ),
+    "bollinger": (
+        "[middle, upper, lower] = ta.bb(src, length, mult)\n"
+        "plot(middle, \"Basis\", color.blue)\nplot(upper, \"Upper\", color.red)\n"
+        "plot(lower, \"Lower\", color.green)\n"
+        "p1 = plot(upper, display=display.none)\np2 = plot(lower, display=display.none)\n"
+        "fill(p1, p2, color=color.new(color.blue, 90))",
+        True,
+    ),
+    "ema": (
+        "emaValue = ta.ema(src, length)\nplot(emaValue, \"EMA\", color.orange)",
+        True,
+    ),
+    "sma": (
+        "smaValue = ta.sma(src, length)\nplot(smaValue, \"SMA\", color.orange)",
+        True,
+    ),
+    "atr": (
+        "atrValue = ta.atr(length)\nplot(atrValue, \"ATR\", color.orange)",
+        False,
+    ),
+    "stochastic": (
+        "k = ta.sma(ta.stoch(src, high, low, length), kSmooth)\n"
+        "d = ta.sma(k, dSmooth)\n"
+        "plot(k, \"K\", color.blue)\nplot(d, \"D\", color.orange)\n"
+        "hline(80, \"Overbought\", color.red, hline.style_dashed)\n"
+        "hline(20, \"Oversold\", color.green, hline.style_dashed)",
+        False,
+    ),
+    "supertrend": (
+        "[supertrendValue, direction] = ta.supertrend(factor, atrLength)\n"
+        "upTrend = plot(direction < 0 ? supertrendValue : na, \"Up Trend\", color.green, linewidth=2)\n"
+        "dnTrend = plot(direction < 0 ? na : supertrendValue, \"Down Trend\", color.red, linewidth=2)\n"
+        "fill(upTrend, dnTrend, color=direction < 0 ? color.new(color.green, 90) : color.new(color.red, 90))",
+        True,
+    ),
+    "vwap": (
+        "vwapValue = ta.vwap(hlc3)\nplot(vwapValue, \"VWAP\", color.orange, linewidth=2)",
+        True,
+    ),
+    "adl": (
+        "adlValue = ta.accdist\nplot(adlValue, \"ADL\", color.orange)",
+        False,
+    ),
+    "obv": (
+        "obvValue = ta.obv\nplot(obvValue, \"OBV\", color.orange)",
+        False,
+    ),
+    "cci": (
+        "cciValue = ta.cci(src, length)\nplot(cciValue, \"CCI\", color.orange)\n"
+        "hline(100, \"Overbought\", color.red, hline.style_dashed)\n"
+        "hline(-100, \"Oversold\", color.green, hline.style_dashed)",
+        False,
+    ),
+    "mfi": (
+        "mfiValue = ta.mfi(length)\nplot(mfiValue, \"MFI\", color.orange)\n"
+        "hline(80, \"Overbought\", color.red, hline.style_dashed)\n"
+        "hline(20, \"Oversold\", color.green, hline.style_dashed)",
+        False,
+    ),
+    "williams": (
+        "wrValue = ta.wpr(length)\nplot(wrValue, \"Williams %R\", color.orange)\n"
+        "hline(-20, \"Overbought\", color.red, hline.style_dashed)\n"
+        "hline(-80, \"Oversold\", color.green, hline.style_dashed)",
+        False,
+    ),
+}
+
+
+def _extract_indicator_keywords(description: str) -> list[str]:
+    """Extract indicator-family keywords from a natural language description.
+
+    Returns a list of lowercase keyword tokens that map to keys in
+    _INDICATOR_TEMPLATES.  Order matters: longer/more-specific patterns
+    are tested first so "Bollinger Bands" is not swallowed by "bb".
+    """
+    desc_lower = description.lower()
+    # Order matters: longer/more specific patterns first
+    patterns = [
+        ("bollinger", r"\bbollinger\b|\bbb\b(?!\s*=)"),
+        ("supertrend", r"\bsupertrend\b|\bsuper.?trend\b"),
+        ("stochastic", r"\bstochastic\b|\bstoch\b"),
+        ("macd", r"\bmacd\b|\bmoving\s+average\s+convergence"),
+        ("rsi", r"\brelative\s+strength\b|\brsi\b"),
+        ("ema", r"\bexponential\s+moving\s+average\b|\bema\b"),
+        ("sma", r"\bsimple\s+moving\s+average\b|\bsma\b"),
+        ("atr", r"\baverage\s+true\s+range\b|\batr\b"),
+        ("vwap", r"\bvolume\s+weighted\s+average\b|\bvwap\b"),
+        ("adl", r"\baccumulation\s+distribution\b|\badl\b|\baccdist\b"),
+        ("obv", r"\bon\s+balance\s+volume\b|\bobv\b"),
+        ("cci", r"\bcommodity\s+channel\b|\bcci\b"),
+        ("mfi", r"\bmoney\s+flow\s+index\b|\bmfi\b"),
+        ("williams", r"\bwilliams\s*%?\s*r\b|\bwpr\b"),
+    ]
+    matches = []
+    for family, pattern in patterns:
+        if re.search(pattern, desc_lower):
+            matches.append(family)
+    return matches
+
+
+def _map_input_to_param(
+    var_name: str, param_names: list[str]
+) -> str | None:
+    """Map a user input variable name to the best-matching function parameter.
+
+    Matching strategy (in priority order):
+    1. Exact match
+    2. Param name is a suffix of the var name (e.g. rsiLength -> length)
+    3. Param name is a prefix of the var name (e.g. src -> srcClose)
+    4. Substring containment with minimum 3-char overlap
+    """
+    vl = var_name.lower()
+    # 1. Exact
+    for pn in param_names:
+        if vl == pn.lower():
+            return pn
+    # 2. Param is suffix of var (rsiLength -> length)
+    for pn in param_names:
+        pnl = pn.lower()
+        if len(pnl) >= 3 and vl.endswith(pnl):
+            return pn
+    # 3. Param is prefix of var (src -> srcClose)
+    for pn in param_names:
+        pnl = pn.lower()
+        if len(pnl) >= 3 and vl.startswith(pnl):
+            return pn
+    # 4. Substring containment (min 3 chars)
+    for pn in param_names:
+        pnl = pn.lower()
+        if len(pnl) >= 3 and (pnl in vl or vl in pnl):
+            return pn
+    return None
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": True, "idempotentHint": False})
@@ -2825,45 +2973,21 @@ async def generate_indicator(
             return "ERROR: No indicator name provided. Pass a display name for the indicator."
         safe_name = _sanitize_pine_string(name)
 
-        # Namespace-aware search: extract keywords from description to guide search
-        desc_lower = description.lower() if description else ""
-        name_lower = name.lower()
+        # ── Phase 0: Check for known indicator templates ──
+        # Fast-path: if the description matches a well-known indicator family,
+        # use a hand-verified template instead of relying on vector search.
+        template_source = "none"
+        matched_keywords = _extract_indicator_keywords(description or name)
+        if matched_keywords:
+            # Use the first matched keyword's template
+            family = matched_keywords[0]
+            if family in _INDICATOR_TEMPLATES:
+                calc_stub, overlay_default = _INDICATOR_TEMPLATES[family]
+                if not overlay:
+                    overlay = overlay_default
+                template_source = f"template:{family}"
 
-        # Determine likely namespace from description/name keywords
-        _NS_HINTS = {
-            "ta": {"moving average", "ema", "sma", "rsi", "macd", "atr", "bollinger",
-                   "stoch", "wma", "hma", "crossover", "crossunder", "supertrend",
-                   "rsi", "relative strength", "momentum", "oscillator", "trend",
-                   "overbought", "oversold", "divergence", "reversal", "signal"},
-            "math": {"round", "floor", "ceil", "sqrt", "log", "abs", "pow", "sin",
-                     "cos", "max", "min", "average", "sum", "random"},
-            "str": {"string", "tostring", "tonumber", "format", "text", "concat"},
-            "strategy": {"entry", "exit", "close", "position", "trade", "order",
-                         "long", "short", "profit", "loss", "stop"},
-            "request": {"security", "symbol", "ticker", "financial", "earnings",
-                        "dividends", "splits", "quarterly"},
-            "color": {"color", "rgb", "gradient", "transparency", "hue"},
-            "array": {"array", "matrix", "map", "sort", "push", "pop"},
-        }
-
-        target_ns = None
-        for ns, hints in _NS_HINTS.items():
-            if any(h in desc_lower or h in name_lower for h in hints):
-                target_ns = ns
-                break
-
-        # Search with namespace preference, then broad fallback
-        relevant = None
-        if target_ns:
-            relevant = _query(description or name, 8, where={"category": "function", "namespace": target_ns})
-            # If no results in target namespace, broaden
-            if not relevant.get("ids") or not relevant["ids"][0]:
-                relevant = None
-
-        if not relevant:
-            relevant = _query(description or name, 8, where={"category": "function"})
-
-        # Build input lines
+        # ── Phase 1: Build input lines (unchanged logic) ──
         input_lines = []
         if inputs:
             for raw_inp in inputs.split(","):
@@ -2951,88 +3075,172 @@ async def generate_indicator(
                         f'{var_name} = input.color({default_val}, "{display_name}")'
                     )
 
-        # Build relevant function list
+        # ── Phase 2: Search docs with namespace-aware queries ──
+        # If no template matched, search the vector store.
+        # Run TWO queries in parallel: one constrained to ta.* namespace
+        # (high confidence for technical indicators), one unconstrained as fallback.
         relevant_funcs = []
-        if relevant.get("ids") and relevant["ids"][0]:
-            for meta in relevant["metadatas"][0][:5]:
-                fname = meta.get("name", "?")
-                fsyntax = meta.get("syntax", "")
-                relevant_funcs.append(f"//   {fname}: {fsyntax[:80]}")
+        calc_stub_phase2 = "plot(close, \"Price\", color.blue)"  # safe default
 
-        # Generate calculation stub from top relevant function
-        # Validate top result is semantically relevant (distance < 0.8)
-        calc_stub = "plot(close, \"Price\", color.blue)"
-        if relevant.get("ids") and relevant["ids"][0]:
-            top_meta = relevant["metadatas"][0][0]
-            top_dist = relevant["distances"][0][0] if relevant.get("distances") and relevant["distances"][0] else 1.0
-            top_name = top_meta.get("name", "")
-            top_syntax = top_meta.get("syntax", "")
-            top_desc = (top_meta.get("raw_description") or "").lower()
+        if template_source == "none":
+            # Build enriched query from keyword extraction
+            # This gives the embedding model better signal than raw description
+            enrich_terms = {
+                "rsi": "ta.rsi relative strength index oscillator",
+                "macd": "ta.macd moving average convergence divergence",
+                "bollinger": "ta.bb bollinger bands standard deviation",
+                "ema": "ta.ema exponential moving average",
+                "sma": "ta.sma simple moving average",
+                "atr": "ta.atr average true range volatility",
+                "stochastic": "ta.stoch stochastic oscillator k d",
+                "supertrend": "ta.supertrend super trend",
+                "vwap": "ta.vwap volume weighted average price",
+                "adl": "ta.accdist accumulation distribution line",
+                "obv": "ta.obv on balance volume",
+                "cci": "ta.cci commodity channel index",
+                "mfi": "ta.mfi money flow index",
+                "williams": "ta.wpr williams percent range",
+            }
+            kw = _extract_indicator_keywords(description or name)
+            if kw:
+                enriched_query = f"{description} {enrich_terms.get(kw[0], '')}"
+            else:
+                enriched_query = description
 
-            # Relevance check: skip if top result is too far from description
-            desc_lower = description.lower() if description else ""
-            name_match = any(
-                kw in top_name.lower() or kw in top_desc
-                for kw in desc_lower.split()
-                if len(kw) > 2
-            ) if desc_lower else True
+            # Query 1: ta.* namespace (preferred for technical indicators)
+            ta_results = _query(
+                enriched_query, 5,
+                where={"$and": [{"category": "function"}, {"namespace": "ta"}]}
+            )
+            # Query 2: broad fallback (no namespace filter)
+            broad_results = _query(
+                enriched_query, 5,
+                where={"category": "function"}
+            )
 
-            if top_name and (top_dist < 0.6 or name_match):
-                # Gather variable names from inputs
-                input_vars = []
-                for il in input_lines:
-                    parts = il.split("=")
-                    if len(parts) >= 1:
-                        var_part = parts[0].strip()
-                        tokens = var_part.split()
-                        input_vars.append(tokens[-1] if tokens else var_part)
+            # Pick best result across both queries using distance
+            best_meta = None
+            best_dist = 1.0
+            best_query_label = ""
 
-                # Parse top function's parameters to build correct call
-                raw_params = top_meta.get("raw_parameters", "")
-                param_names = []
-                if raw_params:
-                    try:
-                        params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
-                        param_names = [p.get("name", "") for p in params if isinstance(p, dict)]
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+            for label, results in [("ta", ta_results), ("broad", broad_results)]:
+                if not results.get("ids") or not results["ids"][0]:
+                    continue
+                for i, (meta, dist) in enumerate(
+                    zip(results["metadatas"][0], results["distances"][0])
+                ):
+                    fname = meta.get("name", "?")
+                    fsyntax = meta.get("syntax", "")
+                    # Deduplicate by name (same function may appear in both queries)
+                    if any(rf_name == fname for rf_name, _ in relevant_funcs):
+                        continue
+                    relevant_funcs.append((fname, f"//   {fname}: {fsyntax[:80]}"))
 
-                # Build args: match user inputs to function params by name
-                args_list = []
-                if input_vars and param_names:
-                    for pv in input_vars:
-                        # Try to match input var to a param name
-                        matched = False
-                        for pn in param_names:
-                            if pv.lower() in pn.lower() or pn.lower() in pv.lower():
-                                args_list.append(f"{pn}={pv}")
-                                matched = True
-                                break
-                        if not matched:
-                            args_list.append(pv)
-                elif param_names:
-                    # Auto-fill first param as close for ta.* functions
-                    if top_name.startswith("ta.") and param_names:
-                        if param_names[0] in ("source", "src"):
-                            args_list.append(f"source=close")
-                        else:
-                            args_list.append(f"{param_names[0]}=close")
-                    for pn in param_names[1:]:
-                        if "length" in pn.lower() or "period" in pn.lower():
-                            args_list.append(f"{pn}=14")
-                        elif "mult" in pn.lower() or "factor" in pn.lower():
-                            args_list.append(f"{pn}=2.0")
-                else:
-                    args_list = input_vars if input_vars else ["close"]
+                    if best_meta is None or dist < best_dist:
+                        best_meta = meta
+                        best_dist = dist
+                        best_query_label = label
 
-                args = ", ".join(args_list) if args_list else "close"
-                calc_stub = (
-                    f"result = {top_name}({args})\n"
-                    f"plot(result, \"Result\", color.orange)"
+            # ── Phase 3: Relevance gating ──
+            # Tightened from 0.8 to 0.6.  The old name_match was too loose;
+            # now we require BOTH distance < 0.6 AND the result is from ta.*
+            # namespace OR a strong keyword match in the function name itself.
+            if best_meta is not None:
+                top_name = best_meta.get("name", "")
+                top_desc = (best_meta.get("raw_description") or "").lower()
+                desc_lower = (description or "").lower()
+
+                # Strong keyword match: indicator-family name appears in function name
+                strong_name_match = False
+                for kw_str in _extract_indicator_keywords(description or name):
+                    if kw_str in top_name.lower():
+                        strong_name_match = True
+                        break
+
+                # Accept if: (distance < 0.6) OR (ta.* namespace AND distance < 0.75) OR (strong name match)
+                is_ta_ns = top_name.startswith("ta.")
+                accept = (
+                    best_dist < 0.6
+                    or (is_ta_ns and best_dist < 0.75)
+                    or strong_name_match
                 )
-            # else: top result not relevant enough, use default plot
 
-        # Generate template
+                if accept:
+                    # Gather variable names from inputs
+                    input_vars = []
+                    for il in input_lines:
+                        parts = il.split("=")
+                        if len(parts) >= 1:
+                            var_part = parts[0].strip()
+                            tokens = var_part.split()
+                            input_vars.append(tokens[-1] if tokens else var_part)
+
+                    # Parse function parameters
+                    raw_params = best_meta.get("raw_parameters", "")
+                    param_names = []
+                    if raw_params:
+                        try:
+                            params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
+                            param_names = [p.get("name", "") for p in params if isinstance(p, dict)]
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+                    # Build args using improved param matching
+                    args_list = []
+                    if input_vars and param_names:
+                        for pv in input_vars:
+                            matched_param = _map_input_to_param(pv, param_names)
+                            if matched_param:
+                                args_list.append(f"{matched_param}={pv}")
+                            else:
+                                args_list.append(pv)
+                    elif param_names:
+                        # Auto-fill first param as close for ta.* functions
+                        if top_name.startswith("ta.") and param_names:
+                            if param_names[0] in ("source", "src"):
+                                args_list.append("source=close")
+                            else:
+                                args_list.append(f"{param_names[0]}=close")
+                        for pn in param_names[1:]:
+                            if "length" in pn.lower() or "period" in pn.lower():
+                                args_list.append(f"{pn}=14")
+                            elif "mult" in pn.lower() or "factor" in pn.lower():
+                                args_list.append(f"{pn}=2.0")
+                    else:
+                        args_list = input_vars if input_vars else ["close"]
+
+                    args = ", ".join(args_list) if args_list else "close"
+                    calc_stub_phase2 = (
+                        f"result = {top_name}({args})\n"
+                        f"plot(result, \"Result\", color.orange)"
+                    )
+                    template_source = f"search:{top_name} (dist={best_dist:.3f}, {best_query_label})"
+                else:
+                    # Top result too far away; keep the safe default plot
+                    template_source = f"rejected:{top_name} (dist={best_dist:.3f}, too far)"
+        else:
+            # Template matched — still run a search to populate relevant_funcs
+            # for the "RELEVANT FUNCTIONS" section of the output
+            ta_results = _query(
+                description or name, 5,
+                where={"$and": [{"category": "function"}, {"namespace": "ta"}]}
+            )
+            if ta_results.get("ids") and ta_results["ids"][0]:
+                for meta in ta_results["metadatas"][0][:5]:
+                    fname = meta.get("name", "?")
+                    fsyntax = meta.get("syntax", "")
+                    relevant_funcs.append((fname, f"//   {fname}: {fsyntax[:80]}"))
+
+        # Use template stub if matched, otherwise use search-derived stub
+        if template_source.startswith("template:"):
+            pass  # calc_stub already set in Phase 0
+        else:
+            calc_stub = calc_stub_phase2
+
+        # Extract just the formatted strings for output
+        relevant_func_strings = [rf[1] for rf in relevant_funcs]
+
+        # ── Phase 4: Generate template ──
         code = f"""//@version=6
 indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[:16]}")
 
@@ -3047,9 +3255,9 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 // ── Calculations ──
 // {description}
 // Available functions from docs:"""
-        for rf in relevant_funcs:
+        for rf in relevant_func_strings:
             code += f"\n{rf}"
-        if not relevant_funcs:
+        if not relevant_func_strings:
             code += (
                 "\n// (Use search_docs or suggest_functions to find relevant functions)"
             )
@@ -3061,7 +3269,6 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
         # Validate
         validation = await _call_pine_facade(code)
         errors = validation.get("errors", [])
-        success = validation.get("success", False)
 
         lines = []
         lines.append("GENERATED INDICATOR TEMPLATE:")
@@ -3080,11 +3287,13 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
         else:
             lines.append("VALIDATION: Template compiles successfully.")
 
-        if relevant_funcs:
+        if relevant_func_strings:
             lines.append("")
             lines.append("RELEVANT FUNCTIONS from docs:")
-            for rf in relevant_funcs:
+            for rf in relevant_func_strings:
                 lines.append(f"  {rf}")
+
+        lines.append(f"\nSOURCE: {template_source}")
 
         return "\n".join(lines)
 
@@ -3093,7 +3302,6 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
         if _chroma_breaker.is_open():
             raise ToolError(_circuit_breaker_msg())
         raise ToolError(_safe_error(e, "generate_indicator"))
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL 15: generate_strategy
