@@ -368,20 +368,36 @@ def _get_collection():
 
 
 def _get_model():
-    """Return the SentenceTransformer, initializing lazily with ONNX backend if available."""
+    """Return the SentenceTransformer, initializing lazily.
+
+    Uses PyTorch with MPS acceleration on Apple Silicon (faster than ONNX
+    due to Metal GPU). Falls back to ONNX on CPU-only systems where
+    ONNX Runtime is significantly faster than PyTorch-CPU.
+    """
     global _embed_model
     if _embed_model is not None:
         return _embed_model
     try:
         from sentence_transformers import SentenceTransformer
+        import torch
 
-        # Try ONNX backend first (1.4-3x faster inference)
-        try:
-            _embed_model = SentenceTransformer(EMBED_MODEL, backend="onnx")
-            logger.info(f"Embedding model loaded: {EMBED_MODEL} (ONNX backend)")
-        except Exception:
+        # Apple Silicon: MPS is faster than ONNX for this model size
+        # CPU-only systems: ONNX can be 1.4-3x faster than PyTorch-CPU
+        if torch.backends.mps.is_available():
+            _embed_model = SentenceTransformer(EMBED_MODEL, device="mps")
+            logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch/MPS)")
+        elif not torch.cuda.is_available():
+            # CPU-only: try ONNX for speedup
+            try:
+                _embed_model = SentenceTransformer(EMBED_MODEL, backend="onnx")
+                logger.info(f"Embedding model loaded: {EMBED_MODEL} (ONNX/CPU)")
+            except Exception:
+                _embed_model = SentenceTransformer(EMBED_MODEL)
+                logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch/CPU)")
+        else:
             _embed_model = SentenceTransformer(EMBED_MODEL)
-            logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch backend)")
+            logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch)")
+
         return _embed_model
     except Exception as e:
         logger.error(f"Failed to load embedding model: {e}")
