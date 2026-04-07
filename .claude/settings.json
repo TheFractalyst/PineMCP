@@ -12,19 +12,16 @@
         "get_examples",
         "search_by_return_type",
         "list_namespace",
-        "get_source_url",
         "suggest_functions",
         "get_namespace_cheatsheet",
         "validate_syntax",
         "validate_and_explain",
         "fix_and_validate",
         "lookup_and_correct",
-        "generate_indicator",
-        "generate_strategy",
-        "check_freshness",
-        "diff_entry",
+        "validate_file",
         "debug_pine_facade",
-        "get_live_entry"
+        "generate_indicator",
+        "generate_strategy"
       ]
     }
   }

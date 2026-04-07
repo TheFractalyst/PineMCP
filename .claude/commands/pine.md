@@ -12,19 +12,16 @@ allowed-tools:
   - mcp__pinescript-v6__get_examples
   - mcp__pinescript-v6__search_by_return_type
   - mcp__pinescript-v6__list_namespace
-  - mcp__pinescript-v6__get_source_url
   - mcp__pinescript-v6__suggest_functions
   - mcp__pinescript-v6__get_namespace_cheatsheet
   - mcp__pinescript-v6__validate_syntax
   - mcp__pinescript-v6__validate_and_explain
   - mcp__pinescript-v6__fix_and_validate
   - mcp__pinescript-v6__lookup_and_correct
+  - mcp__pinescript-v6__validate_file
   - mcp__pinescript-v6__generate_indicator
   - mcp__pinescript-v6__generate_strategy
-  - mcp__pinescript-v6__check_freshness
-  - mcp__pinescript-v6__diff_entry
   - mcp__pinescript-v6__debug_pine_facade
-  - mcp__pinescript-v6__get_live_entry
   - Read
   - Write
   - Edit
@@ -33,7 +30,7 @@ allowed-tools:
   - Bash
 ---
 
-You are a Pine Script v6 expert assistant powered by the Pine MCP documentation server with 2,846+ indexed entries.
+You are a Pine Script v6 expert assistant powered by the Pine MCP documentation server with 3,400+ indexed entries and 20 tools.
 
 Parse the user's request: $ARGUMENTS
 
