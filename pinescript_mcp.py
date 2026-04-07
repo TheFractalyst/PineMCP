@@ -340,17 +340,14 @@ def _get_collection():
             "Please wait and try again."
         )
     # Fast path: already initialized (no lock needed for read)
+    # NOTE: Removed staleness check (_collection.count()) from hot path.
+    # Count() triggers disk I/O on every lookup (~0.5-2ms). The collection
+    # is loaded once at startup and is stable — staleness is handled by
+    # the circuit breaker on actual query failures, not by proactively
+    # checking count on every call.
     if _collection is not None:
-        try:
-            current_count = _collection.count()
-            if current_count == 0:
-                logger.info("ChromaDB collection empty — forcing reload")
-                _collection = None
-        except Exception:
-            _collection = None
-        if _collection is not None:
-            _chroma_breaker.record_success()
-            return _collection
+        _chroma_breaker.record_success()
+        return _collection
     # Slow path: initialize under lock to prevent duplicate init
     with _db_init_lock:
         # Double-check after acquiring lock (another thread may have initialized)
@@ -386,41 +383,51 @@ def _get_collection():
             raise
 
 
+_model_init_lock = threading.Lock()
+
+
 def _get_model():
     """Return the SentenceTransformer, initializing lazily.
 
+    Thread-safe: uses _model_init_lock to prevent concurrent initialization.
     Uses PyTorch with MPS acceleration on Apple Silicon (faster than ONNX
     due to Metal GPU). Falls back to ONNX on CPU-only systems where
     ONNX Runtime is significantly faster than PyTorch-CPU.
     """
     global _embed_model
+    # Fast path: already initialized (no lock needed for read)
     if _embed_model is not None:
         return _embed_model
-    try:
-        from sentence_transformers import SentenceTransformer
-        import torch
+    # Slow path: initialize under lock
+    with _model_init_lock:
+        # Double-check after acquiring lock
+        if _embed_model is not None:
+            return _embed_model
+        try:
+            from sentence_transformers import SentenceTransformer
+            import torch
 
-        # Apple Silicon: MPS is faster than ONNX for this model size
-        # CPU-only systems: ONNX can be 1.4-3x faster than PyTorch-CPU
-        if torch.backends.mps.is_available():
-            _embed_model = SentenceTransformer(EMBED_MODEL, device="mps")
-            logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch/MPS)")
-        elif not torch.cuda.is_available():
-            # CPU-only: try ONNX for speedup
-            try:
-                _embed_model = SentenceTransformer(EMBED_MODEL, backend="onnx")
-                logger.info(f"Embedding model loaded: {EMBED_MODEL} (ONNX/CPU)")
-            except Exception:
+            # Apple Silicon: MPS is faster than ONNX for this model size
+            # CPU-only systems: ONNX can be 1.4-3x faster than PyTorch-CPU
+            if torch.backends.mps.is_available():
+                _embed_model = SentenceTransformer(EMBED_MODEL, device="mps")
+                logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch/MPS)")
+            elif not torch.cuda.is_available():
+                # CPU-only: try ONNX for speedup
+                try:
+                    _embed_model = SentenceTransformer(EMBED_MODEL, backend="onnx")
+                    logger.info(f"Embedding model loaded: {EMBED_MODEL} (ONNX/CPU)")
+                except Exception:
+                    _embed_model = SentenceTransformer(EMBED_MODEL)
+                    logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch/CPU)")
+            else:
                 _embed_model = SentenceTransformer(EMBED_MODEL)
-                logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch/CPU)")
-        else:
-            _embed_model = SentenceTransformer(EMBED_MODEL)
-            logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch)")
+                logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch)")
 
-        return _embed_model
-    except Exception as e:
-        logger.error(f"Failed to load embedding model: {e}")
-        raise
+            return _embed_model
+        except Exception as e:
+            logger.error(f"Failed to load embedding model: {e}")
+            raise
 
 
 async def _ensure_embedding_model():
@@ -1040,6 +1047,7 @@ class PineFacadeCircuitBreaker:
 
 _pine_cb = PineFacadeCircuitBreaker()
 _facade_http_client: Optional[httpx.AsyncClient] = None
+_facade_client_lock = threading.Lock()
 
 _VALIDATION_CACHE: OrderedDict[str, tuple[str, float]] = OrderedDict()
 _VALIDATION_CACHE_LOCK = threading.Lock()
@@ -1127,9 +1135,18 @@ _FIX_HINTS: dict[str, str] = {
 
 
 def _get_facade_client() -> httpx.AsyncClient:
-    """Lazy-init a shared httpx.AsyncClient for pine-facade calls."""
+    """Lazy-init a shared httpx.AsyncClient for pine-facade calls.
+    Thread-safe: uses _facade_client_lock to prevent concurrent initialization.
+    """
     global _facade_http_client
-    if _facade_http_client is None or _facade_http_client.is_closed:
+    # Fast path: already initialized
+    if _facade_http_client is not None and not _facade_http_client.is_closed:
+        return _facade_http_client
+    # Slow path: initialize under lock
+    with _facade_client_lock:
+        # Double-check after acquiring lock
+        if _facade_http_client is not None and not _facade_http_client.is_closed:
+            return _facade_http_client
         _facade_http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(float(PINE_FACADE_TIMEOUT), connect=5.0),
             limits=httpx.Limits(
@@ -1645,6 +1662,7 @@ PRIORITY_GLOBALS = [
 
 _cache_hits: int = 0
 _cache_misses: int = 0
+_cache_counter_lock = threading.Lock()
 
 
 async def build_hot_cache() -> bool:
@@ -1704,16 +1722,19 @@ def cache_lookup(name: str) -> Optional[dict]:
     key = name.lower().strip()
     entry = HOT_CACHE.get(key)
     if entry:
-        _cache_hits += 1
+        with _cache_counter_lock:
+            _cache_hits += 1
         return entry
     # Try just the last part after a dot
     if "." in key:
         short = key.split(".")[-1]
         entry = HOT_CACHE.get(short)
         if entry:
-            _cache_hits += 1
+            with _cache_counter_lock:
+                _cache_hits += 1
             return entry
-    _cache_misses += 1
+    with _cache_counter_lock:
+        _cache_misses += 1
     return None
 
 
@@ -1798,7 +1819,7 @@ async def search_docs(
             return db_err
 
         if not results["ids"] or not results["ids"][0]:
-            raise ToolError(f"No results for '{query}'")
+            return f"No results found for '{query}'. Try broadening your search terms."
 
         # FIX 4: Add content-based deduplication
         seen_hashes = set()
@@ -2273,9 +2294,9 @@ async def get_examples(
         results = await _query_async(query, n_results, where={"has_examples": 1})
         db_err = _check_query_error(results)
         if db_err:
-            raise ToolError(db_err)
+            return db_err
         if not results["ids"] or not results["ids"][0]:
-            raise ToolError(f"No examples found for '{query}'")
+            return f"No examples found for '{query}'. Try a different search term."
 
         output_lines: list[str] = []
         for i, (meta, doc, dist) in enumerate(
@@ -2358,7 +2379,7 @@ async def list_namespace(
 
         entries = await _get_all_where_async(where)
         if not entries:
-            raise ToolError(f"No entries found for namespace '{ns}'")
+            return f"No entries found for namespace '{ns}'. Check the namespace name and try again."
 
         # Group by category
         groups: dict[str, list[dict]] = {}
@@ -2481,7 +2502,7 @@ async def search_by_return_type(
                 return db_err
 
         if not results["ids"] or not results["ids"][0]:
-            raise ToolError(f"No functions found returning '{return_type}'")
+            return f"No functions found returning '{return_type}'. Try a different type like 'series float' or 'bool'."
 
         output_lines: list[str] = []
         output_lines.append(f"Functions returning '{return_type}':")
@@ -4174,7 +4195,7 @@ async def get_namespace_cheatsheet(
 
         entries = await _get_all_where_async(where)
         if not entries:
-            raise ToolError(f"No entries found for namespace '{ns}'")
+            return f"No entries found for namespace '{ns}'. Check the namespace name and try again."
 
         # Group by category
         groups: dict[str, list[dict]] = {}
@@ -4307,6 +4328,9 @@ async def validate_file(
     except Exception:
         return "ERROR: Invalid path provided."
 
+    # Display name: use basename only to avoid leaking absolute paths in response
+    display_name = os.path.basename(resolved)
+
     if not resolved.endswith('.ps') and not resolved.endswith('.pine'):
         return "ERROR: Only .ps and .pine files are accepted."
 
@@ -4354,7 +4378,7 @@ async def validate_file(
     try:
         code = code.strip()
         if not code:
-            return f"ERROR: File is empty or contains only whitespace: {file_path}"
+            return f"ERROR: File is empty or contains only whitespace: {display_name}"
 
         # -- Optimization 2: fast-reject via local linter --
         # Run local linter first (~5-15ms). If it finds errors, return immediately
@@ -4370,7 +4394,7 @@ async def validate_file(
             meta = local_result.to_dict().get("meta", {})
             warnings = local_result.to_dict().get("warnings", [])
 
-            response = f"FILE: {file_path}\n"
+            response = f"FILE: {display_name}\n"
             response += f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
             response += "=" * 80 + "\n\n"
             total_issues = len(errors) + len(warnings)
@@ -4413,7 +4437,7 @@ async def validate_file(
         compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         # Build response with file info
-        response = f"FILE: {file_path}\n"
+        response = f"FILE: {display_name}\n"
         response += f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
         response += "=" * 80 + "\n\n"
 
