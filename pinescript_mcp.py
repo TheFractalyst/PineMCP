@@ -2579,6 +2579,7 @@ async def validate_syntax(
 
     except Exception as e:
         logger.error(f"[validate_syntax] {e}")
+        return _error("validate_syntax", _safe_error(e, "validate_syntax"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3760,6 +3761,7 @@ async def lookup_and_correct(
         # Non-critical: if DB is down for intent lookup, just show no docs section
 
         intent_err = _check_query_error(intent_results)
+        # Non-critical: intent lookup failure shouldn't block the correction report
         lines.append("LOOKUP AND CORRECT REPORT")
         lines.append("=" * 50)
         lines.append("")
