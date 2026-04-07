@@ -296,6 +296,9 @@ class ChromaDBCircuitBreaker:
 
 _chroma_breaker = ChromaDBCircuitBreaker(threshold=3, cooldown=30)
 
+# Thread-safety lock for singleton initialization (C1 fix)
+_db_init_lock = threading.Lock()
+
 
 def _build_name_index() -> None:
     """Build in-memory name->entry index for O(1) exact lookups."""
@@ -326,15 +329,18 @@ _embedding_model_ready = asyncio.Event()
 
 
 def _get_collection():
-    """Return the ChromaDB collection, initializing lazily. Circuit-breaker aware."""
+    """Return the ChromaDB collection, initializing lazily. Circuit-breaker aware.
+
+    Thread-safe: uses _db_init_lock to prevent concurrent initialization.
+    """
     global _collection
     if _chroma_breaker.is_open():
         raise RuntimeError(
             "ChromaDB circuit breaker is open (cooldown). "
             "Please wait and try again."
         )
+    # Fast path: already initialized (no lock needed for read)
     if _collection is not None:
-        # Detect stale cache: if collection count changed, reload
         try:
             current_count = _collection.count()
             if current_count == 0:
@@ -345,33 +351,39 @@ def _get_collection():
         if _collection is not None:
             _chroma_breaker.record_success()
             return _collection
-    try:
-        import chromadb
+    # Slow path: initialize under lock to prevent duplicate init
+    with _db_init_lock:
+        # Double-check after acquiring lock (another thread may have initialized)
+        if _collection is not None:
+            _chroma_breaker.record_success()
+            return _collection
+        try:
+            import chromadb
 
-        client = chromadb.PersistentClient(path=DB_PATH)
-        _collection = client.get_collection(name=COLLECTION)
-        count = _collection.count()
-        logger.info(f"Connected to ChromaDB - {count} entries")
+            client = chromadb.PersistentClient(path=DB_PATH)
+            _collection = client.get_collection(name=COLLECTION)
+            count = _collection.count()
+            logger.info(f"Connected to ChromaDB - {count} entries")
 
-        # HNSW warmup: force index load with a lightweight query.
-        # Eliminates ~14ms cold-start penalty on first real query.
-        if count > 0:
-            try:
-                _collection.query(
-                    query_embeddings=[[0.0] * 384],
-                    n_results=1,
-                    include=["distances"],
-                )
-                logger.debug("HNSW index warmed up")
-            except Exception:
-                pass  # Non-critical — first real query will warm it
+            # HNSW warmup: force index load with a lightweight query.
+            # Eliminates ~14ms cold-start penalty on first real query.
+            if count > 0:
+                try:
+                    _collection.query(
+                        query_embeddings=[[0.0] * 384],
+                        n_results=1,
+                        include=["distances"],
+                    )
+                    logger.debug("HNSW index warmed up")
+                except Exception:
+                    pass  # Non-critical — first real query will warm it
 
-        _chroma_breaker.record_success()
-        return _collection
-    except Exception as e:
-        _chroma_breaker.record_failure(e)
-        logger.error(f"ChromaDB init failed: {e}")
-        raise
+            _chroma_breaker.record_success()
+            return _collection
+        except Exception as e:
+            _chroma_breaker.record_failure(e)
+            logger.error(f"ChromaDB init failed: {e}")
+            raise
 
 
 def _get_model():
@@ -2952,12 +2964,6 @@ _INDICATOR_TEMPLATES: dict[str, tuple[str, bool]] = {
         "hline(30, \"Oversold\", color.green, hline.style_dashed)",
         False,
     ),
-    "macd": (
-        "[macdLine, signalLine, histLine] = ta.macd(src, fastLength, slowLength, signalLength)\n"
-        "plot(macdLine, \"MACD\", color.blue)\nplot(signalLine, \"Signal\", color.orange)\n"
-        "plot(histLine, \"Histogram\", color.red, style=plot.style_histogram)",
-        False,
-    ),
     "bollinger": (
         "[middle, upper, lower] = ta.bb(src, length, mult)\n"
         "plot(middle, \"Basis\", color.blue)\nplot(upper, \"Upper\", color.red)\n"
@@ -3625,6 +3631,12 @@ async def generate_strategy(
             return "ERROR: No strategy name provided. Pass a display name for the strategy."
         safe_name = _sanitize_pine_string(name)
 
+        # ── Cache check: avoid re-compiling identical templates ──
+        cache_key = _codegen_cache_key(safe_name, description or "", f"{initial_capital}|{commission_pct}|{pyramiding}", True)
+        cached_result = _get_codegen_cache(cache_key)
+        if cached_result:
+            return cached_result
+
         # Search docs for strategy-related functions
         relevant = await _query_async(description, 5, where={"namespace": "strategy"})
         db_err = _check_query_error(relevant)
@@ -3708,7 +3720,9 @@ if barstate.islast
             for rf in relevant_funcs:
                 lines.append(f"  {rf}")
 
-        return _cap_response("\n".join(lines))
+        result = _cap_response("\n".join(lines))
+        _set_codegen_cache(cache_key, result)
+        return result
 
     except Exception as e:
         logger.error(f"[generate_strategy] {e}")
