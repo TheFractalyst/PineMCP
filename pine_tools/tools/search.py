@@ -1,0 +1,448 @@
+"""
+mcp/tools/search.py
+──────────────────────────────────────────────────────────────────────────────
+SEARCH tools (4): search_docs, get_examples, search_by_return_type,
+                  list_namespace
+"""
+
+from __future__ import annotations
+
+from typing import Annotated, Optional
+
+from fastmcp.exceptions import ToolError
+from fastmcp.tools import tool
+from loguru import logger
+from mcp.types import ToolAnnotations
+from pydantic import Field
+
+import core.db as _db
+from core.db import query_async, get_all_where_async
+from core.hot_cache import ensure_hot_cache
+from formatters.entry import (
+    _DIVIDER,
+    format_examples_text,
+    format_params_text,
+    relevance_pct,
+    source_tag,
+)
+from formatters.errors import (
+    cap_response,
+    check_query_error,
+    circuit_breaker_msg,
+    norm_ns,
+    safe_error,
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOL 1: search_docs
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@tool(annotations=ToolAnnotations(title="Search PineScript Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+async def search_docs(
+    query: Annotated[str, Field(
+        min_length=1,
+        max_length=500,
+        description="Natural language or code query about PineScript v6",
+    )],
+    n_results: Annotated[int, Field(
+        default=5,
+        ge=1,
+        le=30,
+        description="Number of results (1-30, default 5)",
+    )] = 5,
+    category_filter: Annotated[str | None, Field(
+        default=None,
+        description="'function','variable','type',etc.",
+    )] = None,
+    namespace_filter: Annotated[str | None, Field(
+        default=None,
+        description="Namespace e.g. 'ta', 'strategy'",
+    )] = None,
+) -> str:
+    """
+    Semantic search across the complete PineScript v6 knowledge base.
+    Searches functions, variables, types, constants, keywords, and operators.
+
+    Args:
+        query: Natural language or code query about PineScript v6
+        n_results: Number of results (1-30, default 5)
+        category_filter: Filter by entry type ('function','variable',etc.)
+        namespace_filter: Filter by namespace (e.g. 'ta', 'strategy')
+    """
+    try:
+        query = query.strip()
+        await ensure_hot_cache()
+        where_clauses: list[dict] = []
+        if category_filter:
+            where_clauses.append({"category": category_filter})
+        if namespace_filter:
+            where_clauses.append({"namespace": namespace_filter})
+
+        where: Optional[dict] = None
+        if len(where_clauses) == 1:
+            where = where_clauses[0]
+        elif len(where_clauses) > 1:
+            where = {"$and": where_clauses}
+
+        results = await query_async(query, n_results, where=where)
+
+        db_err = check_query_error(results)
+        if db_err:
+            return db_err
+
+        if not results["ids"] or not results["ids"][0]:
+            return f"No results found for '{query}'. Try broadening your search terms."
+
+        # FIX 4: Add content-based deduplication
+        seen_hashes = set()
+        deduped_results = []
+
+        for i, (rid, meta, doc, dist) in enumerate(
+            zip(
+                results["ids"][0],
+                results["metadatas"][0],
+                results["documents"][0],
+                results["distances"][0],
+            )
+        ):
+            # Dedup: skip if content is >85% similar to already shown result
+            content_key = doc[:120].strip().lower()
+            content_hash = hash(content_key)
+            if content_hash in seen_hashes:
+                continue
+            seen_hashes.add(content_hash)
+            # Relevance gate: skip results below 30% relevance
+            if dist < 0.7:
+                deduped_results.append((rid, meta, doc, dist))
+
+        if not deduped_results:
+            return f"No results found for '{query}'. Try broadening your search terms."
+
+        output_lines: list[str] = []
+        for i, (rid, meta, doc, dist) in enumerate(deduped_results):
+            name = meta.get("name", "?")
+            category = meta.get("category", "?").upper()
+            namespace = meta.get("namespace") or ""
+            syntax = meta.get("syntax") or ""
+            ns = (
+                f"{namespace}."
+                if namespace and not name.startswith(f"{namespace}.")
+                else ""
+            )
+            rel = relevance_pct(dist)
+            tag = source_tag(meta)
+
+            output_lines.append(_DIVIDER)
+            output_lines.append(f"[{i + 1}] {ns}{name} | {category} | Relevance: {rel}")
+            output_lines.append(f"  {tag}")
+
+            desc = meta.get("raw_description", "")
+            if desc:
+                first_para = desc.split("\n\n")[0]
+                snippet = (
+                    first_para[:300] + "..." if len(first_para) > 300 else first_para
+                )
+                output_lines.append(f"  {snippet}")
+
+            param_text = format_params_text(meta)
+            if param_text:
+                output_lines.append("  " + param_text.split("\n")[0])
+
+            returns = meta.get("returns") or ""
+            if returns:
+                output_lines.append(f"  RETURNS: {returns[:120]}")
+
+            ex_count = meta.get("example_count", 0)
+            if ex_count:
+                output_lines.append(f"  Examples: {ex_count}")
+
+        output_lines.append(_DIVIDER)
+        return cap_response("\n".join(output_lines))
+
+    except ToolError:
+        raise
+    except Exception as e:
+        logger.error(f"[search_docs] {e}")
+        if "ChromaDB" in str(e) or _db._chroma_breaker.is_open():
+            return circuit_breaker_msg()
+        raise ToolError(safe_error(e, "search_docs"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOL 8: get_examples
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@tool(annotations=ToolAnnotations(title="Get Code Examples", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+async def get_examples(
+    query: Annotated[str, Field(
+        min_length=1,
+        max_length=500,
+        description="Concept to find code examples for",
+    )],
+    n_results: Annotated[int, Field(
+        default=4,
+        ge=1,
+        le=20,
+        description="Number of examples to return",
+    )] = 4,
+) -> str:
+    """
+    Find real PineScript v6 code examples by concept.
+    Returns complete, runnable code blocks from the official docs.
+
+    Use for: "how to use strategy.entry with stop loss",
+             "array iteration example", "drawing lines example"
+    """
+    try:
+        query = query.strip()
+        results = await query_async(query, n_results, where={"has_examples": 1})
+        db_err = check_query_error(results)
+        if db_err:
+            return db_err
+        if not results["ids"] or not results["ids"][0]:
+            return f"No examples found for '{query}'. Try a different search term."
+
+        # Filter out irrelevant results (relevance < 30%)
+        filtered = [
+            (meta, doc, dist)
+            for meta, doc, dist in zip(
+                results["metadatas"][0],
+                results["documents"][0],
+                results["distances"][0],
+            )
+            if dist < 0.7  # 30%+ relevance
+        ]
+        if not filtered:
+            return f"No relevant examples found for '{query}'. Try a different search term."
+
+        output_lines: list[str] = []
+        for i, (meta, doc, dist) in enumerate(filtered):
+            name = meta.get("name", "?")
+            category = meta.get("category", "?").upper()
+            namespace = meta.get("namespace") or ""
+            ns = (
+                f"{namespace}."
+                if namespace and not name.startswith(f"{namespace}.")
+                else ""
+            )
+            rel = relevance_pct(dist)
+
+            output_lines.append(_DIVIDER)
+            output_lines.append(
+                f"EXAMPLES from: {ns}{name} ({category}) — Relevance: {rel}"
+            )
+
+            ex_text = format_examples_text(meta)
+            if ex_text:
+                output_lines.append(ex_text)
+            else:
+                output_lines.append(
+                    "  (Examples referenced but not stored in metadata)"
+                )
+
+        output_lines.append(_DIVIDER)
+        return cap_response("\n".join(output_lines))
+
+    except ToolError:
+        raise
+    except Exception as e:
+        logger.error(f"[get_examples] {e}")
+        if _db._chroma_breaker.is_open():
+            return circuit_breaker_msg()
+        raise ToolError(safe_error(e, "get_examples"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOL 9: list_namespace
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@tool(annotations=ToolAnnotations(title="List Namespace Members", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+async def list_namespace(
+    namespace: Annotated[str, Field(
+        min_length=1,
+        max_length=50,
+        description="Namespace e.g. 'ta', 'strategy'",
+    )],
+    category_filter: Annotated[str | None, Field(
+        default=None,
+        description="Optional category filter",
+    )] = None,
+) -> str:
+    """
+    List ALL members of a PineScript v6 namespace.
+    Returns every function, variable, and constant in the namespace
+    with one-line descriptions.
+
+    Namespaces: ta, strategy, math, array, matrix, map, str, color,
+    chart, line, label, box, table, request, ticker, timeframe,
+    syminfo, input, runtime, polyline (and 'global' for un-namespaced)
+    """
+    try:
+        ns = norm_ns(namespace)
+        if ns.lower() == "global":
+            where: Optional[dict] = {"namespace": ""}
+        else:
+            where = {"namespace": ns}
+
+        if category_filter:
+            # ChromaDB requires $and for multiple conditions
+            where = {"$and": [{"namespace": ns if ns.lower() != "global" else ""}, {"category": category_filter}]}
+
+        entries = await get_all_where_async(where)
+        if not entries:
+            return f"No entries found for namespace '{ns}'. Check the namespace name and try again."
+
+        # Group by category
+        groups: dict[str, list[dict]] = {}
+        for entry in entries:
+            cat = entry["metadata"].get("category", "unknown")
+            groups.setdefault(cat, []).append(entry)
+
+        output_lines: list[str] = []
+        output_lines.append(f"NAMESPACE: {ns} ({len(entries)} entries)")
+        output_lines.append("")
+
+        category_order = [
+            "function",
+            "variable",
+            "constant",
+            "type",
+            "keyword",
+            "operator",
+        ]
+        for cat in category_order:
+            if cat not in groups:
+                continue
+            cat_entries = sorted(
+                groups[cat], key=lambda e: e["metadata"].get("name", "")
+            )
+            output_lines.append(f"{cat.upper()}S ({len(cat_entries)}):")
+
+            for entry in cat_entries:
+                meta = entry["metadata"]
+                name = meta.get("name", "?")
+                syntax = meta.get("syntax") or ""
+                returns = meta.get("returns") or ""
+                desc = meta.get("raw_description", "")
+                first_sentence = desc.split(".")[0][:100] if desc else ""
+
+                if cat == "function":
+                    # Show signature summary
+                    sig = syntax[:80] if syntax else name
+                    ret = f" -> {returns[:30]}" if returns else ""
+                    output_lines.append(f"  {sig}{ret}")
+                else:
+                    desc_short = f" — {first_sentence}" if first_sentence else ""
+                    output_lines.append(f"  {name}{desc_short}")
+
+            output_lines.append("")
+
+        output_lines.append(f"Total: {len(entries)} entries in namespace '{ns}'")
+        return cap_response("\n".join(output_lines))
+
+    except ToolError:
+        raise
+    except Exception as e:
+        logger.error(f"[list_namespace] {e}")
+        if _db._chroma_breaker.is_open():
+            return circuit_breaker_msg()
+        raise ToolError(safe_error(e, "list_namespace"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOL 10: search_by_return_type
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@tool(annotations=ToolAnnotations(title="Search by Return Type", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+async def search_by_return_type(
+    return_type: Annotated[str, Field(
+        min_length=1,
+        max_length=100,
+        description="Return type e.g. 'series float', 'line', 'array<int>'",
+    )],
+    n_results: Annotated[int, Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Number of results (1-50, default 10)",
+    )] = 10,
+) -> str:
+    """
+    Find all PineScript v6 functions that return a specific type.
+    Useful when you know what type you need but not which function to use.
+
+    Examples: search_by_return_type("series float"),
+              search_by_return_type("line"),
+              search_by_return_type("array<int>")
+    """
+    try:
+        return_type = return_type.strip()
+        # Search docs for functions that return this type
+        query = f"function returns {return_type}"
+        results = await query_async(query, n_results, where={"category": "function"})
+        db_err = check_query_error(results)
+        if db_err:
+            return db_err
+
+        if not results.get("ids") or not results["ids"][0]:
+            return f"No functions found that return '{return_type}'."
+
+        # Filter: only show results where 'returns' metadata matches
+        matched = []
+        all_results = list(
+            zip(
+                results["metadatas"][0],
+                results["documents"][0],
+                results["distances"][0],
+            )
+        )
+
+        for meta, doc, dist in all_results:
+            returns_field = (meta.get("returns") or "").lower()
+            rt_lower = return_type.lower()
+            # Check if return type appears in the returns field
+            if rt_lower in returns_field or returns_field in rt_lower:
+                matched.append((meta, doc, dist, True))  # True = direct match
+            elif dist < 0.5:  # Still add semantically close results
+                matched.append((meta, doc, dist, False))  # False = semantic match
+
+        if not matched:
+            # Fallback: show top semantic results
+            matched = [(m, d, dist, False) for m, d, dist in all_results[:5] if dist < 0.6]
+
+        if not matched:
+            return f"No functions found that return '{return_type}'. Try a broader type like 'float' or 'series'."
+
+        output_lines = [
+            f"FUNCTIONS RETURNING '{return_type}':",
+            f"Found {len(matched)} candidate(s)",
+            "",
+        ]
+
+        for meta, doc, dist, is_direct in matched:
+            name = meta.get("name", "?")
+            syntax = meta.get("syntax") or name
+            returns = meta.get("returns") or ""
+            namespace = meta.get("namespace") or ""
+            ns = f"{namespace}." if namespace and not name.startswith(f"{namespace}.") else ""
+            match_type = "direct match" if is_direct else f"semantic ({relevance_pct(dist)})"
+
+            output_lines.append(f"  {ns}{name}")
+            if returns:
+                output_lines.append(f"    Returns: {returns[:100]}")
+            if syntax:
+                output_lines.append(f"    Syntax: {syntax[:100]}")
+            output_lines.append(f"    ({match_type})")
+            output_lines.append("")
+
+        return cap_response("\n".join(output_lines))
+
+    except Exception as e:
+        logger.error(f"[search_by_return_type] {e}")
+        if _db._chroma_breaker.is_open():
+            return circuit_breaker_msg()
+        raise ToolError(safe_error(e, "search_by_return_type"))
