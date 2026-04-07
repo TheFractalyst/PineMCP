@@ -310,9 +310,22 @@ async def _ensure_embedding_model():
 def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
     """Run a ChromaDB query with the local embedding model.
 
+    L1 LRU cache on query results for sub-ms repeat lookups.
+    Falls through to ChromaDB on cache miss.
+
     H3: Wraps collection.query() in try/except — never lets ChromaDB
     or embedding exceptions propagate naked to tool handlers.
     """
+    # L1 cache: deterministic key from query text + n + where
+    _cache_key = xxhash.xxh64(f"{query_text}|{n}|{where}".encode()).hexdigest()
+    with _QUERY_CACHE_LOCK:
+        if _cache_key in _QUERY_RESULT_CACHE:
+            cached_result, cached_ts = _QUERY_RESULT_CACHE[_cache_key]
+            if time.time() - cached_ts < _QUERY_CACHE_TTL:
+                logger.debug(f"L1 cache hit: {query_text[:40]}")
+                return cached_result
+            else:
+                del _QUERY_RESULT_CACHE[_cache_key]
     try:
         model = _get_model()
         col = _get_collection()
@@ -326,7 +339,20 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
         if where:
             kwargs["where"] = where
 
-        return col.query(**kwargs)
+        result = col.query(**kwargs)
+
+        # Write back to L1 cache
+        with _QUERY_CACHE_LOCK:
+            _QUERY_RESULT_CACHE[_cache_key] = (result, time.time())
+            # Evict oldest if cache too large
+            if len(_QUERY_RESULT_CACHE) > _QUERY_CACHE_MAX:
+                oldest_key = min(
+                    _QUERY_RESULT_CACHE,
+                    key=lambda k: _QUERY_RESULT_CACHE[k][1],
+                )
+                del _QUERY_RESULT_CACHE[oldest_key]
+
+        return result
     except Exception as e:
         error_type = type(e).__name__
         logger.error(
@@ -852,6 +878,12 @@ _facade_http_client: Optional[httpx.AsyncClient] = None
 _VALIDATION_CACHE: dict[str, tuple[str, float]] = {}
 _VALIDATION_CACHE_LOCK = threading.Lock()
 
+# L1 query result cache — avoids re-embedding identical queries
+_QUERY_RESULT_CACHE: OrderedDict[str, tuple[dict, float]] = OrderedDict()
+_QUERY_CACHE_LOCK = threading.Lock()
+_QUERY_CACHE_TTL = 120.0  # seconds — matches VALIDATION_CACHE_TTL
+_QUERY_CACHE_MAX = 200  # max entries before eviction
+
 _FIX_HINTS: dict[str, str] = {
     "Undeclared identifier": "Variable not declared. Add 'var float {name} = na' before use, or check spelling. In v6, all identifiers must be declared.",
     "Cannot call": "Wrong argument type or count. Check parameter types with get_function().",
@@ -886,12 +918,21 @@ _FIX_HINTS: dict[str, str] = {
     # ── v6 breaking changes (8 new entries from research) ──
     "transp": "v6 removed the 'transp' parameter from plot(), fill(), bgcolor(), etc. Use color.new(color, transparency) instead, where transparency is 0 (opaque) to 100 (invisible).",
     "Duplicate argument": "v6 disallows duplicate named arguments in function calls. Remove the duplicate parameter — only one of each name is allowed.",
-    "Cannot use operator '[]'": "v6 restricts history operator [] in certain contexts (e.g., inside request.security() or on non-series types). Cache the value in a variable before using [].",
+    "Cannot use operator '[]'": "v6 restricts history operator []. For UDT fields use (obj[n]).field syntax. Literals/constants (6[1], true[10]) are invalid. Cache value in a variable before using [].",
     "no longer accepts 'bool'": "v6 tightened type requirements — this parameter no longer accepts 'bool' where it once did. Pass the expected type explicitly.",
-    "Cannot assign 'na' to": "v6 requires unique types for 'na' assignments. Declare with explicit type: 'var float x = na' instead of 'var x = na'.",
+    "Cannot assign 'na' to": "v6 requires unique types for 'na'. Declare explicitly: 'var float x = na'. Unique type constants (plot.style_*, xloc.*) need a default branch: => plot.style_line.",
     "offset": "v6 changed 'offset' parameter: it no longer accepts 'series int', only 'simple int'. Calculate the offset outside the call and pass the result.",
     "linewidth": "v6 enforces minimum linewidth of 1. Use linewidth=1 or higher. Zero or negative values are no longer accepted.",
     "margin": "v6 changed default margin from 0 to 100% (no margin trading). Set margin_long=0 and margin_short=0 in strategy() to restore margin behavior.",
+    # ── v6 edge cases from deep research (8 more entries) ──
+    "Cannot call 'na()' with": "v6 booleans cannot be na. na()/nz()/fixnan() no longer accept bool arguments. Use int (-1/0/1) or an enum for three-state logic.",
+    "Cannot call 'request.security' from": "v6 with dynamic_requests=false blocks request.*() in local scopes. Remove dynamic_requests=false (defaults to true) or move request.*() to global scope.",
+    "series int' type was used but a 'simple": "v6 correctly qualifies mutable variables (modified with :=/+=) as 'series'. Pass a const/input value to parameters expecting 'simple' or 'const' types.",
+    "closedtrades": "v6 trims oldest trades past the 9000 limit. Use strategy.closedtrades.first_index as the starting index when looping — trimmed trades return na.",
+    "strategy.exit": "v6 strategy.exit() evaluates BOTH relative (profit/loss/trail_points) AND absolute (limit/stop) parameters. Remove zero-valued relative params that v5 silently ignored.",
+    "Cannot use operator '[]'": "v6 restricts history operator []. For UDT fields use (obj[n]).field syntax. Literals/constants (6[1], true[10]) are no longer valid with [].",
+    "Cannot assign 'na' to": "v6 does not allow na for unique type constants (plot.style_*, xloc.*, label.style_*). Add a default branch: => plot.style_line at the end of switch/if.",
+    "timeframe.period": "v6 timeframe.period always includes a multiplier: '1D' not 'D', '1W' not 'W'. Use timeframe.isdaily/isweekly/ismonthly for cleaner comparisons.",
 }
 
 
