@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 import httpx
+import xxhash
 from loguru import logger
 
 from pine_linter import lint as _pine_lint
@@ -50,6 +51,9 @@ logger.add(
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+from fastmcp.server.middleware.timing import DetailedTimingMiddleware
+from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -155,11 +159,77 @@ async def _startup_lifespan(server):
     _shutdown_http_client()
 
 
+# ── Response caching middleware ──────────────────────────────────────────────
+#
+# Two-tier caching at the MCP response level (caches serialized ToolResult):
+#
+#   1. Lookup middleware (1h TTL): get_function, get_variable, get_type,
+#      get_constant, get_keyword, get_operator, list_namespace,
+#      get_namespace_cheatsheet. Results are deterministic and stable —
+#      ChromaDB docs don't change between re-indexing.
+#
+#   2. Search middleware (5m TTL): search_docs, get_examples,
+#      search_by_return_type, suggest_functions. Same query + same args =
+#      same result (deterministic embedding + ChromaDB), but queries vary
+#      widely so cache hit rate is lower. 5m TTL caches repeat lookups
+#      during a debugging session without going stale.
+#
+# Validation tools (validate_syntax, validate_and_explain, fix_and_validate,
+# debug_pine_facade, validate_file, lookup_and_correct) and codegen tools
+# (generate_indicator, generate_strategy) are EXCLUDED — they receive unique
+# code on nearly every call, so caching wastes memory and risks stale results.
+#
+# Relationship to existing internal caches (complementary, not redundant):
+#   HOT_CACHE           -> permanent dict of priority entry raw data
+#   _QUERY_RESULT_CACHE -> LRU of raw ChromaDB query results (120s, 200 max)
+#   _VALIDATION_CACHE   -> LRU of pine-facade compilation results (300s, 500 max)
+#   This middleware      -> LRU of final serialized ToolResult objects
+#
+# Cache keys are SHA-256(tool_name + ":" + JSON(args)) — deterministic,
+# so identical tool calls always hit cache within the TTL window.
+# Memory overhead: ~50-100 entries at steady state, ~200-500KB total.
+
+_lookup_cache_mw = ResponseCachingMiddleware(
+    call_tool_settings={
+        "ttl": 3600,  # 1 hour
+        "enabled": True,
+        "included_tools": [
+            "get_function",
+            "get_variable",
+            "get_type",
+            "get_constant",
+            "get_keyword",
+            "get_operator",
+            "list_namespace",
+            "get_namespace_cheatsheet",
+        ],
+    },
+)
+
+_search_cache_mw = ResponseCachingMiddleware(
+    call_tool_settings={
+        "ttl": 300,  # 5 minutes
+        "enabled": True,
+        "included_tools": [
+            "search_docs",
+            "get_examples",
+            "search_by_return_type",
+            "suggest_functions",
+        ],
+    },
+)
+
 mcp = FastMCP(
     name="PineScript v6 Complete Reference",
     instructions=INSTRUCTIONS,
     lifespan=_startup_lifespan,
     mask_error_details=True,
+    middleware=[
+        _lookup_cache_mw,
+        _search_cache_mw,
+        DetailedTimingMiddleware(),
+        ResponseLimitingMiddleware(max_size=500_000),
+    ],
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -878,6 +948,13 @@ _facade_http_client: Optional[httpx.AsyncClient] = None
 _VALIDATION_CACHE: dict[str, tuple[str, float]] = {}
 _VALIDATION_CACHE_LOCK = threading.Lock()
 
+# File-level validation cache: key=(path, mtime_ns, size), value=(result_str, timestamp)
+# Skips disk read + linter + network if file unchanged since last validation.
+_FILE_VALIDATION_CACHE: dict[tuple[str, int, int], tuple[str, float]] = {}
+_FILE_VALIDATION_CACHE_LOCK = threading.Lock()
+_FILE_VALIDATION_CACHE_TTL = float(os.getenv("FILE_VALIDATION_CACHE_TTL", "1800"))  # 30 min default
+_FILE_VALIDATION_CACHE_MAX = int(os.getenv("FILE_VALIDATION_CACHE_SIZE", "200"))
+
 # L1 query result cache — avoids re-embedding identical queries
 _QUERY_RESULT_CACHE: OrderedDict[str, tuple[dict, float]] = OrderedDict()
 _QUERY_CACHE_LOCK = threading.Lock()
@@ -1055,6 +1132,38 @@ def _cache_validation(code: str, result: str) -> None:
             logger.debug(f"Validation cache evicted oldest: {oldest_key[:40]}")
 
 
+def _get_cached_file_validation(file_path: str, mtime_ns: int, file_size: int) -> Optional[str]:
+    """Return cached file validation result if file fingerprint matches and entry is fresh.
+
+    Keyed on (resolved_path, mtime_ns, size) — if the file hasn't changed,
+    the result is still valid regardless of TTL. TTL only expires entries
+    for files that may have been deleted or replaced.
+    """
+    key = (file_path, mtime_ns, file_size)
+    with _FILE_VALIDATION_CACHE_LOCK:
+        if key in _FILE_VALIDATION_CACHE:
+            result_str, ts = _FILE_VALIDATION_CACHE[key]
+            # If mtime+size match, file content is identical — extend TTL effectively forever
+            # Still expire very old entries to bound memory
+            if time.time() - ts < _FILE_VALIDATION_CACHE_TTL:
+                logger.debug(f"File validation cache hit: {file_path}")
+                return result_str
+            else:
+                del _FILE_VALIDATION_CACHE[key]
+    return None
+
+
+def _cache_file_validation(file_path: str, mtime_ns: int, file_size: int, result: str) -> None:
+    """Store a file validation result keyed by file fingerprint."""
+    key = (file_path, mtime_ns, file_size)
+    with _FILE_VALIDATION_CACHE_LOCK:
+        _FILE_VALIDATION_CACHE[key] = (result, time.time())
+        if len(_FILE_VALIDATION_CACHE) > _FILE_VALIDATION_CACHE_MAX:
+            oldest_key = min(_FILE_VALIDATION_CACHE, key=lambda k: _FILE_VALIDATION_CACHE[k][1])
+            del _FILE_VALIDATION_CACHE[oldest_key]
+            logger.debug(f"File validation cache evicted oldest: {oldest_key[0][:40]}")
+
+
 def _normalize_facade_response(raw: dict) -> dict:
     """Normalize /compile API response.
 
@@ -1185,11 +1294,16 @@ def _enrich_error_with_code(errors: list[dict], code: str) -> list[dict]:
     return errors
 
 
-async def _call_pine_facade(code: str) -> dict:
+async def _call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
     """POST code to pine-facade compiler. Returns normalized response dict.
 
-    Runs local Tier 1 linter first (instant), then attempts remote compile.
+    Checks content-hash cache FIRST (avoids linter + network on repeat calls).
+    Then runs local Tier 1 linter, then attempts remote compile.
     If remote fails, returns local linter results as fallback.
+
+    Args:
+        code: PineScript source code to validate.
+        skip_lint: If True, skip local linter (caller already ran it).
 
     Returns:
         {
@@ -1200,18 +1314,7 @@ async def _call_pine_facade(code: str) -> dict:
             "raw_response": dict
         }
     """
-    # Tier 1: Run local linter (instant, always available)
-    local_result = _pine_lint(code)
-
-    if _pine_cb.is_open():
-        # Remote unavailable — return local linter results as fallback
-        logger.info("Circuit breaker open, returning local linter results")
-        lint_dict = local_result.to_dict()
-        lint_dict["meta"]["fallback"] = "local_linter_tier1"
-        lint_dict["meta"]["note"] = "Remote compiler unavailable. Local linter catches ~50% of errors."
-        return lint_dict
-
-    # Guard: reject empty/whitespace-only code before sending to API
+    # Guard: reject empty/whitespace-only code before any work
     if not code or not code.strip():
         return {
             "success": False,
@@ -1221,9 +1324,24 @@ async def _call_pine_facade(code: str) -> dict:
             "raw_response": {},
         }
 
+    # Fast path: check content-hash cache BEFORE running linter or network call.
+    # On cache hit, returns in ~0.5ms instead of ~15ms (linter) or ~2800ms (remote).
     cached = _get_cached_validation(code)
     if cached:
         return cached
+
+    # Tier 1: Run local linter (instant, always available)
+    local_result = _pine_lint(code) if not skip_lint else None
+
+    if _pine_cb.is_open():
+        # Remote unavailable — return local linter results as fallback
+        logger.info("Circuit breaker open, returning local linter results")
+        if local_result is None:
+            local_result = _pine_lint(code)
+        lint_dict = local_result.to_dict()
+        lint_dict["meta"]["fallback"] = "local_linter_tier1"
+        lint_dict["meta"]["note"] = "Remote compiler unavailable. Local linter catches ~50% of errors."
+        return lint_dict
 
     code = _sanitize_text(code)
 
@@ -1514,7 +1632,7 @@ def _norm_ns(ns: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def search_docs(
     query: Annotated[str, Field(
         min_length=1,
@@ -1564,7 +1682,7 @@ async def search_docs(
         results = _query(query, n_results, where=where)
 
         if not results["ids"] or not results["ids"][0]:
-            return _error("search_docs", f"No results for '{query}'")
+            raise ToolError(f"No results for '{query}'")
 
         # FIX 4: Add content-based deduplication
         seen_hashes = set()
@@ -1631,7 +1749,7 @@ async def search_docs(
         logger.error(f"[search_docs] {e}")
         if "ChromaDB" in str(e) or _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("search_docs", _safe_error(e, "search_docs"))
+        raise ToolError(_safe_error(e, "search_docs"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1737,7 +1855,7 @@ async def _lookup_entry(name: str, category: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_function(
     name: Annotated[str, Field(
         min_length=1,
@@ -1797,7 +1915,7 @@ async def get_function(
         logger.error(f"[get_function] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("function", _safe_error(e, "get_function"))
+        raise ToolError(_safe_error(e, "get_function"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1805,7 +1923,7 @@ async def get_function(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_variable(
     name: Annotated[str, Field(
         min_length=1,
@@ -1824,7 +1942,7 @@ async def get_variable(
         logger.error(f"[get_variable] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("variable", _safe_error(e, "get_variable"))
+        raise ToolError(_safe_error(e, "get_variable"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1832,7 +1950,7 @@ async def get_variable(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_type(
     name: Annotated[str, Field(
         min_length=1,
@@ -1888,7 +2006,7 @@ async def get_type(
             5,
             where={"category": "type"}
         )
-        if results["documents"][0]:
+        if results["ids"] and results["ids"][0] and results["documents"][0]:
             top_meta = results["metadatas"][0][0]
             top_doc = results["documents"][0][0]
             top_dist = results["distances"][0][0]
@@ -1909,7 +2027,7 @@ async def get_type(
         logger.error(f"[get_type] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("type", _safe_error(e, "get_type"))
+        raise ToolError(_safe_error(e, "get_type"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1917,7 +2035,7 @@ async def get_type(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_constant(
     name: Annotated[str, Field(
         min_length=1,
@@ -1936,7 +2054,7 @@ async def get_constant(
         logger.error(f"[get_constant] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("constant", _safe_error(e, "get_constant"))
+        raise ToolError(_safe_error(e, "get_constant"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1944,7 +2062,7 @@ async def get_constant(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_keyword(
     name: Annotated[str, Field(
         min_length=1,
@@ -1963,7 +2081,7 @@ async def get_keyword(
         logger.error(f"[get_keyword] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("keyword", _safe_error(e, "get_keyword"))
+        raise ToolError(_safe_error(e, "get_keyword"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1971,7 +2089,7 @@ async def get_keyword(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_operator(
     name: Annotated[str, Field(
         min_length=1,
@@ -1990,7 +2108,7 @@ async def get_operator(
         logger.error(f"[get_operator] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("operator", _safe_error(e, "get_operator"))
+        raise ToolError(_safe_error(e, "get_operator"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1998,7 +2116,7 @@ async def get_operator(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_examples(
     query: Annotated[str, Field(
         min_length=1,
@@ -2023,7 +2141,7 @@ async def get_examples(
         query = query.strip()
         results = _query(query, n_results, where={"has_examples": 1})
         if not results["ids"] or not results["ids"][0]:
-            return _error("get_examples", f"No examples found for '{query}'")
+            raise ToolError(f"No examples found for '{query}'")
 
         output_lines: list[str] = []
         for i, (meta, doc, dist) in enumerate(
@@ -2063,7 +2181,7 @@ async def get_examples(
         logger.error(f"[get_examples] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("get_examples", _safe_error(e, "get_examples"))
+        raise ToolError(_safe_error(e, "get_examples"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2071,7 +2189,7 @@ async def get_examples(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def list_namespace(
     namespace: Annotated[str, Field(
         min_length=1,
@@ -2104,7 +2222,7 @@ async def list_namespace(
 
         entries = _get_all_where(where)
         if not entries:
-            return _error("list_namespace", f"No entries found for namespace '{ns}'")
+            raise ToolError(f"No entries found for namespace '{ns}'")
 
         # Group by category
         groups: dict[str, list[dict]] = {}
@@ -2158,7 +2276,7 @@ async def list_namespace(
         logger.error(f"[list_namespace] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("list_namespace", _safe_error(e, "list_namespace"))
+        raise ToolError(_safe_error(e, "list_namespace"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2166,7 +2284,7 @@ async def list_namespace(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def search_by_return_type(
     return_type: Annotated[str, Field(
         min_length=1,
@@ -2266,7 +2384,7 @@ async def search_by_return_type(
         logger.error(f"[search_by_return_type] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("search_by_return_type", _safe_error(e, "search_by_return_type"))
+        raise ToolError(_safe_error(e, "search_by_return_type"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────
@@ -2274,7 +2392,7 @@ async def search_by_return_type(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
 async def validate_syntax(
     code: Annotated[str, Field(
         max_length=50000,
@@ -2363,7 +2481,7 @@ async def validate_syntax(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
 async def validate_and_explain(
     code: Annotated[str, Field(
         max_length=50000,
@@ -2491,7 +2609,7 @@ async def validate_and_explain(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": False})
 async def fix_and_validate(
     code: Annotated[str, Field(
         max_length=50000,
@@ -2656,7 +2774,7 @@ async def fix_and_validate(
 
     except Exception as e:
         logger.error(f"[fix_and_validate] {e}")
-        return _error("fix_and_validate", _safe_error(e, "fix_and_validate"))
+        raise ToolError(_safe_error(e, "fix_and_validate"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2664,7 +2782,7 @@ async def fix_and_validate(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": True, "idempotentHint": False})
 async def generate_indicator(
     name: Annotated[str, Field(
         min_length=1,
@@ -2931,7 +3049,9 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 
     except Exception as e:
         logger.error(f"[generate_indicator] {e}")
-        return _error("generate_indicator", _safe_error(e, "generate_indicator"))
+        if _chroma_breaker.is_open():
+            raise ToolError(_circuit_breaker_msg())
+        raise ToolError(_safe_error(e, "generate_indicator"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2939,7 +3059,7 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": True, "idempotentHint": False})
 async def generate_strategy(
     name: Annotated[str, Field(
         min_length=1,
@@ -3072,7 +3192,9 @@ if barstate.islast
 
     except Exception as e:
         logger.error(f"[generate_strategy] {e}")
-        return _error("generate_strategy", _safe_error(e, "generate_strategy"))
+        if _chroma_breaker.is_open():
+            raise ToolError(_circuit_breaker_msg())
+        raise ToolError(_safe_error(e, "generate_strategy"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3080,7 +3202,7 @@ if barstate.islast
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": False})
 async def lookup_and_correct(
     code: Annotated[str, Field(
         max_length=50000,
@@ -3293,7 +3415,9 @@ async def lookup_and_correct(
 
     except Exception as e:
         logger.error(f"[lookup_and_correct] {e}")
-        return _error("lookup_and_correct", _safe_error(e, "lookup_and_correct"))
+        if _chroma_breaker.is_open():
+            raise ToolError(_circuit_breaker_msg())
+        raise ToolError(_safe_error(e, "lookup_and_correct"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3301,7 +3425,7 @@ async def lookup_and_correct(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
 async def debug_pine_facade(
     code: Annotated[str, Field(
         max_length=50000,
@@ -3391,7 +3515,7 @@ async def debug_pine_facade(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def suggest_functions(
     context: Annotated[str, Field(
         min_length=1,
@@ -3475,7 +3599,7 @@ async def suggest_functions(
         logger.error(f"[suggest_functions] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("suggest_functions", _safe_error(e, "suggest_functions"))
+        raise ToolError(_safe_error(e, "suggest_functions"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3483,7 +3607,7 @@ async def suggest_functions(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
 async def get_namespace_cheatsheet(
     namespace: Annotated[str, Field(
         min_length=1,
@@ -3570,7 +3694,7 @@ async def get_namespace_cheatsheet(
         logger.error(f"[get_namespace_cheatsheet] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error("get_namespace_cheatsheet", _safe_error(e, "get_namespace_cheatsheet"))
+        raise ToolError(_safe_error(e, "get_namespace_cheatsheet"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3610,7 +3734,7 @@ async def get_stats() -> str:
         )
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
 async def validate_file(
     file_path: Annotated[str, Field(
         description="Absolute path to PineScript v6 file to validate"
@@ -3666,14 +3790,14 @@ async def validate_file(
         if file_stat.st_size > _MAX_FILE_SIZE:
             return f"ERROR: File too large ({file_stat.st_size:,} bytes). Maximum allowed: {_MAX_FILE_SIZE:,} bytes."
     except Exception as e:
-        return f"ERROR: Cannot stat file: {e}"
+        return f"ERROR: Cannot stat file — {_safe_error(e, 'validate_file')}"
 
     # Read file content
     try:
         with open(resolved, 'r', encoding='utf-8') as f:
             code = f.read()
     except Exception as e:
-        return f"ERROR: Failed to read file: {e}"
+        return f"ERROR: Failed to read file — {_safe_error(e, 'validate_file')}"
     
     # Get file stats for display
     file_size = len(code)
@@ -3743,7 +3867,7 @@ async def validate_file(
         
     except Exception as e:
         logger.exception("Unexpected error in validate_file")
-        return f"ERROR: Validation failed: {e}"
+        return f"ERROR: Validation failed — {_safe_error(e, 'validate_file')}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
