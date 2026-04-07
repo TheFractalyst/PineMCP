@@ -1802,12 +1802,16 @@ async def _lookup_entry(name: str, category: str) -> str:
         # Step 0: Check hot cache first (sub-ms for priority entries)
         cached = cache_lookup(name)
         if cached:
-            result = _format_entry_detail(
-                cached["metadata"].get("name", name),
-                cached["metadata"],
-                cached["document"],
-            )
-            return result
+            # Verify category match — skip cache if wrong category
+            if category and cached["metadata"].get("category") != category:
+                pass  # fall through to name search
+            else:
+                result = _format_entry_detail(
+                    cached["metadata"].get("name", name),
+                    cached["metadata"],
+                    cached["document"],
+                )
+                return result
 
         # Step 1: Try exact fuzzy match within category
         candidates = _search_by_name(
@@ -2504,14 +2508,10 @@ async def validate_syntax(
                 lines.append(f"    Fix hint: {hint}")
             lines.append("")
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[validate_syntax] {e}")
-        return (
-            f"Compiler unavailable ({_safe_error(e, 'validate_syntax')}).\n"
-            f"Check your code for syntax errors."
-        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2632,7 +2632,7 @@ async def validate_and_explain(
                 lines.append(f"  Fix hint: {hint}")
             lines.append("")
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[validate_and_explain] {e}")
@@ -2808,7 +2808,7 @@ async def fix_and_validate(
         if fixed_code != code:
             lines.extend(["", "FIXED CODE:", "```pine", fixed_code, "```"])
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[fix_and_validate] {e}")
@@ -3327,7 +3327,7 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 
         lines.append(f"\nSOURCE: {template_source}")
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[generate_indicator] {e}")
@@ -3469,7 +3469,7 @@ if barstate.islast
             for rf in relevant_funcs:
                 lines.append(f"  {rf}")
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[generate_strategy] {e}")
@@ -3692,7 +3692,7 @@ async def lookup_and_correct(
             lines.append(fixed_code)
             lines.append("```")
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[lookup_and_correct] {e}")
@@ -3776,7 +3776,7 @@ async def debug_pine_facade(
         # Validation cache
         lines.append(f"Validation cache entries: {len(_VALIDATION_CACHE)}")
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[debug_pine_facade] {e}")
@@ -3874,7 +3874,7 @@ async def suggest_functions(
                 lines.append(f"     URL: {url}")
             lines.append("")
 
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[suggest_functions] {e}")
@@ -3969,7 +3969,7 @@ async def get_namespace_cheatsheet(
 
         lines.append(f"{_BOX_BL}{_BOX_H * 60}{_BOX_BR}")
         lines.append(f"Total: {total} entries in namespace '{ns}'")
-        return "\n".join(lines)
+        return _cap_response("\n".join(lines))
 
     except Exception as e:
         logger.error(f"[get_namespace_cheatsheet] {e}")
