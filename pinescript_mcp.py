@@ -1732,7 +1732,7 @@ def _norm_ns(ns: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Search PineScript Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def search_docs(
     query: Annotated[str, Field(
         min_length=1,
@@ -1971,7 +1971,7 @@ async def _lookup_entry(name: str, category: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Get Function Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_function(
     name: Annotated[str, Field(
         min_length=1,
@@ -2039,7 +2039,7 @@ async def get_function(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Get Variable Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_variable(
     name: Annotated[str, Field(
         min_length=1,
@@ -2066,7 +2066,7 @@ async def get_variable(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Get Type Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_type(
     name: Annotated[str, Field(
         min_length=1,
@@ -2154,7 +2154,7 @@ async def get_type(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Get Constant Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_constant(
     name: Annotated[str, Field(
         min_length=1,
@@ -2181,7 +2181,7 @@ async def get_constant(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Get Keyword Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_keyword(
     name: Annotated[str, Field(
         min_length=1,
@@ -2208,7 +2208,7 @@ async def get_keyword(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Get Operator Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_operator(
     name: Annotated[str, Field(
         min_length=1,
@@ -2235,7 +2235,7 @@ async def get_operator(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Get Code Examples", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_examples(
     query: Annotated[str, Field(
         min_length=1,
@@ -2313,7 +2313,7 @@ async def get_examples(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="List Namespace Members", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def list_namespace(
     namespace: Annotated[str, Field(
         min_length=1,
@@ -2410,7 +2410,7 @@ async def list_namespace(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Search by Return Type", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def search_by_return_type(
     return_type: Annotated[str, Field(
         min_length=1,
@@ -2521,7 +2521,7 @@ async def search_by_return_type(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Validate PineScript Code", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def validate_syntax(
     code: Annotated[str, Field(
         max_length=50000,
@@ -2631,7 +2631,7 @@ async def validate_syntax(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Validate and Explain Errors", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def validate_and_explain(
     code: Annotated[str, Field(
         max_length=50000,
@@ -2757,7 +2757,7 @@ async def validate_and_explain(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": False})
+@mcp.tool(annotations=ToolAnnotations(title="Fix and Validate Code", readOnlyHint=True, openWorldHint=True, destructiveHint=True, idempotentHint=False))
 async def fix_and_validate(
     code: Annotated[str, Field(
         max_length=50000,
@@ -3181,7 +3181,7 @@ def _set_codegen_cache(key: str, result: str) -> None:
             _CODEGEN_CACHE.popitem(last=False)
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": True, "idempotentHint": False})
+@mcp.tool(annotations=ToolAnnotations(title="Generate Indicator Template", readOnlyHint=False, openWorldHint=True, destructiveHint=True, idempotentHint=False))
 async def generate_indicator(
     name: Annotated[str, Field(
         min_length=1,
@@ -3562,7 +3562,7 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": True, "idempotentHint": False})
+@mcp.tool(annotations=ToolAnnotations(title="Generate Strategy Template", readOnlyHint=False, openWorldHint=True, destructiveHint=True, idempotentHint=False))
 async def generate_strategy(
     name: Annotated[str, Field(
         min_length=1,
@@ -3708,7 +3708,7 @@ if barstate.islast
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": False})
+@mcp.tool(annotations=ToolAnnotations(title="Lookup and Correct Code", readOnlyHint=True, openWorldHint=True, destructiveHint=True, idempotentHint=False))
 async def lookup_and_correct(
     code: Annotated[str, Field(
         max_length=50000,
@@ -3935,7 +3935,7 @@ async def lookup_and_correct(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Debug Pine Facade", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def debug_pine_facade(
     code: Annotated[str, Field(
         max_length=50000,
@@ -4025,7 +4025,7 @@ async def debug_pine_facade(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Suggest Functions", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def suggest_functions(
     context: Annotated[str, Field(
         min_length=1,
@@ -4121,7 +4121,7 @@ async def suggest_functions(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Namespace Cheatsheet", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
 async def get_namespace_cheatsheet(
     namespace: Annotated[str, Field(
         min_length=1,
@@ -4247,7 +4247,7 @@ async def get_stats() -> str:
         )
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True, "idempotentHint": True})
+@mcp.tool(annotations=ToolAnnotations(title="Validate PineScript File", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def validate_file(
     file_path: Annotated[str, Field(
         description="Absolute path to PineScript v6 file to validate"
