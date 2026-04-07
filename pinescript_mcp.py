@@ -2930,6 +2930,74 @@ _INDICATOR_TEMPLATES: dict[str, tuple[str, bool]] = {
         "hline(-80, \"Oversold\", color.green, hline.style_dashed)",
         False,
     ),
+    "macd": (
+        "[macdLine, signalLine, histLine] = ta.macd(src, fastLength, slowLength, signalLength)\n"
+        "plot(macdLine, \"MACD\", color.blue)\nplot(signalLine, \"Signal\", color.orange)\n"
+        "plot(histLine, \"Histogram\", color.red, style=plot.style_histogram)",
+        False,
+    ),
+    "dmi": (
+        "[diPlus, diMinus, adxValue] = ta.dmi(diLength, adxSmoothing)\n"
+        "plot(diPlus, \"+DI\", color.green)\nplot(diMinus, \"-DI\", color.red)\n"
+        "plot(adxValue, \"ADX\", color.orange, linewidth=2)",
+        False,
+    ),
+    "ichimoku": (
+        "tenkan = math.avg(ta.highest(high, 9), ta.lowest(low, 9))\n"
+        "kijun = math.avg(ta.highest(high, 26), ta.lowest(low, 26))\n"
+        "senkouA = math.avg(tenkan, kijun)\n"
+        "senkouB = math.avg(ta.highest(high, 52), ta.lowest(low, 52))\n"
+        "plot(tenkan, \"Tenkan\", color.blue)\nplot(kijun, \"Kijun\", color.red)\n"
+        "p1 = plot(senkouA, \"Senkou A\", display=display.none)\n"
+        "p2 = plot(senkouB, \"Senkou B\", display=display.none)\n"
+        "fill(p1, p2, color=senkouA > senkouB ? color.new(color.green, 90) : color.new(color.red, 90))",
+        True,
+    ),
+    "sar": (
+        "sarValue = ta.sar(start, increment, maximum)\n"
+        "plot(sarValue, \"Parabolic SAR\", color.orange, style=plot.style_cross, linewidth=2)",
+        True,
+    ),
+    "keltner": (
+        "emaValue = ta.ema(src, length)\n"
+        "atrValue = ta.atr(atrLength)\n"
+        "upper = emaValue + mult * atrValue\nlower = emaValue - mult * atrValue\n"
+        "plot(emaValue, \"EMA\", color.blue)\nplot(upper, \"Upper\", color.red)\n"
+        "plot(lower, \"Lower\", color.green)\n"
+        "p1 = plot(upper, display=display.none)\np2 = plot(lower, display=display.none)\n"
+        "fill(p1, p2, color=color.new(color.blue, 90))",
+        True,
+    ),
+    "donchian": (
+        "upper = ta.highest(high, length)\nlower = ta.lowest(low, length)\n"
+        "mid = math.avg(upper, lower)\n"
+        "plot(upper, \"Upper\", color.red)\nplot(lower, \"Lower\", color.green)\n"
+        "plot(mid, \"Middle\", color.orange, style=plot.style_circles)",
+        True,
+    ),
+    "aroon": (
+        "up = ta.aroon(length).up\ndn = ta.aroon(length).down\n"
+        "osc = up - dn\n"
+        "plot(up, \"Aroon Up\", color.green)\nplot(dn, \"Aroon Down\", color.red)\n"
+        "plot(osc, \"Oscillator\", color.orange, style=plot.style_histogram)\n"
+        "hline(0, \"Zero\", color.gray, hline.style_dotted)",
+        False,
+    ),
+    "cmf": (
+        "cmfValue = ta.cmf(length)\nplot(cmfValue, \"CMF\", color.orange)\n"
+        "hline(0, \"Zero\", color.gray, hline.style_dotted)",
+        False,
+    ),
+    "tema": (
+        "e1 = ta.ema(src, length)\ne2 = ta.ema(e1, length)\ne3 = ta.ema(e2, length)\n"
+        "temaValue = 3 * (e1 - e2) + e3\nplot(temaValue, \"TEMA\", color.orange)",
+        True,
+    ),
+    "dema": (
+        "e1 = ta.ema(src, length)\ne2 = ta.ema(e1, length)\n"
+        "demaValue = 2 * e1 - e2\nplot(demaValue, \"DEMA\", color.orange)",
+        True,
+    ),
 }
 
 
@@ -2946,7 +3014,6 @@ def _extract_indicator_keywords(description: str) -> list[str]:
         ("bollinger", r"\bbollinger\b|\bbb\b(?!\s*=)"),
         ("supertrend", r"\bsupertrend\b|\bsuper.?trend\b"),
         ("stochastic", r"\bstochastic\b|\bstoch\b"),
-        ("macd", r"\bmacd\b|\bmoving\s+average\s+convergence"),
         ("rsi", r"\brelative\s+strength\b|\brsi\b"),
         ("ema", r"\bexponential\s+moving\s+average\b|\bema\b"),
         ("sma", r"\bsimple\s+moving\s+average\b|\bsma\b"),
@@ -2957,6 +3024,16 @@ def _extract_indicator_keywords(description: str) -> list[str]:
         ("cci", r"\bcommodity\s+channel\b|\bcci\b"),
         ("mfi", r"\bmoney\s+flow\s+index\b|\bmfi\b"),
         ("williams", r"\bwilliams\s*%?\s*r\b|\bwpr\b"),
+        ("macd", r"\bmacd\b|\bmoving\s+average\s+convergence\s+divergence\b"),
+        ("dmi", r"\bdirectional\s+movement\b|\bdmi\b|\badx\b"),
+        ("ichimoku", r"\bichimoku\b|\bcloud\b"),
+        ("sar", r"\bparabolic\s+sar\b|\bstop\s+and\s+reverse\b|\bsar\b"),
+        ("keltner", r"\bkeltner\b|\bkc\b"),
+        ("donchian", r"\bdonchian\b|\bchannel\b(?!.*cci)"),
+        ("aroon", r"\baroon\b"),
+        ("cmf", r"\bchaikin\s+money\s+flow\b|\bcmf\b"),
+        ("tema", r"\btriple\s+exponential\b|\btema\b"),
+        ("dema", r"\bdouble\s+exponential\b|\bdema\b"),
     ]
     matches = []
     for family, pattern in patterns:
@@ -3170,38 +3247,36 @@ async def generate_indicator(
             else:
                 enriched_query = description
 
-            # Query 1: ta.* namespace (preferred for technical indicators)
-            ta_results = _query(
-                enriched_query, 5,
-                where={"$and": [{"category": "function"}, {"namespace": "ta"}]}
-            )
-            # Query 2: broad fallback (no namespace filter)
-            broad_results = _query(
-                enriched_query, 5,
+            # Single broad query — then prioritize ta.* results in Python.
+            # Saves one full embedding + ChromaDB round-trip (~30-50ms).
+            combined_results = _query(
+                enriched_query, 10,
                 where={"category": "function"}
             )
 
-            # Pick best result across both queries using distance
+            # Pick best result, preferring ta.* namespace
             best_meta = None
             best_dist = 1.0
             best_query_label = ""
 
-            for label, results in [("ta", ta_results), ("broad", broad_results)]:
-                if not results.get("ids") or not results["ids"][0]:
-                    continue
+            if combined_results.get("ids") and combined_results["ids"][0]:
                 for i, (meta, dist) in enumerate(
-                    zip(results["metadatas"][0], results["distances"][0])
+                    zip(combined_results["metadatas"][0], combined_results["distances"][0])
                 ):
                     fname = meta.get("name", "?")
                     fsyntax = meta.get("syntax", "")
-                    # Deduplicate by name (same function may appear in both queries)
+                    # Deduplicate by name
                     if any(rf_name == fname for rf_name, _ in relevant_funcs):
                         continue
                     relevant_funcs.append((fname, f"//   {fname}: {fsyntax[:80]}"))
 
-                    if best_meta is None or dist < best_dist:
+                    # Prefer ta.* results; among equal namespace, prefer lower distance
+                    label = "ta" if fname.startswith("ta.") else "broad"
+                    # Apply a 0.05 distance bonus for ta.* namespace
+                    effective_dist = dist - (0.05 if label == "ta" else 0.0)
+                    if best_meta is None or effective_dist < best_dist:
                         best_meta = meta
-                        best_dist = dist
+                        best_dist = effective_dist
                         best_query_label = label
 
             # ── Phase 3: Relevance gating ──
