@@ -1,38 +1,39 @@
 # PineScript MCP Server Benchmark Results
 
-**Server**: `/Users/fractalyst/pinescript_mcp/.venv/bin/python3`
+**Server**: `/Users/fractalyst/pinescript_mcp/pinescript_mcp.py`
 **Iterations per tool**: 3 (1 cold + 2 warm)
-**Date**: 2026-04-07 04:34:51
+**Date**: 2026-04-07 04:44:39
 **Tools tested**: 21
 
-| Tool | Cold (ms) | Warm Avg (ms) | Response (chars) | Quality (1-10) |
-|------|-----------|---------------|------------------|----------------|
-| validate_and_explain | 199 | 160 | 383 | 9 |
-| validate_file | 2035 | 131 | 300 | 9 |
-| get_namespace_cheatsheet | 24 | 15 | 14339 | 10 |
-| list_namespace | 8 | 7 | 5205 | 10 |
-| debug_pine_facade | 736 | 5 | 1021 | 10 |
-| lookup_and_correct | 675 | 5 | 88 | 6 |
-| validate_syntax (invalid) | 627 | 4 | 228 | 9 |
-| validate_syntax (valid) | 661 | 4 | 96 | 6 |
-| fix_and_validate | 453 | 4 | 380 | 9 |
-| suggest_functions | 3 | 2 | 86 | 6 |
-| generate_indicator | 3 | 2 | 88 | 6 |
-| generate_strategy | 2 | 2 | 86 | 6 |
-| get_type | 3 | 2 | 858 | 9 |
-| get_keyword | 33 | 2 | 2927 | 10 |
-| search_by_return_type | 2 | 1 | 94 | 6 |
-| get_operator | 1 | 1 | 1020 | 9 |
-| search_docs | 4 | 1 | 74 | 6 |
-| get_examples | 1 | 1 | 76 | 6 |
-| get_function | 1 | 1 | 1719 | 9 |
-| get_constant | 1 | 1 | 629 | 9 |
-| get_variable | 1 | 1 | 718 | 9 |
+| # | Tool | Cold (ms) | Warm Avg (ms) | Response (chars) | Quality (1-10) |
+|--:|------|-----------|---------------|------------------|----------------|
+| 1 | generate_strategy | 774 | 375 | 1,939 | 8 |
+| 2 | generate_indicator | 856 | 367 | 1,199 | 7 |
+| 3 | validate_and_explain | 216 | 159 | 600 | 7 |
+| 4 | validate_syntax (valid) | 411 | 3 | 96 | 6 |
+| 5 | fix_and_validate | 212 | 3 | 380 | 7 |
+| 6 | debug_pine_facade | 211 | 3 | 1,023 | 8 |
+| 7 | validate_syntax (invalid) | 216 | 3 | 228 | 7 |
+| 8 | lookup_and_correct | 355 | 1 | 636 | 8 |
+| 9 | validate_file | 120 | 1 | 839 | 8 |
+| 10 | suggest_functions | 27 | 1 | 2,118 | 9 |
+| 11 | search_docs | 130 | 1 | 1,561 | 9 |
+| 12 | get_namespace_cheatsheet | 19 | 1 | 14,339 | 10 |
+| 13 | search_by_return_type | 86 | 1 | 2,692 | 9 |
+| 14 | get_keyword | 35 | 1 | 2,927 | 9 |
+| 15 | get_examples | 134 | 1 | 8,037 | 10 |
+| 16 | list_namespace | 9 | 1 | 5,205 | 10 |
+| 17 | get_type | 4 | 1 | 858 | 8 |
+| 18 | get_variable | 1 | 1 | 718 | 8 |
+| 19 | get_function | 2 | 1 | 1,719 | 9 |
+| 20 | get_operator | 2 | 1 | 1,020 | 8 |
+| 21 | get_constant | 1 | 0 | 629 | 8 |
 
-## Notes
+## Methodology
 
-- **Cold**: First invocation (includes any lazy-loading / ChromaDB query overhead)
-- **Warm Avg**: Average of subsequent invocations (cache may be populated)
-- **Response (chars)**: Average character count of returned text content
-- **Quality**: Heuristic score (1-10) based on response size, speed, and tool type
-- Tools calling `pine-facade` (TradingView remote compiler) depend on network latency
+- **Cold**: First invocation after server startup (includes lazy-loading, ChromaDB cold query, embedding computation)
+- **Warm Avg**: Mean of subsequent invocations (L1/L2 caches may be populated)
+- **Response (chars)**: Average character count of returned text content across all iterations
+- **Quality (1-10)**: Heuristic combining response depth (size tiers) and speed (<5ms bonus, >5s penalty). Error responses score 1-3.
+- Tools calling `pine-facade` (TradingView remote compiler) include network round-trip latency (~200-700ms cold, ~4-5ms cached)
+- `validate_file` reads a 4999-bar strategy file from disk, so it includes both file I/O and pine-facade compilation
