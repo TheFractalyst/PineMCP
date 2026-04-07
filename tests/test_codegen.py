@@ -7,7 +7,7 @@ Each tool generates PineScript code and validates it.
 
 import pytest
 
-from pinescript_mcp import (
+from tools.codegen import (
     generate_indicator,
     generate_strategy,
     lookup_and_correct,

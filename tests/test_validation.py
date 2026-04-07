@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from pinescript_mcp import (
+from tools.validation import (
     validate_syntax,
     validate_and_explain,
     fix_and_validate,

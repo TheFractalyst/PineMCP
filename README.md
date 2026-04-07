@@ -1,6 +1,6 @@
 # PineScript v6 Complete Reference — MCP Server
 
-Production-grade MCP (Model Context Protocol) server providing the complete PineScript v6 reference documentation via **22 specialized tools** backed by a local ChromaDB vector store, **TradingView's official pine-facade compiler**, and a memory-first hot cache.
+Production-grade MCP (Model Context Protocol) server providing the complete PineScript v6 reference documentation via **20 specialized tools** backed by a local ChromaDB vector store, **TradingView's official pine-facade compiler**, and a memory-first hot cache.
 
 Combines two data sources into one unified knowledge base:
 1. **Local parsed documentation** — 1,242 entries from PDF/Markdown
@@ -10,9 +10,20 @@ Combines two data sources into one unified knowledge base:
 ## Architecture
 
 ```
-  PDF docs ──→ parse_docs.py ──→ pinescript_chunks.json ──┐
-                                                            ├→ merge_and_index.py ──→ ChromaDB ──→ pinescript_mcp.py ──→ AI
-  TradingView ──→ discover_entries.py ──→ scrape_entries.py ──→ tv_scraped_entries.json ──┘
+  server.py                ← FastMCP 3.0 entry point (FileSystemProvider + composable lifespans)
+  core/                    ← ChromaDB, embeddings, caches, pine-facade, hot cache
+  formatters/              ← Pure formatting functions (entry detail, errors, box drawing)
+  templates/               ← Indicator templates, v5→v6 migration map
+  tools/                   ← 20 @tool + 1 @resource (auto-discovered)
+  pipeline/                ← Data pipeline: discover → scrape → merge+index
+  data/                    ← ChromaDB source data, pinescriptv6/ docs
+```
+
+**Data pipeline:**
+```
+  PDF docs ──→ pipeline/parse_docs.py ──→ data/pinescript_chunks.json ──┐
+                                                                         ├→ pipeline/merge_and_index.py ──→ ChromaDB ──→ server.py ──→ AI
+  TradingView ──→ pipeline/discover_entries.py ──→ pipeline/scrape_entries.py ──┘
 
   pine-facade.tradingview.com ──→ compile endpoint ──→ validate_syntax / validate_and_explain ──→ AI
 ```
@@ -23,62 +34,59 @@ Combines two data sources into one unified knowledge base:
 ## Quick Start
 
 ```bash
+make install                # Setup venv + deps
+make index                  # Re-index ChromaDB (skip scraping)
+make test                   # Run 134 tests
+make serve                  # Start MCP server
+make check                  # Verify 20 tools + 1 resource
+
+# Or use run.sh directly:
 ./run.sh                    # Full pipeline
 ./run.sh --skip-scrape      # Skip scraping, just merge+index
 ./run.sh --rescrape         # Force re-scrape
 ```
 
-## Tools (22 total)
+## Tools (20 total)
 
-### Lookup Tools (6)
-| # | Tool | Description |
-|---|------|-------------|
-| 1 | `get_function(name)` | Full docs: syntax, all overloads, params, examples |
-| 2 | `get_variable(name)` | Built-in variable description and behavior |
-| 3 | `get_type(name)` | Type definition, fields, methods |
-| 4 | `get_constant(name)` | Constant value and usage |
-| 5 | `get_keyword(name)` | Keyword syntax and examples |
-| 6 | `get_operator(name)` | Operator description and examples |
+### Lookup Tools (6) — `tools/lookup.py`
+| Tool | Description |
+|------|-------------|
+| `get_function(name)` | Full docs: syntax, all overloads, params, examples |
+| `get_variable(name)` | Built-in variable description and behavior |
+| `get_type(name)` | Type definition, fields, methods |
+| `get_constant(name)` | Constant value and usage |
+| `get_keyword(name)` | Keyword syntax and examples |
+| `get_operator(name)` | Operator description and examples |
 
-### Search Tools (4)
-| # | Tool | Description |
-|---|------|-------------|
-| 7 | `search_docs(query)` | Semantic search across everything |
-| 8 | `get_examples(query)` | Find real working code by concept |
-| 9 | `search_by_return_type(type)` | Find functions returning a type |
-| 10 | `list_namespace(namespace)` | All members of a namespace |
+### Search Tools (4) — `tools/search.py`
+| Tool | Description |
+|------|-------------|
+| `search_docs(query)` | Semantic search across everything |
+| `get_examples(query)` | Find real working code by concept |
+| `search_by_return_type(type)` | Find functions returning a type |
+| `list_namespace(namespace)` | All members of a namespace |
 
-### Live Data Tools (2)
-| # | Tool | Description |
-|---|------|-------------|
-| 11 | `get_live_entry(name)` | Real-time fetch from TradingView site |
-| 12 | `get_source_url(name)` | Get direct TradingView URL |
+### Validation Tools (5) — `tools/validation.py`
+| Tool | Description |
+|------|-------------|
+| `validate_syntax(code)` | Validate code using TradingView's official compiler |
+| `validate_and_explain(code)` | Validate + cross-reference errors against docs |
+| `fix_and_validate(code, error)` | Look up fixes from docs, show validation |
+| `debug_pine_facade(code)` | Raw compiler diagnostics for debugging |
+| `validate_file(file_path)` | Validate by file path (no size limits) |
 
-### Maintenance Tools (2)
-| # | Tool | Description |
-|---|------|-------------|
-| 13 | `diff_entry(name)` | Compare indexed vs live TradingView data |
-| 14 | `check_freshness(namespace?)` | See live vs local data coverage |
+### Code Generation Tools (3) — `tools/codegen.py`
+| Tool | Description |
+|------|-------------|
+| `generate_indicator(name, ...)` | Generate validated indicator template |
+| `generate_strategy(name, ...)` | Generate validated strategy template |
+| `lookup_and_correct(code, intent)` | Validate + search docs + explain fixes |
 
-### Validation Tools (3) — pine-facade compiler
-| # | Tool | Description |
-|---|------|-------------|
-| 15 | `validate_syntax(code)` | Validate code using TradingView's official compiler |
-| 16 | `validate_and_explain(code)` | Validate + cross-reference errors against docs |
-| 17 | `fix_and_validate(code, error_description)` | Look up fixes from docs, show validation |
-
-### Code Generation Tools (3) — validated templates
-| # | Tool | Description |
-|---|------|-------------|
-| 18 | `generate_indicator(name, ...)` | Generate validated indicator template |
-| 19 | `generate_strategy(name, ...)` | Generate validated strategy template |
-| 20 | `lookup_and_correct(code, intent)` | Validate + search docs + explain fixes |
-
-### Smart Context Tools (2)
-| # | Tool | Description |
-|---|------|-------------|
-| 21 | `suggest_functions(context, ...)` | Suggest relevant functions with signatures |
-| 22 | `get_namespace_cheatsheet(namespace)` | Compact cheatsheet for an entire namespace |
+### Smart Context Tools (2) — `tools/context.py`
+| Tool | Description |
+|------|-------------|
+| `suggest_functions(context, ...)` | Suggest relevant functions with signatures |
+| `get_namespace_cheatsheet(namespace)` | Compact cheatsheet for an entire namespace |
 
 ## Competitive Comparison
 
@@ -93,7 +101,7 @@ Combines two data sources into one unified knowledge base:
 | Memory-first cache | Yes | Yes | No | No |
 | Namespace cheatsheets | Yes | No | No | No |
 | Overload tracking | Yes | No | No | No |
-| Total MCP tools | **22** | ~5 | 1 | ~3 |
+| Total MCP tools | **20** | ~5 | 1 | ~3 |
 
 ## Environment Variables
 
@@ -114,27 +122,27 @@ Combines two data sources into one unified knowledge base:
 
 ### discover_entries.py (Stage 1)
 ```bash
-python discover_entries.py [--output FILE] [--headful] [--debug]
+python pipeline/discover_entries.py [--output FILE] [--headful] [--debug]
 ```
 
 ### scrape_entries.py (Stage 2)
 ```bash
-python scrape_entries.py [--index FILE] [--output FILE] [--headful] [--debug]
-python scrape_entries.py --entry fun_ta.ema      # single entry
-python scrape_entries.py --retry-failed           # retry failures
+python pipeline/scrape_entries.py [--index FILE] [--output FILE] [--headful] [--debug]
+python pipeline/scrape_entries.py --entry fun_ta.ema      # single entry
+python pipeline/scrape_entries.py --retry-failed           # retry failures
 ```
 
 ### merge_and_index.py (Stage 3)
 ```bash
-python merge_and_index.py [--local FILE] [--live FILE] [--db PATH] [--reset] [--dry-run]
+python pipeline/merge_and_index.py [--local FILE] [--live FILE] [--db PATH] [--reset] [--dry-run]
 ```
 
 ## Updating Docs
 
 ```bash
-./run.sh --rescrape --reset-db   # Full re-scrape
-python merge_and_index.py --reset # Quick re-index
-./run.sh --entry=fun_ta.ema      # Single entry
+./run.sh --rescrape --reset-db           # Full re-scrape
+python pipeline/merge_and_index.py --reset  # Quick re-index
+./run.sh --entry=fun_ta.ema                 # Single entry
 ```
 
 ## Troubleshooting
@@ -144,7 +152,7 @@ python merge_and_index.py --reset # Quick re-index
 3. **"Playwright install failed"** — Run: `python -m playwright install chromium`.
 4. **Low entry count (< 850)** — TradingView may have changed page structure. Use `--headful --debug`.
 5. **Scrape timeout** — Increase `SCRAPE_DELAY_MS` to 3000.
-6. **Server won't start** — Verify `pinescript_db/` exists. Run `python merge_and_index.py`.
+6. **Server won't start** — Verify `pinescript_db/` exists. Run `python pipeline/merge_and_index.py`.
 7. **"Entry not found"** — Use `search_docs()` for fuzzy matching.
 8. **Pine-facade unavailable** — Circuit breaker activates after 5 failures. Waits 2 min before retrying.
 

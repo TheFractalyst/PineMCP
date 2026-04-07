@@ -21,7 +21,6 @@ import os
 import sys
 from pathlib import Path
 
-import sys
 from loguru import logger
 
 logger.remove()
@@ -133,7 +132,7 @@ _search_cache_mw = ResponseCachingMiddleware(
 # FastMCP server instance with FileSystemProvider auto-discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
-_mcp_dir = Path(__file__).parent / "pine_tools"
+_mcp_dir = Path(__file__).parent / "tools"
 
 mcp = FastMCP(
     name="PineScript v6 Complete Reference",

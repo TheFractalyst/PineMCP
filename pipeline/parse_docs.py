@@ -45,14 +45,15 @@ from typing import Optional
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
+ROOT = Path(__file__).parent.parent
 SEARCH_PATHS = [
-    Path("pinescriptv6_complete_reference.md"),
-    Path("pinescript_v6_docs.txt"),
+    ROOT / "data" / "pinescriptv6_complete_reference.md",
+    ROOT / "data" / "pinescript_v6_docs.txt",
     Path("../pinescriptv6-main/pinescriptv6_complete_reference.md"),
-    Path(__file__).parent.parent / "pinescriptv6-main" / "pinescriptv6_complete_reference.md",
+    ROOT.parent / "pinescriptv6-main" / "pinescriptv6_complete_reference.md",
 ]
 
-OUTPUT_FILE = Path(__file__).parent / "pinescript_chunks.json"
+OUTPUT_FILE = ROOT / "data" / "pinescript_chunks.json"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section → Category mapping

@@ -10,7 +10,7 @@ Each tool is tested for:
 
 import pytest
 
-from pinescript_mcp import (
+from tools.search import (
     search_docs,
     get_examples,
     search_by_return_type,

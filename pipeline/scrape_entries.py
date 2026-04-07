@@ -657,12 +657,12 @@ def main():
         description="Scrape all PineScript v6 entries from TradingView"
     )
     parser.add_argument(
-        "--index", type=Path, default=Path("tv_entry_index.json"),
-        help="Input index file (default: tv_entry_index.json)",
+        "--index", type=Path, default=Path("data/tv_entry_index.json"),
+        help="Input index file (default: data/tv_entry_index.json)",
     )
     parser.add_argument(
-        "--output", type=Path, default=Path("tv_scraped_entries.json"),
-        help="Output file path (default: tv_scraped_entries.json)",
+        "--output", type=Path, default=Path("data/tv_scraped_entries.json"),
+        help="Output file path (default: data/tv_scraped_entries.json)",
     )
     parser.add_argument(
         "--headful", action="store_true",

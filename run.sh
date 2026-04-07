@@ -115,15 +115,15 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 header "STEP 4: Local documentation"
 
-CHUNKS_FILE="$SCRIPT_DIR/pinescript_chunks.json"
+CHUNKS_FILE="$SCRIPT_DIR/data/pinescript_chunks.json"
 
 if [ -f "$CHUNKS_FILE" ]; then
     LOCAL_COUNT=$("$PYTHON" -c "import json; print(len(json.load(open('$CHUNKS_FILE'))))" 2>/dev/null || echo "?")
     success "pinescript_chunks.json exists ($LOCAL_COUNT entries)."
 else
-    if [ -f "$SCRIPT_DIR/parse_docs.py" ]; then
+    if [ -f "$SCRIPT_DIR/pipeline/parse_docs.py" ]; then
         info "Running parse_docs.py ..."
-        "$PYTHON" "$SCRIPT_DIR/parse_docs.py"
+        "$PYTHON" "$SCRIPT_DIR/pipeline/parse_docs.py"
         LOCAL_COUNT=$("$PYTHON" -c "import json; print(len(json.load(open('$CHUNKS_FILE'))))" 2>/dev/null || echo "0")
         success "Parsed $LOCAL_COUNT entries."
     else
@@ -137,14 +137,14 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 header "STEP 5: Discover TradingView entries"
 
-INDEX_FILE="$SCRIPT_DIR/tv_entry_index.json"
+INDEX_FILE="$SCRIPT_DIR/data/tv_entry_index.json"
 
 if [ -f "$INDEX_FILE" ] && [ "$RESCRAPE" = false ]; then
     INDEX_COUNT=$("$PYTHON" -c "import json; print(len(json.load(open('$INDEX_FILE'))))" 2>/dev/null || echo "0")
     success "Using existing index: $INDEX_COUNT entries."
 else
     info "Running discover_entries.py ..."
-    "$PYTHON" "$SCRIPT_DIR/discover_entries.py"
+    "$PYTHON" "$SCRIPT_DIR/pipeline/discover_entries.py"
     INDEX_COUNT=$("$PYTHON" -c "import json; print(len(json.load(open('$INDEX_FILE'))))" 2>/dev/null || echo "0")
     success "Discovered $INDEX_COUNT entries."
 fi
@@ -154,19 +154,19 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 header "STEP 6: Scrape TradingView entries"
 
-SCRAPE_FILE="$SCRIPT_DIR/tv_scraped_entries.json"
+SCRAPE_FILE="$SCRIPT_DIR/data/tv_scraped_entries.json"
 
 if [ "$SKIP_SCRAPE" = true ]; then
     info "Skipping scrape (--skip-scrape)."
 elif [ -n "$SINGLE_ENTRY" ]; then
     info "Scraping single entry: $SINGLE_ENTRY"
-    "$PYTHON" "$SCRIPT_DIR/scrape_entries.py" --entry "$SINGLE_ENTRY"
+    "$PYTHON" "$SCRIPT_DIR/pipeline/scrape_entries.py" --entry "$SINGLE_ENTRY"
 elif [ -f "$SCRAPE_FILE" ] && [ "$RESCRAPE" = false ]; then
     SCRAPE_COUNT=$("$PYTHON" -c "import json; print(len(json.load(open('$SCRAPE_FILE'))))" 2>/dev/null || echo "0")
     success "Using existing scrape: $SCRAPE_COUNT entries. Use --rescrape to refresh."
 else
     info "Running scrape_entries.py ..."
-    "$PYTHON" "$SCRIPT_DIR/scrape_entries.py"
+    "$PYTHON" "$SCRIPT_DIR/pipeline/scrape_entries.py"
     SCRAPE_COUNT=$("$PYTHON" -c "import json; print(len(json.load(open('$SCRAPE_FILE'))))" 2>/dev/null || echo "0")
     success "Scraped $SCRAPE_COUNT entries."
 fi
@@ -182,7 +182,7 @@ if [ "$RESET_DB" = true ]; then
     warn "--reset-db: wiping existing ChromaDB index."
 fi
 
-"$PYTHON" "$SCRIPT_DIR/merge_and_index.py" $MERGE_ARGS
+"$PYTHON" "$SCRIPT_DIR/pipeline/merge_and_index.py" $MERGE_ARGS
 success "Merge and index complete."
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -250,7 +250,7 @@ echo ""
 header "STEP 9: IDE Configuration"
 
 ABS_PYTHON="$(realpath "$PYTHON" 2>/dev/null || echo "$PYTHON")"
-ABS_SERVER="$(realpath "$SCRIPT_DIR/pinescript_mcp.py" 2>/dev/null || echo "$SCRIPT_DIR/pinescript_mcp.py")"
+ABS_SERVER="$(realpath "$SCRIPT_DIR/server.py" 2>/dev/null || echo "$SCRIPT_DIR/server.py")"
 ABS_DB="$(realpath "$DB_DIR" 2>/dev/null || echo "$DB_DIR")"
 
 echo -e "${BOLD}Absolute paths:${NC}"

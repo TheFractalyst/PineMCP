@@ -5,7 +5,7 @@ test_context.py — Tests for the 2 context tools:
 
 import pytest
 
-from pinescript_mcp import (
+from tools.context import (
     suggest_functions,
     get_namespace_cheatsheet,
 )

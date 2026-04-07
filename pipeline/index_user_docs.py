@@ -27,8 +27,9 @@ from loguru import logger
 logger.remove()
 logger.add(sys.stderr, format="{time:HH:mm:ss} | {level:<8} | {message}", level="INFO")
 
-DEFAULT_SRC = Path(__file__).parent / "pinescriptv6"
-DEFAULT_OUT = Path(__file__).parent / "user_docs_chunks.json"
+ROOT = Path(__file__).parent.parent
+DEFAULT_SRC = ROOT / "data" / "pinescriptv6"
+DEFAULT_OUT = ROOT / "data" / "user_docs_chunks.json"
 BASE_URL = "https://www.tradingview.com/pine-script-docs/"
 
 # Skip files that are effectively empty (stub files)
