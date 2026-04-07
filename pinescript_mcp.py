@@ -1333,12 +1333,18 @@ async def _call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
     # Tier 1: Run local linter (instant, always available)
     local_result = _pine_lint(code) if not skip_lint else None
 
+    # Lazy linter: ensures local_result is populated when needed for fallback paths.
+    # Avoids running the linter twice when skip_lint=True (caller already ran it).
+    def _ensure_lint():
+        nonlocal local_result
+        if local_result is None:
+            local_result = _pine_lint(code)
+        return local_result
+
     if _pine_cb.is_open():
         # Remote unavailable — return local linter results as fallback
         logger.info("Circuit breaker open, returning local linter results")
-        if local_result is None:
-            local_result = _pine_lint(code)
-        lint_dict = local_result.to_dict()
+        lint_dict = _ensure_lint().to_dict()
         lint_dict["meta"]["fallback"] = "local_linter_tier1"
         lint_dict["meta"]["note"] = "Remote compiler unavailable. Local linter catches ~50% of errors."
         return lint_dict
@@ -1360,7 +1366,7 @@ async def _call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
             )
             _pine_cb.record_network_failure()
             # Return local linter results as fallback
-            lint_dict = local_result.to_dict()
+            lint_dict = _ensure_lint().to_dict()
             lint_dict["meta"]["fallback"] = "local_linter_tier1"
             lint_dict["meta"]["note"] = (
                 "Remote compiler returned HTTP 403 (access denied). "
@@ -1375,7 +1381,7 @@ async def _call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
 
         if resp.status_code in (502, 503, 504):
             _pine_cb.record_network_failure()
-            lint_dict = local_result.to_dict()
+            lint_dict = _ensure_lint().to_dict()
             lint_dict["meta"]["fallback"] = "local_linter_tier1"
             lint_dict["meta"]["note"] = (
                 f"Remote compiler returned HTTP {resp.status_code} (service unavailable). "
@@ -1459,7 +1465,7 @@ async def _call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
     ) as e:
         _pine_cb.record_network_failure()
         logger.error(f"[_call_pine_facade] network error: {e}")
-        lint_dict = local_result.to_dict()
+        lint_dict = _ensure_lint().to_dict()
         lint_dict["meta"]["fallback"] = "local_linter_tier1"
         lint_dict["meta"]["note"] = (
             f"Remote compiler unreachable ({type(e).__name__}). "
@@ -1469,7 +1475,7 @@ async def _call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
         return lint_dict
     except Exception as e:
         logger.error(f"[_call_pine_facade] unexpected: {e}")
-        lint_dict = local_result.to_dict()
+        lint_dict = _ensure_lint().to_dict()
         lint_dict["meta"]["fallback"] = "local_linter_tier1"
         lint_dict["meta"]["note"] = (
             f"Remote compiler error ({type(e).__name__}). "
@@ -2819,8 +2825,43 @@ async def generate_indicator(
             return "ERROR: No indicator name provided. Pass a display name for the indicator."
         safe_name = _sanitize_pine_string(name)
 
-        # Search docs for relevant functions
-        relevant = _query(description, 5, where={"category": "function"})
+        # Namespace-aware search: extract keywords from description to guide search
+        desc_lower = description.lower() if description else ""
+        name_lower = name.lower()
+
+        # Determine likely namespace from description/name keywords
+        _NS_HINTS = {
+            "ta": {"moving average", "ema", "sma", "rsi", "macd", "atr", "bollinger",
+                   "stoch", "wma", "hma", "crossover", "crossunder", "supertrend",
+                   "rsi", "relative strength", "momentum", "oscillator", "trend",
+                   "overbought", "oversold", "divergence", "reversal", "signal"},
+            "math": {"round", "floor", "ceil", "sqrt", "log", "abs", "pow", "sin",
+                     "cos", "max", "min", "average", "sum", "random"},
+            "str": {"string", "tostring", "tonumber", "format", "text", "concat"},
+            "strategy": {"entry", "exit", "close", "position", "trade", "order",
+                         "long", "short", "profit", "loss", "stop"},
+            "request": {"security", "symbol", "ticker", "financial", "earnings",
+                        "dividends", "splits", "quarterly"},
+            "color": {"color", "rgb", "gradient", "transparency", "hue"},
+            "array": {"array", "matrix", "map", "sort", "push", "pop"},
+        }
+
+        target_ns = None
+        for ns, hints in _NS_HINTS.items():
+            if any(h in desc_lower or h in name_lower for h in hints):
+                target_ns = ns
+                break
+
+        # Search with namespace preference, then broad fallback
+        relevant = None
+        if target_ns:
+            relevant = _query(description or name, 8, where={"category": "function", "namespace": target_ns})
+            # If no results in target namespace, broaden
+            if not relevant.get("ids") or not relevant["ids"][0]:
+                relevant = None
+
+        if not relevant:
+            relevant = _query(description or name, 8, where={"category": "function"})
 
         # Build input lines
         input_lines = []
@@ -2936,7 +2977,7 @@ async def generate_indicator(
                 if len(kw) > 2
             ) if desc_lower else True
 
-            if top_name and (top_dist < 0.8 or name_match):
+            if top_name and (top_dist < 0.6 or name_match):
                 # Gather variable names from inputs
                 input_vars = []
                 for il in input_lines:
@@ -3716,6 +3757,7 @@ async def get_stats() -> str:
                 "pine_facade_circuit_open": _pine_cb.is_open(),
                 "chroma_circuit_open": _chroma_breaker.is_open(),
                 "validation_cache_entries": len(_VALIDATION_CACHE),
+                "file_validation_cache_entries": len(_FILE_VALIDATION_CACHE),
                 "embedding_model_ready": _embedding_model_ready.is_set(),
                 "total_tools": 20,
                 "version": "4.0",
@@ -3742,14 +3784,18 @@ async def validate_file(
 ) -> str:
     """
     Validate a PineScript v6 file by path instead of content.
-    
+
     This tool bypasses MCP parameter size limitations by reading the file
     directly on the server side. Use this for large files (>30KB) that
     cannot be passed as inline parameters through Claude Code.
-    
+
+    Optimization: caches results keyed on (path, mtime_ns, size). Re-validating
+    an unchanged file returns the cached result in <1ms instead of ~2800ms.
+    Runs local linter as fast-reject before remote compile.
+
     Args:
         file_path: Absolute path to the .ps file to validate
-    
+
     Returns:
         Validation results in the same format as validate_syntax
     """
@@ -3778,7 +3824,7 @@ async def validate_file(
         for d in _ALLOWED_BASE_DIRS
     )
     if not _allowed:
-        return "ERROR: Access denied — path outside allowed scope."
+        return "ERROR: Access denied -- path outside allowed scope."
 
     if not os.path.exists(resolved) or not os.path.isfile(resolved):
         return "ERROR: File not found or inaccessible."
@@ -3790,85 +3836,142 @@ async def validate_file(
         if file_stat.st_size > _MAX_FILE_SIZE:
             return f"ERROR: File too large ({file_stat.st_size:,} bytes). Maximum allowed: {_MAX_FILE_SIZE:,} bytes."
     except Exception as e:
-        return f"ERROR: Cannot stat file — {_safe_error(e, 'validate_file')}"
+        return f"ERROR: Cannot stat file -- {_safe_error(e, 'validate_file')}"
 
-    # Read file content
+    # -- Optimization 1: mtime-based cache (skip everything if file unchanged) --
+    # Key = (resolved_path, mtime_ns, size). If file hasn't been written to,
+    # the content is identical to last validation -- return cached result in <1ms.
+    mtime_ns = file_stat.st_mtime_ns
+    fsize = file_stat.st_size
+    cached_response = _get_cached_file_validation(resolved, mtime_ns, fsize)
+    if cached_response is not None:
+        return cached_response
+
+    # Read file content (only reached on cache miss)
     try:
         with open(resolved, 'r', encoding='utf-8') as f:
             code = f.read()
     except Exception as e:
-        return f"ERROR: Failed to read file — {_safe_error(e, 'validate_file')}"
-    
+        return f"ERROR: Failed to read file -- {_safe_error(e, 'validate_file')}"
+
     # Get file stats for display
     file_size = len(code)
     line_count = code.count('\n') + 1
-    
+
     # Validate using the same logic as validate_syntax
     try:
         code = code.strip()
         if not code:
             return f"ERROR: File is empty or contains only whitespace: {file_path}"
-        
-        result = await _call_pine_facade(code)
-        
+
+        # -- Optimization 2: fast-reject via local linter --
+        # Run local linter first (~5-15ms). If it finds errors, return immediately
+        # without waiting for the ~2800ms remote compile. The remote compiler will
+        # be called on the next validation (after user fixes the linter-caught errors),
+        # at which point the linter should pass clean and we proceed to remote.
+        local_result = _pine_lint(code)
+        local_errors = local_result.to_dict().get("errors", [])
+
+        if local_errors:
+            # Local linter found errors -- fast-reject, skip remote call entirely.
+            errors = _enrich_error_with_code(local_errors, code)
+            meta = local_result.to_dict().get("meta", {})
+            warnings = local_result.to_dict().get("warnings", [])
+
+            response = f"FILE: {file_path}\n"
+            response += f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
+            response += "=" * 80 + "\n\n"
+            total_issues = len(errors) + len(warnings)
+            response += f"COMPILATION ISSUES ({total_issues})\n"
+            response += "Compiler: Local Linter (Tier 1) -- fast-reject\n"
+            response += f"Errors: {len(errors)} | Warnings: {len(warnings)}\n\n"
+
+            for idx, err in enumerate(errors, 1):
+                line = err.get("line", "?")
+                col = err.get("column", "?")
+                text = err.get("text", "Unknown error")
+                err_type = err.get("type", "error")
+                response += f"  ERROR {idx} -- Line {line}, Col {col} [{err_type.upper()}]\n"
+                response += f"    {text}\n"
+                hint = _lookup_fix_hint(text)
+                if hint:
+                    response += f"    Fix hint: {hint}\n"
+                response += "\n"
+
+            for idx, warn in enumerate(warnings, 1):
+                line = warn.get("line", "?")
+                col = warn.get("column", "?")
+                text = warn.get("text", "Unknown warning")
+                response += f"  WARNING {idx} -- Line {line}, Col {col}\n"
+                response += f"    {text}\n\n"
+
+            # Cache the fast-reject result (file won't compile remotely either)
+            _cache_file_validation(resolved, mtime_ns, fsize, response)
+            return response
+
+        # -- Linter passed clean -- proceed to remote compiler --
+        # skip_lint=True avoids running the linter again inside _call_pine_facade
+        result = await _call_pine_facade(code, skip_lint=True)
+
         errors = _enrich_error_with_code(result.get("errors", []), code)
         warnings = result.get("warnings", [])
         success = result.get("success", False)
         meta = result.get("meta", {})
         is_fallback = meta.get("fallback") == "local_linter_tier1"
         compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
-        
+
         # Build response with file info
         response = f"FILE: {file_path}\n"
         response += f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
         response += "=" * 80 + "\n\n"
-        
+
         if success and not errors and not warnings:
-            response += "✅ VALID — PineScript v6 code compiles successfully.\n\n"
+            response += "VALID -- PineScript v6 code compiles successfully.\n\n"
             response += f"Compiler: {compiler_label}\n"
             response += f"Errors: 0 | Warnings: 0\n"
             if is_fallback and meta.get("note"):
-                response += f"\n⚠️  {meta['note']}\n"
+                response += f"\nNote: {meta['note']}\n"
+            _cache_file_validation(resolved, mtime_ns, fsize, response)
             return response
-        
+
         # Has errors or warnings
         total_issues = len(errors) + len(warnings)
-        response += f"{'❌ COMPILATION ISSUES' if errors else '⚠️  WARNINGS'} ({total_issues})\n"
+        response += f"{'COMPILATION ISSUES' if errors else 'WARNINGS'} ({total_issues})\n"
         response += f"Compiler: {compiler_label}\n"
-        
+
         if is_fallback and meta.get("note"):
             response += f"Note: {meta['note']}\n"
-        
+
         response += f"Errors: {len(errors)} | Warnings: {len(warnings)}\n\n"
-        
+
         # Display errors
         for idx, err in enumerate(errors, 1):
             line = err.get("line", "?")
             col = err.get("column", "?")
             text = err.get("text", "Unknown error")
             err_type = err.get("type", "error")
-            response += f"  ERROR {idx} — Line {line}, Col {col} [{err_type.upper()}]\n"
+            response += f"  ERROR {idx} -- Line {line}, Col {col} [{err_type.upper()}]\n"
             response += f"    {text}\n"
-            
+
             hint = _lookup_fix_hint(text)
             if hint:
                 response += f"    Fix hint: {hint}\n"
             response += "\n"
-        
+
         # Display warnings
         for idx, warn in enumerate(warnings, 1):
             line = warn.get("line", "?")
             col = warn.get("column", "?")
             text = warn.get("text", "Unknown warning")
-            response += f"  WARNING {idx} — Line {line}, Col {col}\n"
+            response += f"  WARNING {idx} -- Line {line}, Col {col}\n"
             response += f"    {text}\n\n"
-        
+
+        _cache_file_validation(resolved, mtime_ns, fsize, response)
         return response
-        
+
     except Exception as e:
         logger.exception("Unexpected error in validate_file")
-        return f"ERROR: Validation failed — {_safe_error(e, 'validate_file')}"
-
+        return f"ERROR: Validation failed -- {_safe_error(e, 'validate_file')}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry point
