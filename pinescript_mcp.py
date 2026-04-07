@@ -79,6 +79,15 @@ MAX_TOOL_RESPONSE_CHARS = 8000
 MAX_FUZZY_SCAN_ENTRIES = 5000
 MAX_CONCURRENT_TOOL_CALLS = 8
 
+# Pre-computed at import time (not inside per-call hot path)
+_ALLOWED_BASE_DIRS = [
+    os.path.realpath(os.path.expanduser("~/Documents")),
+    os.path.realpath(os.path.expanduser("~/Desktop")),
+    os.path.realpath(os.path.expanduser("~/Projects")),
+    os.path.realpath(os.path.expanduser("~/repos")),
+    os.path.realpath(os.path.dirname(os.path.abspath(__file__))),
+]
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Server definition
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,9 +140,11 @@ async def _startup_lifespan(server):
     """Preload embedding model, ChromaDB collection, name index, and hot cache at startup."""
     logger.info("Preloading embedding model...")
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(_model_executor, _get_model)
+    model = await loop.run_in_executor(_model_executor, _get_model)
     _embedding_model_ready.set()
-    logger.info("Embedding model ready")
+    # Warm-up inference: eliminates 50-200ms cold-start on first real query
+    await loop.run_in_executor(_model_executor, lambda: model.encode(["warmup"]))
+    logger.info("Embedding model ready (warmed up)")
 
     logger.info("Preloading ChromaDB collection...")
     _get_collection()
@@ -462,11 +473,13 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
             f"_query() failed | type={error_type} | where={where} | "
             f"query={query_text[:80]}"
         )
+        # Propagate error signal so callers distinguish "no results" from "DB down"
         return {
             "ids": [[]],
             "documents": [[]],
             "metadatas": [[]],
             "distances": [[]],
+            "_error": f"{error_type}: {str(e)[:200]}",
         }
 
 
@@ -490,7 +503,7 @@ def _get_by_id(entry_id: str) -> Optional[dict]:
 def _search_by_name(
     name: str, where: Optional[dict] = None
 ) -> list[tuple[float, dict]]:
-    """Exact then fuzzy name lookup. Scans FULL collection — no arbitrary limit."""
+    """Exact then fuzzy name lookup. Scans up to MAX_FUZZY_SCAN_ENTRIES for fuzzy match."""
     try:
         from rapidfuzz import fuzz
 
@@ -1041,9 +1054,26 @@ _FIX_HINTS: dict[str, str] = {
     "series int' type was used but a 'simple": "v6 correctly qualifies mutable variables (modified with :=/+=) as 'series'. Pass a const/input value to parameters expecting 'simple' or 'const' types.",
     "closedtrades": "v6 trims oldest trades past the 9000 limit. Use strategy.closedtrades.first_index as the starting index when looping — trimmed trades return na.",
     "strategy.exit": "v6 strategy.exit() evaluates BOTH relative (profit/loss/trail_points) AND absolute (limit/stop) parameters. Remove zero-valued relative params that v5 silently ignored.",
-    "Cannot use operator '[]'": "v6 restricts history operator []. For UDT fields use (obj[n]).field syntax. Literals/constants (6[1], true[10]) are no longer valid with [].",
-    "Cannot assign 'na' to": "v6 does not allow na for unique type constants (plot.style_*, xloc.*, label.style_*). Add a default branch: => plot.style_line at the end of switch/if.",
     "timeframe.period": "v6 timeframe.period always includes a multiplier: '1D' not 'D', '1W' not 'W'. Use timeframe.isdaily/isweekly/ismonthly for cleaner comparisons.",
+    # ── Runtime errors ──
+    "requested historical offset": "Script references more history than the buffer allows. Add max_bars_back=5000 to indicator()/strategy(), or use max_bars_back(varName, N) for specific variables.",
+    "Too many drawings": "Drawing objects exceed the limit. Set max_lines_count=500, max_labels_count=500, or max_boxes_count=500 in your declaration.",
+    "too many local variables": "Each scope has a 1000-variable limit. Inline expressions to reduce count, or extract into helper functions.",
+    "too many securities": "Pine limits to 40 request.security() calls. Combine calls using tuples, or wrap in a UDF and reuse the result.",
+    "Loop took too long": "Loop exceeded the 500ms per-bar timeout. Reduce iteration count, optimize loop body, or precompute outside the loop.",
+    "memory limit": "Exceeded Pine's memory limits. Reduce drawing count, use smaller arrays (max 100,000 elements), or reduce request.*() data volume.",
+    # ── v6 compilation errors (from migration research) ──
+    "Syntax error at input": "Check function syntax — v6 uses '=>' for inline functions. Verify commas between parameters and correct indentation.",
+    "should be called on each calculation": "History-dependent function (ta.rsi, ta.ema, etc.) called inside conditional/loop. Move the call to global scope, store in a variable, then use that variable conditionally.",
+    "Cannot use 'na' as": "v6 requires typed na. Use float(na), int(na), or 'var float x = na'. Bare na not allowed where a specific type is expected.",
+    "cannot add string and": "PineScript does not auto-convert numbers to strings. Use str.tostring(value): 'Price: ' + str.tostring(close).",
+    "Compilation request size": "Script too large for compiler. Remove unused imports (entire library compiles even if you use one function), inline logic, or split into smaller scripts.",
+    "is not found in the namespace": "Wrong import alias or missing import. Check library import uses 'author/libraryName/version' format and alias matches usage.",
+    "Invalid test for": "Cannot test na in bool context (e.g., 'if pivot' where pivot can be na). Use 'if not na(pivot)' instead. Booleans strictly true/false in v6.",
+    # ── General common errors ──
+    "Reserved keyword": "PineScript reserves words like 'strategy', 'plot', 'if'. Rename variable: 'strategy = 1' → 'myStrategy = 1'.",
+    "lookahead": "request.security() with lookahead=barmerge.lookahead_on peeks into future (repainting). Use barmerge.lookahead_off (v6 default) for honest backtests.",
+    "repainting": "Signal uses future data or unconfirmed bar values. Guard with barstate.isconfirmed. Avoid lookahead=barmerge.lookahead_on.",
 }
 
 
@@ -1834,7 +1864,9 @@ async def _lookup_entry(name: str, category: str) -> str:
             top_name = top_meta.get("name", "").lower().replace("()", "").strip()
             search_name = name.lower().replace("()", "").strip()
             # Only return if name matches or relevance is strong (distance < 0.6 = 40%+)
-            if top_name == search_name or search_name in top_name or top_dist < 0.6:
+            name_match = (search_name == top_name or
+                         (len(search_name) >= 3 and search_name in top_name))
+            if name_match or top_dist < 0.6:
                 return _format_entry_detail(
                     top_meta.get("name", name),
                     top_meta,
@@ -1849,9 +1881,10 @@ async def _lookup_entry(name: str, category: str) -> str:
             top_dist = results["distances"][0][0]
             top_name = top_meta.get("name", "").lower().replace("()", "").strip()
             search_name = name.lower().replace("()", "").strip()
+            name_match_broad = (search_name == top_name or
+                               (len(search_name) >= 3 and search_name in top_name))
             if (
-                top_name == search_name
-                or search_name in top_name
+                name_match_broad
                 or (top_dist < 0.5 and top_meta.get("category") == category)
             ):
                 return _format_entry_detail(
@@ -2578,6 +2611,7 @@ async def validate_and_explain(
                 f"  Lines: {len(code_lines)}\n"
                 f"  Plots: {plots}\n"
                 f"  Inputs: {inputs}\n"
+                f"{fallback_note}"
             )
 
         # Process errors with doc cross-reference
@@ -2605,10 +2639,7 @@ async def validate_and_explain(
             if extracted_name:
                 lines.append(f"  Docs lookup for '{extracted_name}':")
                 doc_result = await _lookup_entry(extracted_name, "")
-                if (
-                    "not found" not in doc_result.lower()
-                    and "error" not in doc_result.lower()
-                ):
+                if "not found" not in doc_result[:80].lower():
                     # Show first 5 lines of the doc result
                     doc_lines = doc_result.splitlines()[:5]
                     for dl in doc_lines:
@@ -3409,6 +3440,7 @@ strategy("{safe_name}", overlay=true,
     default_qty_type=strategy.percent_of_equity,
     default_qty_value=100,
     pyramiding={pyramiding},
+    margin_long=0, margin_short=0,
     calc_on_every_tick=false)
 
 // ── Inputs ──────────────────────────────────────────────────
@@ -4052,14 +4084,6 @@ async def validate_file(
         return "ERROR: Only .ps and .pine files are accepted."
 
     # Allowlist: only permit files under these base directories
-    # Use realpath on allowlist dirs too so symlinked paths match
-    _ALLOWED_BASE_DIRS = [
-        os.path.realpath(os.path.expanduser("~/Documents")),
-        os.path.realpath(os.path.expanduser("~/Desktop")),
-        os.path.realpath(os.path.expanduser("~/Projects")),
-        os.path.realpath(os.path.expanduser("~/repos")),
-        os.path.realpath(os.path.dirname(os.path.abspath(__file__))),
-    ]
     _allowed = any(
         resolved.startswith(d + os.sep) or resolved == d
         for d in _ALLOWED_BASE_DIRS
