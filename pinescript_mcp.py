@@ -7,13 +7,13 @@ FastMCP 3.0 · Transport: stdio · 20 tools + 1 resource
 Serves PineScript v6 reference documentation via semantic-search tools
 backed by a local ChromaDB vector store (3,400+ entries, 100% local).
 
-Tools (19 total):
+Tools (20 total):
   LOOKUP (6):   get_function, get_variable, get_type, get_constant,
                 get_keyword, get_operator
   SEARCH (4):   search_docs, get_examples, search_by_return_type,
                 list_namespace
-  VALIDATE (4): validate_syntax, validate_and_explain, fix_and_validate,
-                debug_pine_facade
+  VALIDATE (5): validate_syntax, validate_and_explain, fix_and_validate,
+                debug_pine_facade, validate_file
   CODEGEN (3):  generate_indicator, generate_strategy, lookup_and_correct
   CONTEXT (2):  suggest_functions, get_namespace_cheatsheet
 
@@ -78,9 +78,6 @@ VALIDATION_CACHE_MAX_SIZE = int(os.getenv("VALIDATION_CACHE_SIZE", "500"))
 MAX_TOOL_RESPONSE_CHARS = 8000
 MAX_FUZZY_SCAN_ENTRIES = 5000
 MAX_CONCURRENT_TOOL_CALLS = 8
-
-# Concurrency semaphore to prevent resource exhaustion
-_tool_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TOOL_CALLS)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Server definition
@@ -864,7 +861,8 @@ def _cap_response(text: str, limit: int = MAX_TOOL_RESPONSE_CHARS) -> str:
     last_fence = truncated.rfind("```")
     if last_fence > limit * 0.8:
         truncated = truncated[:last_fence]
-    return truncated + f"\n\n[...truncated — {len(text) - limit} chars omitted]"
+    omitted = len(text) - len(truncated)
+    return truncated + f"\n\n[...truncated — {omitted:,} chars omitted]"
 
 
 # M15: Sanitize null bytes and control characters
@@ -994,7 +992,7 @@ _FILE_VALIDATION_CACHE_MAX = int(os.getenv("FILE_VALIDATION_CACHE_SIZE", "200"))
 # L1 query result cache — avoids re-embedding identical queries
 _QUERY_RESULT_CACHE: OrderedDict[str, tuple[dict, float]] = OrderedDict()
 _QUERY_CACHE_LOCK = threading.Lock()
-_QUERY_CACHE_TTL = 120.0  # seconds — matches VALIDATION_CACHE_TTL
+_QUERY_CACHE_TTL = 120.0  # seconds — L1 ChromaDB query result cache
 _QUERY_CACHE_MAX = 200  # max entries before eviction
 
 _FIX_HINTS: dict[str, str] = {
@@ -1258,12 +1256,10 @@ def _normalize_facade_response(raw: dict) -> dict:
             "type": e.get("type") or "error",
         }
 
-    errors = [normalize_error(e) for e in raw_errors if isinstance(e, dict)]
-    warnings = [
-        normalize_error(e)
-        for e in raw_errors
-        if isinstance(e, dict) and e.get("type") == "warning"
-    ]
+    all_normalized = [normalize_error(e) for e in raw_errors if isinstance(e, dict)]
+    # Separate errors from warnings — warnings must NOT appear in errors list
+    errors = [e for e in all_normalized if e.get("type") != "warning"]
+    warnings = [e for e in all_normalized if e.get("type") == "warning"]
 
     # Meta from result object - extract useful fields
     meta = {}
@@ -4056,12 +4052,13 @@ async def validate_file(
         return "ERROR: Only .ps and .pine files are accepted."
 
     # Allowlist: only permit files under these base directories
+    # Use realpath on allowlist dirs too so symlinked paths match
     _ALLOWED_BASE_DIRS = [
-        os.path.expanduser("~/Documents"),
-        os.path.expanduser("~/Desktop"),
-        os.path.expanduser("~/Projects"),
-        os.path.expanduser("~/repos"),
-        os.path.dirname(os.path.abspath(__file__)),
+        os.path.realpath(os.path.expanduser("~/Documents")),
+        os.path.realpath(os.path.expanduser("~/Desktop")),
+        os.path.realpath(os.path.expanduser("~/Projects")),
+        os.path.realpath(os.path.expanduser("~/repos")),
+        os.path.realpath(os.path.dirname(os.path.abspath(__file__))),
     ]
     _allowed = any(
         resolved.startswith(d + os.sep) or resolved == d
