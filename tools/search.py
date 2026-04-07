@@ -401,27 +401,40 @@ async def search_by_return_type(
             )
         )
 
+        rt_lower = return_type.lower()
+        direct_matches = []
+        semantic_matches = []
         for meta, doc, dist in all_results:
             returns_field = (meta.get("returns") or "").lower()
-            rt_lower = return_type.lower()
-            # Check if return type appears in the returns field
-            if rt_lower in returns_field or returns_field in rt_lower:
-                matched.append((meta, doc, dist, True))  # True = direct match
-            elif dist < 0.5:  # Still add semantically close results
-                matched.append((meta, doc, dist, False))  # False = semantic match
+            # Guard: skip empty returns fields — they would falsely match anything
+            if returns_field and (rt_lower in returns_field or returns_field in rt_lower):
+                direct_matches.append((meta, doc, dist, True))
+            elif dist < 0.5:
+                semantic_matches.append((meta, doc, dist, False))
 
-        if not matched:
-            # Fallback: show top semantic results
+        has_direct = len(direct_matches) > 0
+
+        # Build matched list: prefer direct, supplement with close semantic hits
+        if has_direct:
+            matched = direct_matches + [s for s in semantic_matches if s[2] < 0.4]
+        else:
+            # No direct returns-field match — show semantic results with a warning
             matched = [(m, d, dist, False) for m, d, dist in all_results[:5] if dist < 0.6]
 
         if not matched:
-            return f"No functions found that return '{return_type}'. Try a broader type like 'float' or 'series'."
+            return (
+                f"No functions found that return '{return_type}'. "
+                f"Try a known type: 'series float', 'bool', 'line', 'label', 'array<int>', 'color'."
+            )
 
-        output_lines = [
-            f"FUNCTIONS RETURNING '{return_type}':",
-            f"Found {len(matched)} candidate(s)",
-            "",
-        ]
+        if has_direct:
+            header = f"FUNCTIONS RETURNING '{return_type}':\nFound {len(matched)} candidate(s)"
+        else:
+            header = (
+                f"No exact return-type match found for '{return_type}'.\n"
+                f"Showing {len(matched)} semantically related function(s):"
+            )
+        output_lines = [header, ""]
 
         for meta, doc, dist, is_direct in matched:
             name = meta.get("name", "?")
