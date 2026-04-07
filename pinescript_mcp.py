@@ -77,7 +77,6 @@ VALIDATION_CACHE_TTL = int(os.getenv("VALIDATION_CACHE_TTL", "300"))
 VALIDATION_CACHE_MAX_SIZE = int(os.getenv("VALIDATION_CACHE_SIZE", "500"))
 MAX_TOOL_RESPONSE_CHARS = 8000
 MAX_FUZZY_SCAN_ENTRIES = 5000
-MAX_CONCURRENT_TOOL_CALLS = 8
 
 # Pre-computed at import time (not inside per-call hot path)
 _ALLOWED_BASE_DIRS = [
@@ -651,6 +650,18 @@ def _get_all_where(where: dict | None, limit: int | None = None) -> list[dict]:
     except Exception as e:
         logger.error(f"_get_all_where failed: {e}")
         return []
+
+
+async def _search_by_name_async(name: str, where: Optional[dict] = None) -> list[tuple[float, dict]]:
+    """Async wrapper for _search_by_name — avoids blocking event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _search_by_name, name, where)
+
+
+async def _get_all_where_async(where: dict | None, limit: int | None = None) -> list[dict]:
+    """Async wrapper for _get_all_where — avoids blocking event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _get_all_where, where, limit)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1871,7 +1882,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                 return result
 
         # Step 1: Try exact fuzzy match within category
-        candidates = _search_by_name(
+        candidates = await _search_by_name_async(
             name, where={"category": category} if category else None
         )
 
@@ -1932,7 +1943,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                     f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)"
                 )
         else:
-            all_candidates = _search_by_name(name)
+            all_candidates = await _search_by_name_async(name)
             for sim, entry in all_candidates[:5]:
                 suggestions.append(
                     f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)"
@@ -2333,7 +2344,7 @@ async def list_namespace(
         if category_filter:
             where["category"] = category_filter
 
-        entries = _get_all_where(where)
+        entries = await _get_all_where_async(where)
         if not entries:
             raise ToolError(f"No entries found for namespace '{ns}'")
 
@@ -2458,10 +2469,7 @@ async def search_by_return_type(
                 return db_err
 
         if not results["ids"] or not results["ids"][0]:
-            return _error(
-                "search_by_return_type",
-                f"No functions found returning '{return_type}'",
-            )
+            raise ToolError(f"No functions found returning '{return_type}'")
 
         output_lines: list[str] = []
         output_lines.append(f"Functions returning '{return_type}':")
@@ -2808,7 +2816,7 @@ async def fix_and_validate(
         doc_context = ""
         if identifier and identifier.lower() not in _COMMON_PARAM_NAMES:
             try:
-                results = _search_by_name(identifier)
+                results = await _search_by_name_async(identifier)
                 if results:
                     best_sim, best_entry = results[0]
                     doc_context = (
@@ -2818,7 +2826,7 @@ async def fix_and_validate(
                 else:
                     # Try with common namespaces
                     for ns in ["ta", "strategy", "math", "array", "str"]:
-                        ns_results = _search_by_name(f"{ns}.{identifier}")
+                        ns_results = await _search_by_name_async(f"{ns}.{identifier}")
                         if ns_results:
                             best_sim, best_entry = ns_results[0]
                             doc_context = (
@@ -4136,11 +4144,9 @@ async def get_namespace_cheatsheet(
         else:
             where = {"namespace": ns}
 
-        entries = _get_all_where(where)
+        entries = await _get_all_where_async(where)
         if not entries:
-            return _error(
-                "get_namespace_cheatsheet", f"No entries found for namespace '{ns}'"
-            )
+            raise ToolError(f"No entries found for namespace '{ns}'")
 
         # Group by category
         groups: dict[str, list[dict]] = {}
