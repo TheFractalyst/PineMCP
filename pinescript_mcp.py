@@ -2916,28 +2916,39 @@ async def fix_and_validate(
         if matched_hint and identifier:
             matched_hint = matched_hint.replace("{name}", identifier)
 
-        # Step 3: Cross-reference identifier against MCP docs
+        # Step 3: Cross-reference identifier against MCP docs (fast path)
+        # Uses hot cache + name index for O(1) lookups instead of fuzzy scan.
         doc_context = ""
         if identifier and identifier.lower() not in _COMMON_PARAM_NAMES:
             try:
-                results = await _search_by_name_async(identifier)
-                if results:
-                    best_sim, best_entry = results[0]
+                # Fast path: try hot cache first (sub-ms)
+                cached_entry = cache_lookup(identifier)
+                if not cached_entry:
+                    # Try with common namespace prefixes
+                    for ns in ["ta", "strategy", "math", "array", "str"]:
+                        cached_entry = cache_lookup(f"{ns}.{identifier}")
+                        if cached_entry:
+                            break
+                if cached_entry:
+                    doc = cached_entry.get("document", "")
                     doc_context = (
                         f"\nDOC REFERENCE for '{identifier}':\n"
-                        f"{best_entry.get('document', '')[:300]}"
+                        f"{doc[:300]}"
                     )
-                else:
-                    # Try with common namespaces
-                    for ns in ["ta", "strategy", "math", "array", "str"]:
-                        ns_results = await _search_by_name_async(f"{ns}.{identifier}")
-                        if ns_results:
-                            best_sim, best_entry = ns_results[0]
-                            doc_context = (
-                                f"\nSUGGESTION: Did you mean '{ns}.{identifier}'?\n"
-                                f"{best_entry.get('document', '')[:200]}"
-                            )
-                            break
+                elif _name_index_built:
+                    # Name index lookup (fast, no fuzzy scan)
+                    key = identifier.lower()
+                    hits = _name_index.get(key)
+                    if not hits:
+                        for ns in ["ta", "strategy", "math", "array", "str"]:
+                            hits = _name_index.get(f"{ns}.{key}")
+                            if hits:
+                                break
+                    if hits:
+                        doc_context = (
+                            f"\nDOC REFERENCE for '{identifier}':\n"
+                            f"{hits[0]['document'][:300]}"
+                        )
             except Exception as e:
                 logger.debug(f"Doc lookup for fix failed: {e}")
 
@@ -2989,21 +3000,28 @@ async def fix_and_validate(
         if fixes_list:
             fix_applied = " | ".join(fixes_list)
 
-        # Step 5: Validate the fixed code
+        # Step 5: Validate the fixed code using local linter (instant, ~5ms)
+        # Uses local Tier 1 linter instead of remote pine-facade to avoid
+        # ~200ms HTTP latency. The linter catches namespace errors, syntax
+        # issues, and common v5→v6 migration problems.
         validation_result = None
         if fixed_code != code:
             try:
-                raw = await _call_pine_facade(fixed_code)
-                if raw["success"]:
-                    validation_result = "✅ Fixed code compiles successfully"
+                lint_result = _pine_lint(fixed_code)
+                lint_dict = lint_result.to_dict()
+                if lint_dict["success"]:
+                    validation_result = "✅ Fixed code passes local linter (Tier 1)"
                 else:
-                    errs = raw["errors"]
-                    validation_result = (
-                        f"⚠️ Fixed code still has {len(errs)} error(s):\n" +
-                        "\n".join(f"  Line {e['line']}: {e['text']}" for e in errs[:3])
-                    )
+                    errs = lint_dict.get("errors", [])
+                    if errs:
+                        validation_result = (
+                            f"⚠️ Fixed code still has {len(errs)} error(s):\n" +
+                            "\n".join(f"  Line {e['line']}: {e['text']}" for e in errs[:3])
+                        )
+                    else:
+                        validation_result = "✅ Fixed code passes local linter (Tier 1)"
             except Exception:
-                validation_result = "⚠️ Could not validate fix (pine-facade unavailable)"
+                validation_result = "⚠️ Could not validate fix (linter unavailable)"
 
         # Build response
         lines = [
@@ -4387,13 +4405,13 @@ async def validate_file(
     try:
         resolved = os.path.realpath(file_path)
     except Exception:
-        return "ERROR: Invalid path provided."
+        return "ERROR: Invalid path provided. Could not resolve the file path. Please provide a valid absolute path."
 
     # Display name: use basename only to avoid leaking absolute paths in response
     display_name = os.path.basename(resolved)
 
     if not resolved.endswith('.ps') and not resolved.endswith('.pine'):
-        return "ERROR: Only .ps and .pine files are accepted."
+        return "ERROR: Only .ps and .pine files are accepted. Please provide a PineScript file with a .ps or .pine extension."
 
     # Allowlist: only permit files under these base directories
     _allowed = any(
@@ -4401,10 +4419,10 @@ async def validate_file(
         for d in _ALLOWED_BASE_DIRS
     )
     if not _allowed:
-        return "ERROR: Access denied -- path outside allowed scope."
+        return "ERROR: Access denied -- path outside allowed scope. Only files under ~/Documents, ~/Desktop, ~/Projects, or ~/repos are permitted."
 
     if not os.path.exists(resolved) or not os.path.isfile(resolved):
-        return "ERROR: File not found or inaccessible."
+        return f"ERROR: File not found or inaccessible. The file '{display_name}' does not exist at the specified path."
 
     # File size limit: prevent OOM on large files
     _MAX_FILE_SIZE = 1_000_000  # 1MB

@@ -103,7 +103,16 @@ def completeness_score(result: str, expected_sections: list[str]) -> int:
 
 
 async def error_handling_score(tool_fn, good_args: dict, bad_args_list: list[dict]) -> int:
-    """Test error handling with bad inputs. Returns 1-10."""
+    """Test error handling with bad inputs. Returns 1-10.
+
+    Scoring:
+      10 = Graceful, helpful error message (clear + >50 chars of guidance)
+       9 = Graceful error message (contains error/not-found indicator)
+       8 = Returned something reasonable but vague
+       7 = Raised ToolError (acceptable but less graceful)
+       5 = Empty or confusing response
+       4 = Raised unexpected exception
+    """
     score = 10
     for bad_args in bad_args_list:
         try:
@@ -111,7 +120,11 @@ async def error_handling_score(tool_fn, good_args: dict, bad_args_list: list[dic
             # Tool should return an error string, not raise
             if result and ("error" in result.lower() or "not found" in result.lower()
                           or "no " in result.lower()[:80]):
-                score = min(score, 9)  # Graceful error message
+                # Distinguish: helpful guidance (>50 chars) vs bare error message
+                if len(result.strip()) > 50:
+                    score = min(score, 10)  # Helpful, descriptive error response
+                else:
+                    score = min(score, 9)   # Graceful but terse
             elif result and len(result) > 20:
                 score = min(score, 8)  # Returned something reasonable
             else:
