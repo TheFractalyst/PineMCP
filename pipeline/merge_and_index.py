@@ -161,6 +161,77 @@ def merge_entries(
     return merged
 
 
+def _base_name(name: str) -> str:
+    """Strip trailing () and lowercase for cross-category matching."""
+    return name.lower().strip().replace(" ", "").replace("()", "").replace("`", "")
+
+
+def enrich_truncated_syntax(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cross-reference entries sharing a base name to fill truncated syntax/returns.
+
+    The local docs parser produces entries like:
+        name='map.put()', syntax='map.put()', returns='prose...', category='function'
+    while the live scrape produces:
+        name='map.put', syntax='map.put(id, key, value) → <value_type>', category='variable'
+
+    This function finds such pairs and copies the full syntax + extracted return type
+    into the truncated entry, preserving the original prose in 'returns' as a fallback.
+    """
+    # Group by base name
+    from collections import defaultdict
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for entry in entries:
+        base = _base_name(entry.get("name", ""))
+        groups[base].append(entry)
+
+    enriched = 0
+    for base, group in groups.items():
+        if len(group) < 2:
+            continue
+
+        # Find the entry with the richest syntax (has arrow)
+        best_syntax = ""
+        best_syntax_entry = None
+        for e in group:
+            syn = e.get("syntax") or ""
+            if ("→" in syn or "->" in syn) and len(syn) > len(best_syntax):
+                best_syntax = syn
+                best_syntax_entry = e
+
+        if not best_syntax:
+            continue
+
+        # Enrich truncated siblings
+        extracted_return = _extract_return_type_from_syntax(best_syntax)
+        for e in group:
+            syn = e.get("syntax") or ""
+            has_arrow = "→" in syn or "->" in syn
+            if not has_arrow and "(" in syn:
+                # This entry has truncated syntax — enrich it
+                old_returns = e.get("returns", "")
+
+                # Copy full syntax
+                e["syntax"] = best_syntax
+
+                # Set returns: prefer extracted type, fall back to existing
+                if extracted_return:
+                    e["returns"] = extracted_return
+                    if old_returns and old_returns != extracted_return:
+                        e["_raw_returns_prose"] = old_returns
+                elif not e.get("returns"):
+                    e["returns"] = ""
+
+                # Copy parameters if missing
+                if not e.get("parameters") and best_syntax_entry and best_syntax_entry.get("parameters"):
+                    e["parameters"] = best_syntax_entry["parameters"]
+
+                enriched += 1
+
+    if enriched:
+        logger.info(f"Enriched {enriched} entries with cross-category syntax/returns")
+    return entries
+
+
 def build_document_text(entry: dict[str, Any]) -> str:
     """Build the text that gets embedded for semantic search."""
     parts: list[str] = []
@@ -237,7 +308,9 @@ def flatten_metadata(entry: dict[str, Any]) -> dict[str, Any]:
     else:
         meta["returns"] = raw_returns
     # Store original prose for display in lookup tools
-    meta["raw_returns_description"] = raw_returns if raw_returns != meta["returns"] else ""
+    # Check both the 'returns' field and the enrichment-injected '_raw_returns_prose'
+    prose = entry.get("_raw_returns_prose") or raw_returns
+    meta["raw_returns_description"] = prose if prose != meta["returns"] else ""
 
     meta["remarks"] = entry.get("remarks") or ""
 
@@ -553,6 +626,9 @@ def main():
 
     # Merge local + live
     merged = merge_entries(local_entries, live_entries)
+
+    # Enrich truncated entries with cross-category syntax/returns
+    merged = enrich_truncated_syntax(merged)
 
     # Add user docs entries with source tagging
     if docs_entries:
