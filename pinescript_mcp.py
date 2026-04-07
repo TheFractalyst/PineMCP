@@ -2548,10 +2548,34 @@ async def validate_syntax(
             name = meta.get("name", "")
             extra = f"\nMeta: {name}" if name else ""
             fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
+
+            # Add quick code analysis for richer output
+            code_lines = code.strip().splitlines()
+            code_analysis = []
+            is_strategy = any("strategy(" in l for l in code_lines)
+            is_indicator = any("indicator(" in l for l in code_lines)
+            is_library = any("library(" in l for l in code_lines)
+            script_type = "strategy" if is_strategy else ("indicator" if is_indicator else ("library" if is_library else "unknown"))
+            plots = sum(1 for l in code_lines if l.strip().startswith("plot(") or l.strip().startswith("plotshape(") or l.strip().startswith("plotchar("))
+            inputs = sum(1 for l in code_lines if "input." in l)
+            has_request = any("request." in l for l in code_lines)
+
+            code_analysis.append(f"Script type: {script_type}")
+            code_analysis.append(f"Lines: {len(code_lines)}")
+            if plots:
+                code_analysis.append(f"Plots: {plots}")
+            if inputs:
+                code_analysis.append(f"Inputs: {inputs}")
+            if has_request:
+                code_analysis.append("Uses request.*() (external data)")
+
+            analysis_block = "\n".join(f"  {a}" for a in code_analysis)
+
             return (
                 f"VALID — Code compiles successfully.{extra}{fallback_note}\n"
                 f"Compiler: {compiler_label}\n"
-                f"Errors: 0 | Warnings: 0"
+                f"Errors: 0 | Warnings: 0\n\n"
+                f"Code Analysis:\n{analysis_block}"
             )
 
         lines = []
@@ -3123,6 +3147,32 @@ def _map_input_to_param(
     return None
 
 
+# Code generation LRU cache — avoids re-compiling identical templates
+_CODEGEN_CACHE: OrderedDict[str, tuple[str, float]] = OrderedDict()
+_CODEGEN_CACHE_LOCK = threading.Lock()
+_CODEGEN_CACHE_TTL = 600.0  # 10 min
+_CODEGEN_CACHE_MAX = 50
+
+def _codegen_cache_key(name: str, description: str, inputs: str | None, overlay: bool) -> str:
+    return xxhash.xxh64(f"{name}|{description}|{inputs}|{overlay}".encode()).hexdigest()
+
+def _get_codegen_cache(key: str) -> str | None:
+    with _CODEGEN_CACHE_LOCK:
+        if key in _CODEGEN_CACHE:
+            result, ts = _CODEGEN_CACHE[key]
+            if time.time() - ts < _CODEGEN_CACHE_TTL:
+                return result
+            del _CODEGEN_CACHE[key]
+    return None
+
+def _set_codegen_cache(key: str, result: str) -> None:
+    with _CODEGEN_CACHE_LOCK:
+        _CODEGEN_CACHE[key] = (result, time.time())
+        _CODEGEN_CACHE.move_to_end(key)
+        while len(_CODEGEN_CACHE) > _CODEGEN_CACHE_MAX:
+            _CODEGEN_CACHE.popitem(last=False)
+
+
 @mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": True, "idempotentHint": False})
 async def generate_indicator(
     name: Annotated[str, Field(
@@ -3159,6 +3209,12 @@ async def generate_indicator(
         if not name:
             return "ERROR: No indicator name provided. Pass a display name for the indicator."
         safe_name = _sanitize_pine_string(name)
+
+        # ── Cache check: avoid re-compiling identical templates ──
+        cache_key = _codegen_cache_key(safe_name, description or "", inputs or "", overlay)
+        cached_result = _get_codegen_cache(cache_key)
+        if cached_result:
+            return cached_result
 
         # ── Phase 0: Check for known indicator templates ──
         # Fast-path: if the description matches a well-known indicator family,
@@ -3483,7 +3539,9 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 
         lines.append(f"\nSOURCE: {template_source}")
 
-        return _cap_response("\n".join(lines))
+        result = _cap_response("\n".join(lines))
+        _set_codegen_cache(cache_key, result)
+        return result
 
     except Exception as e:
         logger.error(f"[generate_indicator] {e}")
