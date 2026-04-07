@@ -2432,7 +2432,8 @@ async def list_namespace(
             where = {"namespace": ns}
 
         if category_filter:
-            where["category"] = category_filter
+            # ChromaDB requires $and for multiple conditions
+            where = {"$and": [{"namespace": ns if ns.lower() != "global" else ""}, {"category": category_filter}]}
 
         entries = await _get_all_where_async(where)
         if not entries:
