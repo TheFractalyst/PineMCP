@@ -3762,6 +3762,8 @@ async def lookup_and_correct(
 
         intent_err = _check_query_error(intent_results)
         # Non-critical: intent lookup failure shouldn't block the correction report
+
+        lines = []
         lines.append("LOOKUP AND CORRECT REPORT")
         lines.append("=" * 50)
         lines.append("")
