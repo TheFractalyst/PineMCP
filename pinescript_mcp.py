@@ -2,7 +2,7 @@
 pinescript_mcp.py
 ─────────────────────────────────────────────────────────────────────────────
 PineScript v6 Complete Knowledge MCP Server
-FastMCP 3.0 · Transport: stdio · 19 tools + 1 resource
+FastMCP 3.0 · Transport: stdio · 20 tools + 1 resource
 
 Serves PineScript v6 reference documentation via semantic-search tools
 backed by a local ChromaDB vector store (3,400+ entries, 100% local).
@@ -29,6 +29,7 @@ import os
 import random
 import re
 import sys
+import threading
 import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -48,6 +49,8 @@ logger.add(
 )
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +72,11 @@ PINE_FACADE_TIMEOUT = int(os.getenv("PINE_FACADE_TIMEOUT", "20"))
 VALIDATION_CACHE_TTL = int(os.getenv("VALIDATION_CACHE_TTL", "300"))
 VALIDATION_CACHE_MAX_SIZE = int(os.getenv("VALIDATION_CACHE_SIZE", "500"))
 MAX_TOOL_RESPONSE_CHARS = 8000
+MAX_FUZZY_SCAN_ENTRIES = 5000
+MAX_CONCURRENT_TOOL_CALLS = 8
+
+# Concurrency semaphore to prevent resource exhaustion
+_tool_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TOOL_CALLS)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Server definition
@@ -151,6 +159,7 @@ mcp = FastMCP(
     name="PineScript v6 Complete Reference",
     instructions=INSTRUCTIONS,
     lifespan=_startup_lifespan,
+    mask_error_details=True,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -183,7 +192,6 @@ class ChromaDBCircuitBreaker:
         self.threshold: int = threshold
         self.cooldown: int = cooldown
         self.open_until: float = 0.0
-        self._lock = asyncio.Lock()
 
     def is_open(self) -> bool:
         if self.open_until and time.time() > self.open_until:
@@ -192,16 +200,16 @@ class ChromaDBCircuitBreaker:
             logger.info("ChromaDB circuit RESET (cooldown expired)")
         return time.time() < self.open_until
 
-    async def record_failure(self, exc: Exception) -> None:
-        async with self._lock:
-            self.failures += 1
-            logger.warning(
-                f"ChromaDB failure {self.failures}/{self.threshold}: "
-                f"{type(exc).__name__}"
-            )
-            if self.failures >= self.threshold:
-                self.open_until = time.time() + self.cooldown
-                logger.error(f"ChromaDB circuit OPEN — cooldown {self.cooldown}s")
+    def record_failure(self, exc: Exception) -> None:
+        # NOTE: Must remain synchronous — called from _get_collection() which is sync
+        self.failures += 1
+        logger.warning(
+            f"ChromaDB failure {self.failures}/{self.threshold}: "
+            f"{type(exc).__name__}"
+        )
+        if self.failures >= self.threshold:
+            self.open_until = time.time() + self.cooldown
+            logger.error(f"ChromaDB circuit OPEN — cooldown {self.cooldown}s")
 
     def record_success(self) -> None:
         if self.failures:
@@ -448,8 +456,8 @@ def _search_by_name(
         except Exception as e:
             logger.debug(f"Exact unqualified lookup failed: {e}")
 
-        # Strategy 2: fuzzy — fetch ALL, filter in Python
-        total = col.count()
+        # Strategy 2: fuzzy — fetch ALL, filter in Python (capped for safety)
+        total = min(col.count(), MAX_FUZZY_SCAN_ENTRIES)
         get_kwargs: dict = dict(include=["metadatas", "documents"], limit=total)
         if where:
             get_kwargs["where"] = where
@@ -842,6 +850,7 @@ _pine_cb = PineFacadeCircuitBreaker()
 _facade_http_client: Optional[httpx.AsyncClient] = None
 
 _VALIDATION_CACHE: dict[str, tuple[str, float]] = {}
+_VALIDATION_CACHE_LOCK = threading.Lock()
 
 _FIX_HINTS: dict[str, str] = {
     "Undeclared identifier": "Variable not declared. Add 'var float {name} = na' before use, or check spelling. In v6, all identifiers must be declared.",
@@ -871,6 +880,18 @@ _FIX_HINTS: dict[str, str] = {
     "Condition must be 'bool'": "If/while condition must be boolean. Use comparison operators: ==, !=, >, <, >=, <=, 'and', 'or', 'not'.",
     "Cannot mix 'series' and 'simple'": "Mixing series and simple/const contexts. Wrap the call in a request.security() or ensure both sides are the same qualifier.",
     "No overload of function": "Wrong number or types of arguments. Call get_function(name) for exact parameter list and types.",
+    "Cannot convert 'series float' to 'bool'": "v6 removed implicit bool casting. Use explicit comparison: e.g., if volume > 0 instead of if volume, if close instead use if close > 0.",
+    "An argument 'when' of": "v6 removed the 'when' parameter from strategy.entry/exit. Use an if block: if condition \\n strategy.entry(...)",
+    "division operator": "v6 changed integer division: 3/2 now returns 1.5 (float), not 1. Use math.floor(a/b) or int(a/b) for integer division.",
+    # ── v6 breaking changes (8 new entries from research) ──
+    "transp": "v6 removed the 'transp' parameter from plot(), fill(), bgcolor(), etc. Use color.new(color, transparency) instead, where transparency is 0 (opaque) to 100 (invisible).",
+    "Duplicate argument": "v6 disallows duplicate named arguments in function calls. Remove the duplicate parameter — only one of each name is allowed.",
+    "Cannot use operator '[]'": "v6 restricts history operator [] in certain contexts (e.g., inside request.security() or on non-series types). Cache the value in a variable before using [].",
+    "no longer accepts 'bool'": "v6 tightened type requirements — this parameter no longer accepts 'bool' where it once did. Pass the expected type explicitly.",
+    "Cannot assign 'na' to": "v6 requires unique types for 'na' assignments. Declare with explicit type: 'var float x = na' instead of 'var x = na'.",
+    "offset": "v6 changed 'offset' parameter: it no longer accepts 'series int', only 'simple int'. Calculate the offset outside the call and pass the result.",
+    "linewidth": "v6 enforces minimum linewidth of 1. Use linewidth=1 or higher. Zero or negative values are no longer accepted.",
+    "margin": "v6 changed default margin from 0 to 100% (no margin trading). Set margin_long=0 and margin_short=0 in strategy() to restore margin behavior.",
 }
 
 
@@ -879,7 +900,7 @@ def _get_facade_client() -> httpx.AsyncClient:
     global _facade_http_client
     if _facade_http_client is None or _facade_http_client.is_closed:
         _facade_http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(15.0, connect=5.0),
+            timeout=httpx.Timeout(float(PINE_FACADE_TIMEOUT), connect=5.0),
             limits=httpx.Limits(
                 max_connections=10,
                 max_keepalive_connections=5,
@@ -906,6 +927,13 @@ def _shutdown_http_client():
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
+            # No event loop — create a fresh one to close the client
+            try:
+                asyncio.run(_facade_http_client.aclose())
+            except Exception as e:
+                logger.debug(f"HTTP shutdown (new loop) error: {e}")
+            finally:
+                _facade_http_client = None
             return
         try:
             if loop.is_running():
@@ -914,6 +942,8 @@ def _shutdown_http_client():
                 loop.run_until_complete(_facade_http_client.aclose())
         except Exception as e:
             logger.debug(f"HTTP shutdown error: {e}")
+        finally:
+            _facade_http_client = None
 
 
 atexit.register(_shutdown_http_client)
@@ -958,14 +988,15 @@ def _get_cached_validation(code: str) -> Optional[dict]:
     import xxhash
 
     h = xxhash.xxh64(code.encode()).hexdigest()
-    if h in _VALIDATION_CACHE:
-        result_str, ts = _VALIDATION_CACHE[h]
-        if time.time() - ts < VALIDATION_CACHE_TTL:
-            try:
-                return json.loads(result_str)
-            except json.JSONDecodeError:
-                logger.warning("Corrupt validation cache entry — evicting")
-                del _VALIDATION_CACHE[h]
+    with _VALIDATION_CACHE_LOCK:
+        if h in _VALIDATION_CACHE:
+            result_str, ts = _VALIDATION_CACHE[h]
+            if time.time() - ts < VALIDATION_CACHE_TTL:
+                try:
+                    return json.loads(result_str)
+                except json.JSONDecodeError:
+                    logger.warning("Corrupt validation cache entry — evicting")
+                    del _VALIDATION_CACHE[h]
     return None
 
 
@@ -974,34 +1005,42 @@ def _cache_validation(code: str, result: str) -> None:
     import xxhash
 
     h = xxhash.xxh64(code.encode()).hexdigest()
-    _VALIDATION_CACHE[h] = (result, time.time())
-    # Prune old entries if cache grows too large
-    if len(_VALIDATION_CACHE) > VALIDATION_CACHE_MAX_SIZE:
-        oldest_key = min(_VALIDATION_CACHE, key=lambda k: _VALIDATION_CACHE[k][1])
-        del _VALIDATION_CACHE[oldest_key]
-        logger.debug(f"Validation cache evicted oldest: {oldest_key[:40]}")
+    with _VALIDATION_CACHE_LOCK:
+        _VALIDATION_CACHE[h] = (result, time.time())
+        # Prune old entries if cache grows too large
+        if len(_VALIDATION_CACHE) > VALIDATION_CACHE_MAX_SIZE:
+            oldest_key = min(_VALIDATION_CACHE, key=lambda k: _VALIDATION_CACHE[k][1])
+            del _VALIDATION_CACHE[oldest_key]
+            logger.debug(f"Validation cache evicted oldest: {oldest_key[:40]}")
 
 
 def _normalize_facade_response(raw: dict) -> dict:
-    """Normalize translate_light API response.
+    """Normalize /compile API response.
 
-    Success shape:
-        { "success": true, "result": { "variables": [], ... } }
+    Success shape (/compile):
+        { "success": true, "result": { ... } }
 
-    Error shape (compile errors):
-        { "success": true, "result": { "errors": [...] } }
+    Error shape (/compile with compile errors):
+        { "success": false, "result": { "errors": [...] } }
         Each error: { "line": int, "column": int, "message": str, "code": str }
 
     Rejection shape (version too old, etc.):
         { "success": false, "reason": "...", "result": null }
 
-    The translate_light API returns success=true even on compile errors,
-    but includes an "errors" array inside the "result" object.
+    The /compile endpoint returns success=false on compile errors with
+    an "errors" array inside the "result" object.
     """
     success = raw.get("success", False)
 
+    result_obj = raw.get("result") or {}
+    raw_errors = result_obj.get("errors", []) if isinstance(result_obj, dict) else []
+
+    # /compile may also put errors at top level
+    if not raw_errors and "errors" in raw:
+        raw_errors = raw.get("errors", [])
+
     # Handle rejection shape (success=false with reason, result=null)
-    if not success:
+    if not success and not raw_errors:
         reason = raw.get("reason", "Unknown compilation failure")
         return {
             "success": False,
@@ -1010,10 +1049,6 @@ def _normalize_facade_response(raw: dict) -> dict:
             "meta": {},
             "raw_response": raw,
         }
-
-    # translate_light puts errors inside result object
-    result_obj = raw.get("result") or {}
-    raw_errors = result_obj.get("errors", []) if isinstance(result_obj, dict) else []
 
     def normalize_error(e: dict) -> dict:
         text = e.get("text") or e.get("message") or e.get("msg") or str(e)
@@ -1653,7 +1688,7 @@ async def _lookup_entry(name: str, category: str) -> str:
         logger.error(f"[_lookup_entry] {e}")
         if _chroma_breaker.is_open():
             return _circuit_breaker_msg()
-        return _error(category, str(e))
+        return _error(category, _safe_error(e, category))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2076,7 +2111,7 @@ async def list_namespace(
             output_lines.append("")
 
         output_lines.append(f"Total: {len(entries)} entries in namespace '{ns}'")
-        return "\n".join(output_lines)
+        return _cap_response("\n".join(output_lines))
 
     except Exception as e:
         logger.error(f"[list_namespace] {e}")
@@ -2201,10 +2236,9 @@ async def search_by_return_type(
 @mcp.tool
 async def validate_syntax(
     code: Annotated[str, Field(
-        min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
-    )],
+    )] = "",
 ) -> str:
     """
     Validate PineScript v6 code using TradingView's official pine-facade
@@ -2278,7 +2312,7 @@ async def validate_syntax(
     except Exception as e:
         logger.error(f"[validate_syntax] {e}")
         return (
-            f"Compiler unavailable ({type(e).__name__}: {e}).\n"
+            f"Compiler unavailable ({_safe_error(e, 'validate_syntax')}).\n"
             f"Check your code for syntax errors."
         )
 
@@ -2291,10 +2325,9 @@ async def validate_syntax(
 @mcp.tool
 async def validate_and_explain(
     code: Annotated[str, Field(
-        min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
-    )],
+    )] = "",
 ) -> str:
     """
     Validate PineScript v6 code AND cross-reference any errors against
@@ -2407,7 +2440,7 @@ async def validate_and_explain(
     except Exception as e:
         logger.error(f"[validate_and_explain] {e}")
         return (
-            f"VALIDATION FAILED: {type(e).__name__}: {e}\n"
+            f"VALIDATION FAILED: {_safe_error(e, 'validate_and_explain')}\n"
             f"Check your code for syntax errors."
         )
 
@@ -2420,15 +2453,13 @@ async def validate_and_explain(
 @mcp.tool
 async def fix_and_validate(
     code: Annotated[str, Field(
-        min_length=1,
         max_length=50000,
         description="The failing PineScript v6 code",
-    )],
+    )] = "",
     error_description: Annotated[str, Field(
-        min_length=1,
         max_length=500,
         description="The error message or what's wrong",
-    )],
+    )] = "",
 ) -> str:
     """
     Given PineScript code and a description of what's wrong (or the
@@ -2502,8 +2533,9 @@ async def fix_and_validate(
         # Step 4: Attempt auto-fix for common patterns
         fixed_code = code
         fix_applied = "No automatic fix available"
+        fixes_list = []
 
-        # Pattern: missing namespace (ema → ta.ema, sma → ta.sma, etc.)
+        # Pattern 1: missing namespace (ema → ta.ema, sma → ta.sma, etc.)
         # (?<!\.) prevents double-prefixing code that already has ta./math./etc.
         bare_fn_pattern = re.compile(
             r'(?<!\.)(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
@@ -2512,11 +2544,39 @@ async def fix_and_validate(
         )
         if bare_fn_pattern.search(fixed_code):
             fixed_code = bare_fn_pattern.sub(r'ta.\1(', fixed_code)
-            fix_applied = "Added ta. namespace prefix to unqualified TA functions"
+            fixes_list.append("Added ta. namespace prefix to unqualified TA functions")
 
-        # Pattern: strategy.* called in indicator context
+        # Pattern 2: v6 breaking change — transp= parameter removed
+        transp_pattern = re.compile(r',\s*transp\s*=\s*\d+')
+        if transp_pattern.search(fixed_code):
+            fixed_code = transp_pattern.sub('', fixed_code)
+            fixes_list.append("Removed transp= parameter (v6: use color.new() instead)")
+
+        # Pattern 3: v6 breaking change — when= parameter removed from strategy.*
+        when_pattern = re.compile(r'(strategy\.\w+\([^)]*),\s*when\s*=\s*([^)]+)\)')
+        if when_pattern.search(fixed_code):
+            # Can't fully auto-fix (need if block), but strip the when= and note it
+            fixed_code = when_pattern.sub(r'\1)', fixed_code)
+            fixes_list.append("Removed when= parameter (v6: wrap in if block instead)")
+
+        # Pattern 4: strategy.* called in indicator context
         if "strategy.entry" in fixed_code and "strategy(" not in fixed_code:
-            fix_applied = "strategy.entry() requires strategy() declaration, not indicator()"
+            fixes_list.append("strategy.entry() requires strategy() declaration, not indicator()")
+
+        # Pattern 5: Implicit bool — if volume, if close (v6 needs explicit comparison)
+        implicit_bool_pattern = re.compile(r'\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])')
+        if implicit_bool_pattern.search(fixed_code):
+            fixed_code = implicit_bool_pattern.sub(r'if \1 > 0', fixed_code)
+            fixes_list.append("Added explicit > 0 comparison (v6: implicit bool casting removed)")
+
+        # Pattern 6: bool x = na (v6: bools can't be na)
+        bool_na_pattern = re.compile(r'\bbool\s+(\w+)\s*=\s*na\b')
+        if bool_na_pattern.search(fixed_code):
+            fixed_code = bool_na_pattern.sub(r'var bool \1 = false', fixed_code)
+            fixes_list.append("Changed 'bool x = na' to 'var bool x = false' (v6: bool can't be na)")
+
+        if fixes_list:
+            fix_applied = " | ".join(fixes_list)
 
         # Step 5: Validate the fixed code
         validation_result = None
@@ -2700,11 +2760,24 @@ async def generate_indicator(
                 relevant_funcs.append(f"//   {fname}: {fsyntax[:80]}")
 
         # Generate calculation stub from top relevant function
+        # Validate top result is semantically relevant (distance < 0.8)
         calc_stub = "plot(close, \"Price\", color.blue)"
         if relevant.get("ids") and relevant["ids"][0]:
             top_meta = relevant["metadatas"][0][0]
+            top_dist = relevant["distances"][0][0] if relevant.get("distances") and relevant["distances"][0] else 1.0
             top_name = top_meta.get("name", "")
-            if top_name:
+            top_syntax = top_meta.get("syntax", "")
+            top_desc = (top_meta.get("raw_description") or "").lower()
+
+            # Relevance check: skip if top result is too far from description
+            desc_lower = description.lower() if description else ""
+            name_match = any(
+                kw in top_name.lower() or kw in top_desc
+                for kw in desc_lower.split()
+                if len(kw) > 2
+            ) if desc_lower else True
+
+            if top_name and (top_dist < 0.8 or name_match):
                 # Gather variable names from inputs
                 input_vars = []
                 for il in input_lines:
@@ -2713,11 +2786,51 @@ async def generate_indicator(
                         var_part = parts[0].strip()
                         tokens = var_part.split()
                         input_vars.append(tokens[-1] if tokens else var_part)
-                args = ", ".join(input_vars) if input_vars else "close"
+
+                # Parse top function's parameters to build correct call
+                raw_params = top_meta.get("raw_parameters", "")
+                param_names = []
+                if raw_params:
+                    try:
+                        params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
+                        param_names = [p.get("name", "") for p in params if isinstance(p, dict)]
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                # Build args: match user inputs to function params by name
+                args_list = []
+                if input_vars and param_names:
+                    for pv in input_vars:
+                        # Try to match input var to a param name
+                        matched = False
+                        for pn in param_names:
+                            if pv.lower() in pn.lower() or pn.lower() in pv.lower():
+                                args_list.append(f"{pn}={pv}")
+                                matched = True
+                                break
+                        if not matched:
+                            args_list.append(pv)
+                elif param_names:
+                    # Auto-fill first param as close for ta.* functions
+                    if top_name.startswith("ta.") and param_names:
+                        if param_names[0] in ("source", "src"):
+                            args_list.append(f"source=close")
+                        else:
+                            args_list.append(f"{param_names[0]}=close")
+                    for pn in param_names[1:]:
+                        if "length" in pn.lower() or "period" in pn.lower():
+                            args_list.append(f"{pn}=14")
+                        elif "mult" in pn.lower() or "factor" in pn.lower():
+                            args_list.append(f"{pn}=2.0")
+                else:
+                    args_list = input_vars if input_vars else ["close"]
+
+                args = ", ".join(args_list) if args_list else "close"
                 calc_stub = (
                     f"result = {top_name}({args})\n"
                     f"plot(result, \"Result\", color.orange)"
                 )
+            # else: top result not relevant enough, use default plot
 
         # Generate template
         code = f"""//@version=6
@@ -2929,15 +3042,13 @@ if barstate.islast
 @mcp.tool
 async def lookup_and_correct(
     code: Annotated[str, Field(
-        min_length=1,
         max_length=50000,
         description="The PineScript code (can be partial or full script)",
-    )],
+    )] = "",
     error_description: Annotated[str, Field(
-        min_length=1,
         max_length=500,
         description="What the code is supposed to do",
-    )],
+    )] = "",
 ) -> str:
     """
     Given a PineScript code snippet and what it's supposed to do,
@@ -3018,6 +3129,31 @@ async def lookup_and_correct(
             r'(?<!\.)tostring\s*\(':     'str.tostring(',
             r'(?<!\.)tonumber\s*\(':     'str.tonumber(',
         }
+
+        # v6 breaking changes: transp, when, implicit bool, bool=na
+        # Pattern: transp=N → remove (use color.new instead)
+        transp_pattern = re.compile(r',\s*transp\s*=\s*\d+')
+        if transp_pattern.search(fixed_code):
+            fixed_code = transp_pattern.sub('', fixed_code)
+            changes_made.append("Removed transp= parameter (v6: use color.new())")
+
+        # Pattern: bool x = na → var bool x = false
+        bool_na = re.compile(r'\bbool\s+(\w+)\s*=\s*na\b')
+        if bool_na.search(fixed_code):
+            fixed_code = bool_na.sub(r'var bool \1 = false', fixed_code)
+            changes_made.append("Changed 'bool x = na' to 'var bool x = false' (v6)")
+
+        # Pattern: if volume/close (implicit bool) → if volume > 0
+        implicit_bool = re.compile(r'\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])')
+        if implicit_bool.search(fixed_code):
+            fixed_code = implicit_bool.sub(r'if \1 > 0', fixed_code)
+            changes_made.append("Added explicit > 0 (v6: implicit bool removed)")
+
+        # Pattern: study() → indicator() (v5 → v6)
+        study_pattern = re.compile(r'\bstudy\s*\(')
+        if study_pattern.search(fixed_code):
+            fixed_code = study_pattern.sub('indicator(', fixed_code)
+            changes_made.append("Replaced study() → indicator() (v6)")
 
         # Apply ALL replacements sequentially
         for pattern, replacement in V5_TO_V6.items():
@@ -3127,10 +3263,9 @@ async def lookup_and_correct(
 @mcp.tool
 async def debug_pine_facade(
     code: Annotated[str, Field(
-        min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to compile",
-    )],
+    )] = "",
 ) -> str:
     """
     Diagnostic tool: compile code via pine-facade and return the FULL raw
@@ -3203,7 +3338,7 @@ async def debug_pine_facade(
         cb_stats = _pine_cb.stats()
         return (
             f"DEBUG PINE-FACADE ERROR\n"
-            f"Exception: {type(e).__name__}: {e}\n"
+            f"Exception: {_safe_error(e, 'debug_pine_facade')}\n"
             f"Circuit breaker: {json.dumps(cb_stats)}\n"
             f"Cache entries: {len(_VALIDATION_CACHE)}"
         )
@@ -3417,7 +3552,7 @@ async def get_stats() -> str:
                 "chroma_circuit_open": _chroma_breaker.is_open(),
                 "validation_cache_entries": len(_VALIDATION_CACHE),
                 "embedding_model_ready": _embedding_model_ready.is_set(),
-                "total_tools": 19,
+                "total_tools": 20,
                 "version": "4.0",
             },
             indent=2,
@@ -3427,11 +3562,147 @@ async def get_stats() -> str:
         return json.dumps(
             {
                 "error": _safe_error(e, "get_stats"),
-                "total_tools": 19,
+                "total_tools": 20,
                 "version": "4.0",
             },
             indent=2,
         )
+
+
+@mcp.tool
+async def validate_file(
+    file_path: Annotated[str, Field(
+        description="Absolute path to PineScript v6 file to validate"
+    )]
+) -> str:
+    """
+    Validate a PineScript v6 file by path instead of content.
+    
+    This tool bypasses MCP parameter size limitations by reading the file
+    directly on the server side. Use this for large files (>30KB) that
+    cannot be passed as inline parameters through Claude Code.
+    
+    Args:
+        file_path: Absolute path to the .ps file to validate
+    
+    Returns:
+        Validation results in the same format as validate_syntax
+    """
+    if not file_path:
+        return "ERROR: No file path provided. Provide an absolute path to a PineScript file."
+
+    # Path safety: resolve symlinks, enforce .ps extension, allowlist directories
+    try:
+        resolved = os.path.realpath(file_path)
+    except Exception:
+        return "ERROR: Invalid path provided."
+
+    if not resolved.endswith('.ps') and not resolved.endswith('.pine'):
+        return "ERROR: Only .ps and .pine files are accepted."
+
+    # Allowlist: only permit files under these base directories
+    _ALLOWED_BASE_DIRS = [
+        os.path.expanduser("~/Documents"),
+        os.path.expanduser("~/Desktop"),
+        os.path.expanduser("~/Projects"),
+        os.path.expanduser("~/repos"),
+        os.path.dirname(os.path.abspath(__file__)),
+    ]
+    _allowed = any(
+        resolved.startswith(d + os.sep) or resolved == d
+        for d in _ALLOWED_BASE_DIRS
+    )
+    if not _allowed:
+        return "ERROR: Access denied — path outside allowed scope."
+
+    if not os.path.exists(resolved) or not os.path.isfile(resolved):
+        return "ERROR: File not found or inaccessible."
+
+    # File size limit: prevent OOM on large files
+    _MAX_FILE_SIZE = 1_000_000  # 1MB
+    try:
+        file_stat = os.stat(resolved)
+        if file_stat.st_size > _MAX_FILE_SIZE:
+            return f"ERROR: File too large ({file_stat.st_size:,} bytes). Maximum allowed: {_MAX_FILE_SIZE:,} bytes."
+    except Exception as e:
+        return f"ERROR: Cannot stat file: {e}"
+
+    # Read file content
+    try:
+        with open(resolved, 'r', encoding='utf-8') as f:
+            code = f.read()
+    except Exception as e:
+        return f"ERROR: Failed to read file: {e}"
+    
+    # Get file stats for display
+    file_size = len(code)
+    line_count = code.count('\n') + 1
+    
+    # Validate using the same logic as validate_syntax
+    try:
+        code = code.strip()
+        if not code:
+            return f"ERROR: File is empty or contains only whitespace: {file_path}"
+        
+        result = await _call_pine_facade(code)
+        
+        errors = _enrich_error_with_code(result.get("errors", []), code)
+        warnings = result.get("warnings", [])
+        success = result.get("success", False)
+        meta = result.get("meta", {})
+        is_fallback = meta.get("fallback") == "local_linter_tier1"
+        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
+        
+        # Build response with file info
+        response = f"FILE: {file_path}\n"
+        response += f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
+        response += "=" * 80 + "\n\n"
+        
+        if success and not errors and not warnings:
+            response += "✅ VALID — PineScript v6 code compiles successfully.\n\n"
+            response += f"Compiler: {compiler_label}\n"
+            response += f"Errors: 0 | Warnings: 0\n"
+            if is_fallback and meta.get("note"):
+                response += f"\n⚠️  {meta['note']}\n"
+            return response
+        
+        # Has errors or warnings
+        total_issues = len(errors) + len(warnings)
+        response += f"{'❌ COMPILATION ISSUES' if errors else '⚠️  WARNINGS'} ({total_issues})\n"
+        response += f"Compiler: {compiler_label}\n"
+        
+        if is_fallback and meta.get("note"):
+            response += f"Note: {meta['note']}\n"
+        
+        response += f"Errors: {len(errors)} | Warnings: {len(warnings)}\n\n"
+        
+        # Display errors
+        for idx, err in enumerate(errors, 1):
+            line = err.get("line", "?")
+            col = err.get("column", "?")
+            text = err.get("text", "Unknown error")
+            err_type = err.get("type", "error")
+            response += f"  ERROR {idx} — Line {line}, Col {col} [{err_type.upper()}]\n"
+            response += f"    {text}\n"
+            
+            hint = _lookup_fix_hint(text)
+            if hint:
+                response += f"    Fix hint: {hint}\n"
+            response += "\n"
+        
+        # Display warnings
+        for idx, warn in enumerate(warnings, 1):
+            line = warn.get("line", "?")
+            col = warn.get("column", "?")
+            text = warn.get("text", "Unknown warning")
+            response += f"  WARNING {idx} — Line {line}, Col {col}\n"
+            response += f"    {text}\n\n"
+        
+        return response
+        
+    except Exception as e:
+        logger.exception("Unexpected error in validate_file")
+        return f"ERROR: Validation failed: {e}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3439,5 +3710,5 @@ async def get_stats() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (19 tools, 100% local)")
+    logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (20 tools, 100% local)")
     mcp.run(transport="stdio")
