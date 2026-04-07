@@ -35,15 +35,63 @@ from formatters.errors import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _is_function_like(meta: dict) -> bool:
+    """Check if an entry has function characteristics regardless of stored category.
+
+    Many TradingView entries are scraped as 'variable' but take parameters
+    (e.g. strategy.closedtrades.profit(trade_num), request.security(...)).
+    """
+    syntax = meta.get("syntax") or ""
+    has_parens = "(" in syntax and ")" in syntax
+    has_params = bool(meta.get("raw_parameters"))
+    return has_parens or has_params
+
+
+def _pick_best_version(result: dict) -> tuple:
+    """From multiple DB entries with the same name, pick the best version.
+
+    Priority:
+    1. Function-like entries (have syntax with parens or params) — override to FUNCTION
+    2. Entries with syntax (over hollow entries)
+    3. Entries with longer docs
+    """
+    candidates = list(zip(result["metadatas"], result["documents"]))
+
+    # First pass: look for function-like entries (syntax with parens or params)
+    for meta, doc in candidates:
+        if _is_function_like(meta):
+            meta = {**meta, "category": "function"}
+            return meta, doc
+
+    # Second pass: prefer entries with syntax (non-hollow)
+    for meta, doc in candidates:
+        syntax = meta.get("syntax") or ""
+        if syntax:
+            # Keep original category — it might be constant, type, etc.
+            return meta, doc
+
+    # Third pass: pick the one with longest doc
+    if candidates:
+        best = max(candidates, key=lambda x: len(x[1]) if x[1] else 0)
+        return best[0], best[1]
+
+    return None, None
+
+
 async def _lookup_entry(name: str, category: str) -> str:
     """Lookup an entry by name and category. Returns formatted string or error."""
     try:
         await ensure_hot_cache()
+        name_preserved = name.strip()
+        name_lower = name.lower().strip()
+
         # Step 0: Check hot cache first (sub-ms for priority entries)
         cached = cache_lookup(name)
         if cached:
-            # Verify category match — skip cache if wrong category
-            if category and cached["metadata"].get("category") != category:
+            cached_cat = cached["metadata"].get("category")
+            cached_syntax = cached["metadata"].get("syntax") or ""
+            # Skip cache if wrong category OR hollow entry (no syntax)
+            if (category and cached_cat != category) or not cached_syntax:
                 pass  # fall through to name search
             else:
                 result = format_entry_detail(
@@ -52,6 +100,31 @@ async def _lookup_entry(name: str, category: str) -> str:
                     cached["document"],
                 )
                 return result
+
+        # Step 0.5: Exact name match across all categories — pick best version
+        # (handles entries stored with wrong category, e.g. constant stored as function)
+        try:
+            col = _db.get_collection()
+            name_variants = list({name_preserved, name_lower})
+            all_versions = col.get(
+                where={"name": {"$in": name_variants}},
+                include=["metadatas", "documents"]
+            )
+            if all_versions["ids"]:
+                # Find the version matching the requested category
+                for meta, doc in zip(all_versions["metadatas"], all_versions["documents"]):
+                    if not category or meta.get("category") == category:
+                        return format_entry_detail(
+                            meta.get("name", name), meta, doc
+                        )
+                # If no exact category match, pick the best version
+                best_meta, best_doc = _pick_best_version(all_versions)
+                if best_meta:
+                    return format_entry_detail(
+                        best_meta.get("name", name), best_meta, best_doc
+                    )
+        except Exception as e:
+            logger.debug(f"Cross-category lookup failed: {e}")
 
         # Step 1: Try exact fuzzy match within category
         candidates = await search_by_name_async(
@@ -166,38 +239,43 @@ async def get_function(
         # Step 0: Check hot cache first (sub-ms for priority entries)
         cached = cache_lookup(name)
         if cached and cached["metadata"].get("category") == "function":
-            result = format_entry_detail(
-                cached["metadata"].get("name", name),
-                cached["metadata"],
-                cached["document"],
-            )
-            return result
+            # Skip cache if function entry is hollow (no syntax) — a richer
+            # version likely exists in another category
+            cached_syntax = cached["metadata"].get("syntax") or ""
+            if cached_syntax:
+                result = format_entry_detail(
+                    cached["metadata"].get("name", name),
+                    cached["metadata"],
+                    cached["document"],
+                )
+                return result
 
-        # BUG FIX: For function lookups, always try exact match with category=function first
+        name_preserved = name.strip()  # preserve case (e.g. "currency.USD")
         name_lower = name.lower().strip()
 
-        # Try exact function match first
+        # Step 1: Exact name match — find best version across ALL categories
+        # Many entries have hollow 'function' versions (no syntax) alongside rich
+        # 'variable'/'constant' versions. Pick the version with the most info.
+        # Use $in to match both original case and lowercase (DB stores mixed case).
         try:
             col = _db.get_collection()
-            exact_func = col.get(
-                where={"$and": [
-                    {"name": name_lower},
-                    {"category": "function"}
-                ]},
+            name_variants = list({name_preserved, name_lower})
+            all_versions = col.get(
+                where={"name": {"$in": name_variants}},
                 include=["metadatas", "documents"]
             )
-            if exact_func["ids"]:
-                best_meta = exact_func["metadatas"][0]
-                best_doc = exact_func["documents"][0]
-                return format_entry_detail(
-                    best_meta.get("name", name),
-                    best_meta,
-                    best_doc
-                )
+            if all_versions["ids"]:
+                best_meta, best_doc = _pick_best_version(all_versions)
+                if best_meta:
+                    return format_entry_detail(
+                        best_meta.get("name", name),
+                        best_meta,
+                        best_doc
+                    )
         except Exception as e:
-            logger.debug(f"Exact function match failed: {e}")
+            logger.debug(f"Exact name match failed: {e}")
 
-        # Fall back to the general lookup
+        # Step 3: Fall back to the general lookup
         return await _lookup_entry(name, "function")
 
     except Exception as e:

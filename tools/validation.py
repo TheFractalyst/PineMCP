@@ -404,9 +404,10 @@ async def fix_and_validate(
             fixes_list.append("Removed transp= parameter (v6: use color.new() instead)")
 
         # Pattern 3: v6 breaking change — when= parameter removed from strategy.*
-        when_pattern = re.compile(r'(strategy\.\w+\([^)]*),\s*when\s*=\s*([^)]+)\)')
+        # Match: , when=<condition>) at end of strategy call, replace with just )
+        when_pattern = re.compile(r',\s*when\s*=\s*[^)]+\)')
         if when_pattern.search(fixed_code):
-            fixed_code = when_pattern.sub(r'\1)', fixed_code)
+            fixed_code = when_pattern.sub(')', fixed_code)
             fixes_list.append("Removed when= parameter (v6: wrap in if block instead)")
 
         # Pattern 4: strategy.* called in indicator context

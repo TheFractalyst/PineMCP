@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -200,6 +201,24 @@ def build_document_text(entry: dict[str, Any]) -> str:
     return "\n\n".join(parts)
 
 
+def _extract_return_type_from_syntax(syntax: str) -> str:
+    """Extract the return type annotation from a syntax string like 'ta.ema(source, length) → series float'.
+
+    Returns the type string (e.g., 'series float') or empty string if not found.
+    Handles:
+      - 'func(a, b) → series float'
+      - 'func(a, b) → [series float, series float, series float]'
+      - 'func() → void'
+    """
+    if not syntax:
+        return ""
+    # Match → or -> followed by the type annotation
+    arrow_match = re.search(r"(?:→|->)\s*(.+)$", syntax)
+    if arrow_match:
+        return arrow_match.group(1).strip()
+    return ""
+
+
 def flatten_metadata(entry: dict[str, Any]) -> dict[str, Any]:
     """Build flat metadata dict for ChromaDB storage."""
     meta: dict[str, Any] = {}
@@ -208,7 +227,18 @@ def flatten_metadata(entry: dict[str, Any]) -> dict[str, Any]:
     meta["category"] = entry.get("category", "")
     meta["namespace"] = entry.get("namespace") or ""
     meta["syntax"] = entry.get("syntax") or ""
-    meta["returns"] = entry.get("returns") or ""
+
+    # Returns field: prefer type annotation from syntax → over prose description
+    raw_returns = entry.get("returns") or ""
+    syntax = meta["syntax"]
+    extracted_type = _extract_return_type_from_syntax(syntax)
+    if extracted_type:
+        meta["returns"] = extracted_type
+    else:
+        meta["returns"] = raw_returns
+    # Store original prose for display in lookup tools
+    meta["raw_returns_description"] = raw_returns if raw_returns != meta["returns"] else ""
+
     meta["remarks"] = entry.get("remarks") or ""
 
     # Booleans as int (ChromaDB compatible)

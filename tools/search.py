@@ -33,9 +33,84 @@ from formatters.errors import (
     safe_error,
 )
 
+
+def _is_function_like(meta: dict) -> bool:
+    """Check if an entry has function characteristics regardless of stored category."""
+    syntax = meta.get("syntax") or ""
+    has_parens = "(" in syntax and ")" in syntax
+    has_params = bool(meta.get("raw_parameters"))
+    return has_parens or has_params
+
+
+def _return_type_matches(query_type: str, field_type: str) -> bool:
+    """Check if a query return type matches a field return type.
+
+    Uses word-boundary-aware matching to avoid 'int' matching 'point'.
+    """
+    import re
+    # Exact match
+    if query_type == field_type:
+        return True
+    # Query is a substring of field — check word boundary
+    # e.g., "float" in "series float" ✓, "int" in "point" ✗
+    if query_type in field_type:
+        # Check that query_type appears as a complete word in field_type
+        pattern = rf'(?:^|[\s<>,\[\]]){re.escape(query_type)}(?:$|[\s<>,\[\]])'
+        return bool(re.search(pattern, field_type))
+    # Field is a substring of query — e.g., "series float" matches query "float"
+    if field_type in query_type:
+        return True
+    return False
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL 1: search_docs
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _short_query_search(query: str, n_results: int,
+                              category_filter: str | None,
+                              namespace_filter: str | None) -> str:
+    """Handle very short queries (≤3 chars) using exact name matching.
+
+    Semantic embeddings produce poor vectors for short strings like 'ta', 'if'.
+    """
+    import core.db as _db_mod
+    from core.db import search_by_name_async
+
+    candidates = await search_by_name_async(query)
+    if not candidates:
+        return f"No results found for '{query}'. Try a longer search term."
+
+    # Filter by category/namespace if specified
+    filtered = []
+    for sim, entry in candidates:
+        meta = entry["metadata"]
+        if category_filter and meta.get("category") != category_filter:
+            continue
+        if namespace_filter and meta.get("namespace") != namespace_filter:
+            continue
+        filtered.append((sim, entry))
+
+    if not filtered:
+        return f"No results found for '{query}' with the given filters."
+
+    output_lines: list[str] = []
+    for i, (sim, entry) in enumerate(filtered[:n_results]):
+        meta = entry["metadata"]
+        name = meta.get("name", "?")
+        category = meta.get("category", "?").upper()
+        namespace = meta.get("namespace") or ""
+        ns = f"{namespace}." if namespace and not name.startswith(f"{namespace}.") else ""
+        desc = meta.get("raw_description", "")
+        first_para = desc.split("\n\n")[0][:200] if desc else ""
+
+        output_lines.append(_DIVIDER)
+        output_lines.append(f"[{i + 1}] {ns}{name} | {category} | Match: {sim:.0f}%")
+        if first_para:
+            output_lines.append(f"  {first_para}")
+
+    output_lines.append(_DIVIDER)
+    return cap_response("\n".join(output_lines))
 
 
 @tool(annotations=ToolAnnotations(title="Search PineScript Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
@@ -73,6 +148,12 @@ async def search_docs(
     try:
         query = query.strip()
         await ensure_hot_cache()
+
+        # Short query fallback: semantic embeddings perform poorly on 1-3 char
+        # queries. Use exact name matching instead.
+        if len(query) <= 3:
+            return await _short_query_search(query, n_results, category_filter, namespace_filter)
+
         where_clauses: list[dict] = []
         if category_filter:
             where_clauses.append({"category": category_filter})
@@ -86,6 +167,29 @@ async def search_docs(
             where = {"$and": where_clauses}
 
         results = await query_async(query, n_results, where=where)
+
+        # Supplementary search: if filtering by 'function', also find function-like
+        # entries stored under other categories (e.g. strategy.closedtrades.profit
+        # is stored as 'variable' but has function syntax with parameters)
+        if category_filter == "function" and results["ids"] and results["ids"][0]:
+            supp_where = {"namespace": namespace_filter} if namespace_filter else None
+            supp = await query_async(query, n_results, where=supp_where)
+            if supp["ids"] and supp["ids"][0]:
+                existing_ids = set(results["ids"][0])
+                for rid, meta, doc, dist in zip(
+                    supp["ids"][0],
+                    supp["metadatas"][0],
+                    supp["documents"][0],
+                    supp["distances"][0],
+                ):
+                    if rid not in existing_ids and meta.get("category") != "function" and _is_function_like(meta):
+                        # Override category so display shows FUNCTION, not VARIABLE
+                        meta = {**meta, "category": "function"}
+                        results["ids"][0].append(rid)
+                        results["metadatas"][0].append(meta)
+                        results["documents"][0].append(doc)
+                        results["distances"][0].append(dist)
+                        existing_ids.add(rid)
 
         db_err = check_query_error(results)
         if db_err:
@@ -340,6 +444,18 @@ async def list_namespace(
 
             output_lines.append("")
 
+        # Show any categories not in the standard order (e.g., 'annotation', 'example')
+        shown_cats = set(category_order)
+        remaining = {k: v for k, v in groups.items() if k not in shown_cats}
+        if remaining:
+            for cat in sorted(remaining):
+                cat_entries = sorted(remaining[cat], key=lambda e: e["metadata"].get("name", ""))
+                output_lines.append(f"{cat.upper()}S ({len(cat_entries)}):")
+                for entry in cat_entries:
+                    name = entry["metadata"].get("name", "?")
+                    output_lines.append(f"  {name}")
+                output_lines.append("")
+
         output_lines.append(f"Total: {len(entries)} entries in namespace '{ns}'")
         return cap_response("\n".join(output_lines))
 
@@ -382,8 +498,10 @@ async def search_by_return_type(
     try:
         return_type = return_type.strip()
         # Search docs for functions that return this type
+        # Fetch more candidates than requested — the returns-field filter will narrow down
         query = f"function returns {return_type}"
-        results = await query_async(query, n_results, where={"category": "function"})
+        fetch_count = max(n_results * 5, 50)
+        results = await query_async(query, fetch_count, where={"category": "function"})
         db_err = check_query_error(results)
         if db_err:
             return db_err
@@ -407,7 +525,8 @@ async def search_by_return_type(
         for meta, doc, dist in all_results:
             returns_field = (meta.get("returns") or "").lower()
             # Guard: skip empty returns fields — they would falsely match anything
-            if returns_field and (rt_lower in returns_field or returns_field in rt_lower):
+            # Use word-boundary check to avoid "int" matching "point"
+            if returns_field and _return_type_matches(rt_lower, returns_field):
                 direct_matches.append((meta, doc, dist, True))
             elif dist < 0.5:
                 semantic_matches.append((meta, doc, dist, False))

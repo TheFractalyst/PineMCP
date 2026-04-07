@@ -602,8 +602,9 @@ async def lookup_and_correct(
 
         # Step 4: Search docs for intent
         intent_results = await query_async(error_description, 3)
-
         intent_err = check_query_error(intent_results)
+        if intent_err:
+            intent_results = {"ids": [[]], "metadatas": [[]], "documents": [[]], "distances": [[]]}
 
         lines = []
         lines.append("LOOKUP AND CORRECT REPORT")
