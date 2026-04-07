@@ -343,7 +343,22 @@ def _get_collection():
 
         client = chromadb.PersistentClient(path=DB_PATH)
         _collection = client.get_collection(name=COLLECTION)
-        logger.info(f"Connected to ChromaDB - {_collection.count()} entries")
+        count = _collection.count()
+        logger.info(f"Connected to ChromaDB - {count} entries")
+
+        # HNSW warmup: force index load with a lightweight query.
+        # Eliminates ~14ms cold-start penalty on first real query.
+        if count > 0:
+            try:
+                _collection.query(
+                    query_embeddings=[[0.0] * 384],
+                    n_results=1,
+                    include=["distances"],
+                )
+                logger.debug("HNSW index warmed up")
+            except Exception:
+                pass  # Non-critical — first real query will warm it
+
         _chroma_breaker.record_success()
         return _collection
     except Exception as e:
@@ -353,15 +368,20 @@ def _get_collection():
 
 
 def _get_model():
-    """Return the SentenceTransformer, initializing lazily."""
+    """Return the SentenceTransformer, initializing lazily with ONNX backend if available."""
     global _embed_model
     if _embed_model is not None:
         return _embed_model
     try:
         from sentence_transformers import SentenceTransformer
 
-        _embed_model = SentenceTransformer(EMBED_MODEL)
-        logger.info(f"Embedding model loaded: {EMBED_MODEL}")
+        # Try ONNX backend first (1.4-3x faster inference)
+        try:
+            _embed_model = SentenceTransformer(EMBED_MODEL, backend="onnx")
+            logger.info(f"Embedding model loaded: {EMBED_MODEL} (ONNX backend)")
+        except Exception:
+            _embed_model = SentenceTransformer(EMBED_MODEL)
+            logger.info(f"Embedding model loaded: {EMBED_MODEL} (PyTorch backend)")
         return _embed_model
     except Exception as e:
         logger.error(f"Failed to load embedding model: {e}")
