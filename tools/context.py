@@ -209,6 +209,19 @@ async def get_namespace_cheatsheet(
                     lines.append(f"{_BOX_V}     {first_sentence}")
             lines.append(f"{_BOX_V}")
 
+        # Show any categories not in the standard order (e.g., 'annotation', 'example')
+        shown_cats = set(category_order)
+        remaining = {k: v for k, v in groups.items() if k not in shown_cats}
+        if remaining:
+            for cat in sorted(remaining):
+                cat_entries = remaining[cat]
+                lines.append(f"{_BOX_V} {cat.upper()}S ({len(cat_entries)})")
+                lines.append(f"{_BOX_V}")
+                for entry in cat_entries:
+                    name = entry["metadata"].get("name", "?")
+                    lines.append(f"{_BOX_V}   {name}")
+                lines.append(f"{_BOX_V}")
+
         lines.append(f"{_BOX_BL}{_BOX_H * 60}{_BOX_BR}")
         lines.append(f"Total: {total} entries in namespace '{ns}'")
         return cap_response("\n".join(lines))

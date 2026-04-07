@@ -272,14 +272,17 @@ def search_by_name(
         from rapidfuzz import fuzz
 
         col = get_collection()
+        name_preserved = name.strip()
         name_lower = name.lower().strip()
 
         # BUG FIX: If name contains ".", it's fully qualified — exact match only, no namespace fallback
         if "." in name_lower:
             # Fully qualified — exact match only, no namespace fuzzy fallback
+            # Use $in to match both original case and lowercase (DB stores mixed case)
+            name_variants = list({name_preserved, name_lower})
             try:
                 exact = col.get(
-                    where={"name": name_lower},
+                    where={"name": {"$in": name_variants}},
                     include=["metadatas", "documents"]
                 )
                 if exact["ids"]:
@@ -301,7 +304,7 @@ def search_by_name(
             # Try with type=function specifically
             try:
                 typed = col.get(
-                    where={"$and": [{"name": name_lower}, {"category": "function"}]},
+                    where={"$and": [{"name": {"$in": name_variants}}, where] if where else [{"name": {"$in": name_variants}}]},
                     include=["metadatas", "documents"]
                 )
                 if typed["ids"]:
@@ -338,12 +341,14 @@ def search_by_name(
                     return [(100.0, h) for h in hits]
 
         # Strategy 1: exact metadata match (fast, uses ChromaDB index)
+        # Use $in with both case variants since DB stores mixed-case names
         try:
-            exact_where: dict = {"name": name_lower}
+            name_variants = list({name_preserved, name_lower})
+            exact_where: dict = {"name": {"$in": name_variants}}
             if where:
                 cat = where.get("category")
                 if cat:
-                    exact_where = {"$and": [{"name": name_lower}, {"category": cat}]}
+                    exact_where = {"$and": [{"name": {"$in": name_variants}}, {"category": cat}]}
             exact = col.get(where=exact_where, include=["metadatas", "documents"])
             if exact["ids"]:
                 return [
