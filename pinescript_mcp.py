@@ -2567,6 +2567,10 @@ async def validate_syntax(
             plots = sum(1 for l in code_lines if l.strip().startswith("plot(") or l.strip().startswith("plotshape(") or l.strip().startswith("plotchar("))
             inputs = sum(1 for l in code_lines if "input." in l)
             has_request = any("request." in l for l in code_lines)
+            imports = [l.strip() for l in code_lines if l.strip().startswith("import ")]
+            var_count = sum(1 for l in code_lines if l.strip().startswith("var ") or l.strip().startswith("varip "))
+            has_methods = any("method " in l for l in code_lines)
+            has_types = any("type " in l and "//" not in l.split("type ")[0][-3:] for l in code_lines if not l.strip().startswith("//"))
 
             code_analysis.append(f"Script type: {script_type}")
             code_analysis.append(f"Lines: {len(code_lines)}")
@@ -2574,8 +2578,18 @@ async def validate_syntax(
                 code_analysis.append(f"Plots: {plots}")
             if inputs:
                 code_analysis.append(f"Inputs: {inputs}")
+            if var_count:
+                code_analysis.append(f"Persistent vars (var/varip): {var_count}")
             if has_request:
                 code_analysis.append("Uses request.*() (external data)")
+            if imports:
+                code_analysis.append(f"Imports: {len(imports)}")
+                for imp in imports[:5]:
+                    code_analysis.append(f"  {imp[:80]}")
+            if has_types:
+                code_analysis.append("Uses custom types (UDT)")
+            if has_methods:
+                code_analysis.append("Uses method definitions")
 
             analysis_block = "\n".join(f"  {a}" for a in code_analysis)
 
