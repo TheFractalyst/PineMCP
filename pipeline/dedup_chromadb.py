@@ -29,7 +29,7 @@ import chromadb
 
 logger_removed = False
 
-DB_PATH = Path(__file__).parent / "pinescript_db"
+DB_PATH = Path(__file__).parent.parent / "pinescript_db"
 COLLECTION_NAME = "pinescript_v6"
 
 

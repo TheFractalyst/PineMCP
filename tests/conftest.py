@@ -14,13 +14,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pinescript_mcp import (
-    _get_collection,
-    _get_model,
-    _build_name_index,
-    build_hot_cache,
-    _embedding_model_ready,
-)
+from core.db import get_collection as _get_collection, build_name_index as _build_name_index
+from core.embeddings import get_model as _get_model, _embedding_model_ready
+from core.hot_cache import build_hot_cache
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -3,11 +3,11 @@
     "PineScript v6 MCP Server — IDE Registration Config",
     "",
     "IMPORTANT: Replace /ABSOLUTE/PATH/TO with the actual absolute path to",
-    "the directory containing pinescript_mcp.py on YOUR machine.",
+    "the directory containing server.py on YOUR machine.",
     "",
     "Example: if you cloned to /home/user/projects/pinescript_mcp/",
-    "then replace /ABSOLUTE/PATH/TO/pinescript_mcp.py",
-    "with      /home/user/projects/pinescript_mcp/pinescript_mcp.py",
+    "then replace /ABSOLUTE/PATH/TO/server.py",
+    "with      /home/user/projects/pinescript_mcp/server.py",
     "",
     "Each IDE reads its config from a different location — see sections below."
   ],
@@ -18,7 +18,7 @@
     "mcpServers": {
       "pinescript-v6": {
         "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
-        "args": ["/ABSOLUTE/PATH/TO/pinescript_mcp.py"],
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
         "env": {
           "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
           "PINESCRIPT_COLLECTION": "pinescript_v6",
@@ -41,7 +41,7 @@
     "mcpServers": {
       "pinescript-v6": {
         "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
-        "args": ["/ABSOLUTE/PATH/TO/pinescript_mcp.py"],
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
         "env": {
           "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
           "PINESCRIPT_COLLECTION": "pinescript_v6",
@@ -63,7 +63,7 @@
     "mcpServers": {
       "pinescript-v6": {
         "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
-        "args": ["/ABSOLUTE/PATH/TO/pinescript_mcp.py"],
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
         "env": {
           "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
           "PINESCRIPT_COLLECTION": "pinescript_v6",
@@ -83,7 +83,7 @@
     "mcpServers": {
       "pinescript-v6": {
         "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
-        "args": ["/ABSOLUTE/PATH/TO/pinescript_mcp.py"],
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
         "env": {
           "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
           "PINESCRIPT_COLLECTION": "pinescript_v6",
@@ -104,7 +104,7 @@
       "servers": {
         "pinescript-v6": {
           "type": "local",
-          "command": ["/ABSOLUTE/PATH/TO/.venv/bin/python", "/ABSOLUTE/PATH/TO/pinescript_mcp.py"],
+          "command": ["/ABSOLUTE/PATH/TO/.venv/bin/python", "/ABSOLUTE/PATH/TO/server.py"],
           "env": {
             "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
             "PINESCRIPT_COLLECTION": "pinescript_v6",

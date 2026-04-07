@@ -17,10 +17,10 @@ import sys
 logger.remove()
 logger.add(sys.stderr, format="{time:HH:mm:ss} | {level:<8} | {message}", level="INFO")
 
-BASE = Path(__file__).parent
-LOCAL_FILE = BASE / "pinescript_chunks.json"
-LIVE_FILE = BASE / "tv_scraped_entries.json"
-USER_FILE = BASE / "user_docs_chunks.json"
+ROOT = Path(__file__).parent.parent
+LOCAL_FILE = ROOT / "data" / "pinescript_chunks.json"
+LIVE_FILE = ROOT / "data" / "tv_scraped_entries.json"
+USER_FILE = ROOT / "data" / "user_docs_chunks.json"
 
 
 def normalize_key(entry: dict) -> str:

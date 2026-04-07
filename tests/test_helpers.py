@@ -6,28 +6,30 @@ Tests formatting, sanitization, caching, circuit breaker, and error handling.
 
 import pytest
 
-from pinescript_mcp import (
-    _norm_name,
-    _norm_ns,
-    _relevance_pct,
-    _sanitize_text,
-    _sanitize_pine_string,
-    _lookup_fix_hint,
-    _extract_name_from_error,
-    _cap_response,
-    _dedup_examples,
-    _format_params_text,
-    _format_examples_text,
-    _format_entry_detail,
-    _check_query_error,
-    _safe_error,
-    cache_lookup,
-    HOT_CACHE,
-    _name_index_built,
-    _name_index,
-    ChromaDBCircuitBreaker,
-    PineFacadeCircuitBreaker,
+from formatters.errors import (
+    norm_name as _norm_name,
+    norm_ns as _norm_ns,
+    sanitize_text as _sanitize_text,
+    sanitize_pine_string as _sanitize_pine_string,
+    lookup_fix_hint as _lookup_fix_hint,
+    extract_name_from_error as _extract_name_from_error,
+    cap_response as _cap_response,
+    check_query_error as _check_query_error,
+    safe_error as _safe_error,
 )
+from formatters.entry import (
+    relevance_pct as _relevance_pct,
+    dedup_examples as _dedup_examples,
+    format_params_text as _format_params_text,
+    format_examples_text as _format_examples_text,
+    format_entry_detail as _format_entry_detail,
+)
+from core.db import ChromaDBCircuitBreaker, _name_index
+from core.pine_facade import PineFacadeCircuitBreaker
+from core.hot_cache import HOT_CACHE, cache_lookup
+import core.db as _core_db
+
+_name_index_built = _core_db._name_index_built
 
 
 # ── Name normalization ────────────────────────────────────────────────────────

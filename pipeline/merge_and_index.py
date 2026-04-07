@@ -37,10 +37,11 @@ from loguru import logger
 logger.remove()
 logger.add(sys.stderr, format="{time:HH:mm:ss} | {level:<8} | {message}", level="INFO")
 
-DEFAULT_LOCAL = Path(__file__).parent / "pinescript_chunks.json"
-DEFAULT_LIVE = Path(__file__).parent / "tv_scraped_entries.json"
-DEFAULT_DOCS = Path(__file__).parent / "user_docs_chunks.json"
-DEFAULT_DB = Path(__file__).parent / "pinescript_db"
+ROOT = Path(__file__).parent.parent
+DEFAULT_LOCAL = ROOT / "data" / "pinescript_chunks.json"
+DEFAULT_LIVE = ROOT / "data" / "tv_scraped_entries.json"
+DEFAULT_DOCS = ROOT / "data" / "user_docs_chunks.json"
+DEFAULT_DB = ROOT / "pinescript_db"
 COLLECTION_NAME = "pinescript_v6"
 EMBED_MODEL = "all-MiniLM-L6-v2"
 BATCH_SIZE = 50

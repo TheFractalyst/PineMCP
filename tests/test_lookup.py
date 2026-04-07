@@ -10,7 +10,7 @@ Each tool is tested for:
 
 import pytest
 
-from pinescript_mcp import (
+from tools.lookup import (
     get_function,
     get_variable,
     get_type,

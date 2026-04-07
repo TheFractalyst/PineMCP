@@ -320,8 +320,8 @@ def main():
         description="Discover all PineScript v6 entries from TradingView"
     )
     parser.add_argument(
-        "--output", type=Path, default=Path("tv_entry_index.json"),
-        help="Output file path (default: tv_entry_index.json)",
+        "--output", type=Path, default=Path("data/tv_entry_index.json"),
+        help="Output file path (default: data/tv_entry_index.json)",
     )
     parser.add_argument(
         "--headful", action="store_true",

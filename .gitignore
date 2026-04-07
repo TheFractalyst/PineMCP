@@ -29,12 +29,15 @@ pinescript_v6/
 # Playwright MCP snapshots
 .playwright-mcp/
 
-# Scraped data
+# Scraped data (may be at root or data/)
 tv_entry_index.json
 tv_scraped_entries.json
 scrape_report.json
 quick_audit_report.json
 duplication_report.json
+data/tv_entry_index.json
+data/tv_scraped_entries.json
+data/scrape_report.json
 
 # Temporary files
 *.tmp

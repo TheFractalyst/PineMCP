@@ -35,7 +35,7 @@ from formatters.errors import (
     safe_error,
     sanitize_pine_string,
 )
-from pine_tools.tools.lookup import _lookup_entry
+from tools.lookup import _lookup_entry
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL 11: validate_syntax

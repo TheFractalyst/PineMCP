@@ -38,8 +38,9 @@ logger.add(sys.stderr, format="{time:HH:mm:ss} | {level:<8} | {message}", level=
 # Defaults
 # ─────────────────────────────────────────────────────────────────────────────
 
-DEFAULT_CHUNKS = Path(__file__).parent / "pinescript_chunks.json"
-DEFAULT_DB     = Path(__file__).parent / "pinescript_db"
+ROOT = Path(__file__).parent.parent
+DEFAULT_CHUNKS = ROOT / "data" / "pinescript_chunks.json"
+DEFAULT_DB     = ROOT / "pinescript_db"
 COLLECTION     = "pinescript_v6"
 EMBED_MODEL    = "all-MiniLM-L6-v2"
 BATCH_SIZE     = 50

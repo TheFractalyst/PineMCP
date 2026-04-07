@@ -10,9 +10,9 @@ import os
 import asyncio
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pinescript_mcp import _call_pine_facade
+from core.pine_facade import call_pine_facade as _call_pine_facade
 
 
 class ErrorRecoveryTester:
