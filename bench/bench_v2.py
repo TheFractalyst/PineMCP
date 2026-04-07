@@ -17,32 +17,16 @@ import time
 import traceback
 
 # ── Ensure we import from the project root ──
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+os.chdir(ROOT)
 
 # ── Import all tool functions directly ──
-from pinescript_mcp import (
-    search_docs,
-    get_function,
-    get_variable,
-    get_type,
-    get_constant,
-    get_keyword,
-    get_operator,
-    get_examples,
-    list_namespace,
-    search_by_return_type,
-    validate_syntax,
-    validate_and_explain,
-    fix_and_validate,
-    generate_indicator,
-    generate_strategy,
-    lookup_and_correct,
-    debug_pine_facade,
-    suggest_functions,
-    get_namespace_cheatsheet,
-    validate_file,
-)
+from tools.lookup import get_function, get_variable, get_type, get_constant, get_keyword, get_operator
+from tools.search import search_docs, get_examples, list_namespace, search_by_return_type
+from tools.validation import validate_syntax, validate_and_explain, fix_and_validate, debug_pine_facade, validate_file
+from tools.codegen import generate_indicator, generate_strategy, lookup_and_correct
+from tools.context import suggest_functions, get_namespace_cheatsheet
 
 
 # ─────────────────────────────────────────────────────────────────────────────

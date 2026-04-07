@@ -21,8 +21,48 @@ import time
 import statistics
 
 # -- Bootstrap ----------------------------------------------------------------
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import pinescript_mcp as pm
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+os.chdir(ROOT)
+
+from tools.lookup import get_function, get_variable, get_type, get_constant, get_keyword, get_operator
+from tools.search import search_docs, get_examples, list_namespace, search_by_return_type
+from tools.validation import validate_syntax, validate_and_explain, fix_and_validate, debug_pine_facade, validate_file
+from tools.codegen import generate_indicator, generate_strategy, lookup_and_correct
+from tools.context import suggest_functions, get_namespace_cheatsheet
+from core.embeddings import get_model as _get_model, _model_executor, _embedding_model_ready
+from core.db import get_collection as _get_collection, build_name_index as _build_name_index
+from core.hot_cache import build_hot_cache
+
+# Namespace shim so test tuples using pm.xxx still work
+class _PM:
+    pass
+pm = _PM()
+pm.get_function = get_function
+pm.get_variable = get_variable
+pm.get_type = get_type
+pm.get_constant = get_constant
+pm.get_keyword = get_keyword
+pm.get_operator = get_operator
+pm.search_docs = search_docs
+pm.get_examples = get_examples
+pm.list_namespace = list_namespace
+pm.search_by_return_type = search_by_return_type
+pm.validate_syntax = validate_syntax
+pm.validate_and_explain = validate_and_explain
+pm.fix_and_validate = fix_and_validate
+pm.generate_indicator = generate_indicator
+pm.generate_strategy = generate_strategy
+pm.lookup_and_correct = lookup_and_correct
+pm.suggest_functions = suggest_functions
+pm.get_namespace_cheatsheet = get_namespace_cheatsheet
+pm.validate_file = validate_file
+pm._model_executor = _model_executor
+pm._get_model = _get_model
+pm._embedding_model_ready = _embedding_model_ready
+pm._get_collection = _get_collection
+pm._build_name_index = _build_name_index
+pm.build_hot_cache = build_hot_cache
 
 from fastmcp.exceptions import ToolError
 
