@@ -847,6 +847,21 @@ def _format_entry_detail(
     return _cap_response("\n".join(lines))
 
 
+def _check_query_error(results: dict) -> str | None:
+    """Check if a _query result indicates a database failure.
+
+    Returns an error message if the database was unreachable, or None if
+    the result is valid (including empty-but-valid results).
+    """
+    if "_error" in results:
+        return (
+            "⚠️ DATABASE UNAVAILABLE\n"
+            "The ChromaDB vector store could not process this query.\n"
+            "This is a transient error — please retry in a few seconds.\n"
+            f"Detail: {results['_error']}"
+        )
+    return None
+
 def _error(tool: str, msg: str) -> str:
     logger.error(f"[{tool}] {msg}")
     return f"ERROR [{tool}]: {msg}"
@@ -1749,6 +1764,10 @@ async def search_docs(
 
         results = _query(query, n_results, where=where)
 
+        db_err = _check_query_error(results)
+        if db_err:
+            return db_err
+
         if not results["ids"] or not results["ids"][0]:
             raise ToolError(f"No results for '{query}'")
 
@@ -1858,6 +1877,9 @@ async def _lookup_entry(name: str, category: str) -> str:
 
         # Step 2: Semantic search within category
         results = _query(name, 5, where={"category": category} if category else None)
+        db_err = _check_query_error(results)
+        if db_err:
+            return db_err
         if results["ids"] and results["ids"][0]:
             top_meta = results["metadatas"][0][0]
             top_dist = results["distances"][0][0]
@@ -2081,6 +2103,9 @@ async def get_type(
             5,
             where={"category": "type"}
         )
+        db_err = _check_query_error(results)
+        if db_err:
+            return db_err
         if results["ids"] and results["ids"][0] and results["documents"][0]:
             top_meta = results["metadatas"][0][0]
             top_doc = results["documents"][0][0]
@@ -2215,6 +2240,9 @@ async def get_examples(
     try:
         query = query.strip()
         results = _query(query, n_results, where={"has_examples": 1})
+        db_err = _check_query_error(results)
+        if db_err:
+            raise ToolError(db_err)
         if not results["ids"] or not results["ids"][0]:
             raise ToolError(f"No examples found for '{query}'")
 
@@ -2402,6 +2430,9 @@ async def search_by_return_type(
         except Exception as e:
             logger.debug(f"Return type probe failed: {e}")
         results = _query(return_type, n_results, where=where)
+        db_err = _check_query_error(results)
+        if db_err:
+            return db_err
 
         if not results["ids"] or not results["ids"][0]:
             # Fallback: semantic search with category filter only
@@ -2410,6 +2441,9 @@ async def search_by_return_type(
                 n_results,
                 where={"category": "function"},
             )
+            db_err = _check_query_error(results)
+            if db_err:
+                return db_err
 
         if not results["ids"] or not results["ids"][0]:
             return _error(
@@ -3253,6 +3287,9 @@ async def generate_indicator(
                 enriched_query, 10,
                 where={"category": "function"}
             )
+            db_err = _check_query_error(combined_results)
+            if db_err:
+                return db_err
 
             # Pick best result, preferring ta.* namespace
             best_meta = None
@@ -3497,7 +3534,9 @@ async def generate_strategy(
 
         # Search docs for strategy-related functions
         relevant = _query(description, 5, where={"namespace": "strategy"})
-
+        db_err = _check_query_error(relevant)
+        if db_err:
+            return db_err
         # Build relevant function list
         relevant_funcs = []
         if relevant.get("ids") and relevant["ids"][0]:
@@ -3718,8 +3757,9 @@ async def lookup_and_correct(
 
         # Step 4: Search docs for intent
         intent_results = _query(error_description, 3)
+        # Non-critical: if DB is down for intent lookup, just show no docs section
 
-        lines = []
+        intent_err = _check_query_error(intent_results)
         lines.append("LOOKUP AND CORRECT REPORT")
         lines.append("=" * 50)
         lines.append("")
@@ -3939,6 +3979,10 @@ async def suggest_functions(
             query_text += f" | current line: {current_line}"
 
         results = _query(query_text, n_results, where={"category": "function"})
+
+        db_err = _check_query_error(results)
+        if db_err:
+            return db_err
 
         if not results.get("ids") or not results["ids"][0]:
             return _error(
