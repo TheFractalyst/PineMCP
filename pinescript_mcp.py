@@ -1839,7 +1839,12 @@ async def search_docs(
             if content_hash in seen_hashes:
                 continue
             seen_hashes.add(content_hash)
-            deduped_results.append((rid, meta, doc, dist))
+            # Relevance gate: skip results below 30% relevance
+            if dist < 0.7:
+                deduped_results.append((rid, meta, doc, dist))
+
+        if not deduped_results:
+            return f"No results found for '{query}'. Try broadening your search terms."
 
         output_lines: list[str] = []
         for i, (rid, meta, doc, dist) in enumerate(deduped_results):
@@ -1937,10 +1942,10 @@ async def _lookup_entry(name: str, category: str) -> str:
             top_dist = results["distances"][0][0]
             top_name = top_meta.get("name", "").lower().replace("()", "").strip()
             search_name = name.lower().replace("()", "").strip()
-            # Only return if name matches or relevance is strong (distance < 0.6 = 40%+)
+            # Only return if name matches or relevance is very strong (distance < 0.35 = 65%+)
             name_match = (search_name == top_name or
                          (len(search_name) >= 3 and search_name in top_name))
-            if name_match or top_dist < 0.6:
+            if name_match or top_dist < 0.35:
                 return _format_entry_detail(
                     top_meta.get("name", name),
                     top_meta,
@@ -1959,7 +1964,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                                (len(search_name) >= 3 and search_name in top_name))
             if (
                 name_match_broad
-                or (top_dist < 0.5 and top_meta.get("category") == category)
+                or (top_dist < 0.35 and top_meta.get("category") == category)
             ):
                 return _format_entry_detail(
                     top_meta.get("name", name),
@@ -2141,11 +2146,30 @@ async def get_type(
             if result["ids"]:
                 best_meta = result["metadatas"][0]
                 best_doc = result["documents"][0]
-                return _format_entry_detail(
+                formatted = _format_entry_detail(
                     best_meta.get("name", name),
                     best_meta,
                     best_doc
                 )
+
+                # Enrich thin type entries with available methods
+                ns = best_meta.get("namespace", "") or name_lower
+                if len(best_doc) < 500:
+                    try:
+                        ns_entries = await _get_all_where_async({"namespace": ns})
+                        methods = []
+                        for e in ns_entries:
+                            m = e["metadata"]
+                            if m.get("category") == "function" and m.get("name", "").startswith(f"{ns}."):
+                                methods.append(m.get("name", ""))
+                        if methods:
+                            methods.sort()
+                            methods_str = ", ".join(methods[:30])
+                            formatted += f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
+                    except Exception:
+                        pass
+
+                return formatted
         except Exception as e:
             logger.debug(f"Exact type match failed: {e}")
 
@@ -2159,15 +2183,41 @@ async def get_type(
         if db_err:
             return db_err
         if results["ids"] and results["ids"][0] and results["documents"][0]:
+            top_dist = results["distances"][0][0]
+            # Relevance gate: reject weak semantic matches (< 35% relevance)
+            if top_dist > 0.65:
+                return (
+                    f"Type '{name}' not found in docs.\n"
+                    f"Available types: array, matrix, map, line, label, "
+                    f"box, table, polyline, color, string, int, float, bool"
+                )
             top_meta = results["metadatas"][0][0]
             top_doc = results["documents"][0][0]
-            top_dist = results["distances"][0][0]
-            return _format_entry_detail(
+            formatted = _format_entry_detail(
                 top_meta.get("name", name),
                 top_meta,
                 top_doc,
                 top_dist
             )
+
+            # Enrich thin type entries with available methods from the same namespace
+            top_name_clean = top_meta.get("name", "").lower().split(".")[0]
+            if top_name_clean and len(top_doc) < 500:
+                try:
+                    ns_entries = await _get_all_where_async({"namespace": top_name_clean})
+                    methods = []
+                    for e in ns_entries:
+                        m = e["metadata"]
+                        if m.get("category") == "function" and m.get("name", "").startswith(f"{top_name_clean}."):
+                            methods.append(m.get("name", ""))
+                    if methods:
+                        methods.sort()
+                        methods_str = ", ".join(methods[:30])
+                        formatted += f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
+                except Exception:
+                    pass
+
+            return formatted
 
         return (
             f"Type '{name}' not found in docs.\n"
@@ -2298,14 +2348,21 @@ async def get_examples(
         if not results["ids"] or not results["ids"][0]:
             return f"No examples found for '{query}'. Try a different search term."
 
-        output_lines: list[str] = []
-        for i, (meta, doc, dist) in enumerate(
-            zip(
+        # Filter out irrelevant results (relevance < 30%)
+        filtered = [
+            (meta, doc, dist)
+            for meta, doc, dist in zip(
                 results["metadatas"][0],
                 results["documents"][0],
                 results["distances"][0],
             )
-        ):
+            if dist < 0.7  # 30%+ relevance
+        ]
+        if not filtered:
+            return f"No relevant examples found for '{query}'. Try a different search term."
+
+        output_lines: list[str] = []
+        for i, (meta, doc, dist) in enumerate(filtered):
             name = meta.get("name", "?")
             category = meta.get("category", "?").upper()
             namespace = meta.get("namespace") or ""
@@ -4116,22 +4173,26 @@ async def suggest_functions(
             return db_err
 
         if not results.get("ids") or not results["ids"][0]:
-            return _error(
-                "suggest_functions", f"No functions found for '{context}'"
+            return f"No functions found for '{context}'. Try a different search term."
+
+        # Filter out irrelevant results (relevance < 30%)
+        filtered = [
+            (meta, doc, dist)
+            for meta, doc, dist in zip(
+                results["metadatas"][0],
+                results["documents"][0],
+                results["distances"][0],
             )
+            if dist < 0.7  # 30%+ relevance
+        ]
+        if not filtered:
+            return f"No relevant functions found for '{context}'. Try a different search term."
 
         lines = []
         lines.append(f"SUGGESTED FUNCTIONS for '{context}':")
         lines.append("")
 
-        for i, (meta, doc, dist) in enumerate(
-            zip(
-                results["metadatas"][0],
-                results["documents"][0],
-                results["distances"][0],
-            ),
-            1,
-        ):
+        for i, (meta, doc, dist) in enumerate(filtered, 1):
             name = meta.get("name", "?")
             namespace = meta.get("namespace") or ""
             syntax = meta.get("syntax") or ""

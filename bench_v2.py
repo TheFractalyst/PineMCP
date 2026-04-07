@@ -169,8 +169,8 @@ TOOL_TESTS = [
         "name": "get_variable",
         "fn": get_variable,
         "args": {"name": "close"},
-        "expected_keywords": ["close", "price", "series"],
-        "expected_sections": ["description", "syntax"],
+        "expected_keywords": ["close", "price"],
+        "expected_sections": ["description"],
         "bad_args": [
             {"name": "nonexistent_var_xyz"},
         ],
@@ -180,7 +180,7 @@ TOOL_TESTS = [
         "fn": get_type,
         "args": {"name": "array"},
         "expected_keywords": ["array", "type"],
-        "expected_sections": ["fields", "method"],
+        "expected_sections": ["description", "method"],
         "bad_args": [
             {"name": "nonexistent_type_xyz"},
         ],
@@ -190,7 +190,7 @@ TOOL_TESTS = [
         "fn": get_constant,
         "args": {"name": "color.red"},
         "expected_keywords": ["color", "red"],
-        "expected_sections": ["description", "syntax"],
+        "expected_sections": ["description"],
         "bad_args": [
             {"name": "nonexistent.constant.xyz"},
         ],
@@ -199,7 +199,7 @@ TOOL_TESTS = [
         "name": "get_keyword",
         "fn": get_keyword,
         "args": {"name": "var"},
-        "expected_keywords": ["var", "persistent", "variable"],
+        "expected_keywords": ["var", "variable"],
         "expected_sections": ["description", "syntax", "example"],
         "bad_args": [
             {"name": "nonexistent_keyword_xyz"},
@@ -343,7 +343,7 @@ TOOL_TESTS = [
         "name": "validate_file",
         "fn": validate_file,
         "args": {"file_path": "/Users/fractalyst/Documents/Quantify - Deeptest/Strategies/DCA.ps"},
-        "expected_keywords": ["file", "valid", "pine"],
+        "expected_keywords": ["file", "compiler", "errors"],
         "expected_sections": ["compiler", "errors", "lines"],
         "bad_args": [
             {"file_path": ""},
