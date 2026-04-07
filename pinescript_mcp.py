@@ -429,6 +429,9 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
 
     H3: Wraps collection.query() in try/except — never lets ChromaDB
     or embedding exceptions propagate naked to tool handlers.
+
+    NOTE: This is a synchronous function. For use from async tool handlers,
+    use `await _query_async(...)` instead to avoid blocking the event loop.
     """
     # L1 cache: deterministic key from query text + n + where
     _cache_key = xxhash.xxh64(f"{query_text}|{n}|{where}".encode()).hexdigest()
@@ -455,16 +458,13 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
 
         result = col.query(**kwargs)
 
-        # Write back to L1 cache
+        # Write back to L1 cache (move to end = most recent)
         with _QUERY_CACHE_LOCK:
             _QUERY_RESULT_CACHE[_cache_key] = (result, time.time())
-            # Evict oldest if cache too large
-            if len(_QUERY_RESULT_CACHE) > _QUERY_CACHE_MAX:
-                oldest_key = min(
-                    _QUERY_RESULT_CACHE,
-                    key=lambda k: _QUERY_RESULT_CACHE[k][1],
-                )
-                del _QUERY_RESULT_CACHE[oldest_key]
+            _QUERY_RESULT_CACHE.move_to_end(_cache_key)
+            # Evict oldest (O(1) via OrderedDict.popitem)
+            while len(_QUERY_RESULT_CACHE) > _QUERY_CACHE_MAX:
+                _QUERY_RESULT_CACHE.popitem(last=False)
 
         return result
     except Exception as e:
@@ -481,6 +481,17 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
             "distances": [[]],
             "_error": f"{error_type}: {str(e)[:200]}",
         }
+
+
+async def _query_async(query_text: str, n: int, where: Optional[dict] = None) -> dict:
+    """Async wrapper for _query() — runs in thread pool to avoid blocking event loop.
+
+    Embedding model inference + ChromaDB query can take 10-200ms.
+    Without this wrapper, every _query() call from async tool handlers
+    blocks the entire event loop, preventing concurrent tool execution.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _query, query_text, n, where)
 
 
 def _get_by_id(entry_id: str) -> Optional[dict]:
@@ -1007,12 +1018,12 @@ class PineFacadeCircuitBreaker:
 _pine_cb = PineFacadeCircuitBreaker()
 _facade_http_client: Optional[httpx.AsyncClient] = None
 
-_VALIDATION_CACHE: dict[str, tuple[str, float]] = {}
+_VALIDATION_CACHE: OrderedDict[str, tuple[str, float]] = OrderedDict()
 _VALIDATION_CACHE_LOCK = threading.Lock()
 
 # File-level validation cache: key=(path, mtime_ns, size), value=(result_str, timestamp)
 # Skips disk read + linter + network if file unchanged since last validation.
-_FILE_VALIDATION_CACHE: dict[tuple[str, int, int], tuple[str, float]] = {}
+_FILE_VALIDATION_CACHE: OrderedDict[tuple[str, int, int], tuple[str, float]] = OrderedDict()
 _FILE_VALIDATION_CACHE_LOCK = threading.Lock()
 _FILE_VALIDATION_CACHE_TTL = float(os.getenv("FILE_VALIDATION_CACHE_TTL", "1800"))  # 30 min default
 _FILE_VALIDATION_CACHE_MAX = int(os.getenv("FILE_VALIDATION_CACHE_SIZE", "200"))
@@ -1182,8 +1193,6 @@ def _extract_name_from_error(error_text: str) -> Optional[str]:
 
 def _get_cached_validation(code: str) -> Optional[dict]:
     """Return cached validation result if still fresh. Returns parsed dict."""
-    import xxhash
-
     h = xxhash.xxh64(code.encode()).hexdigest()
     with _VALIDATION_CACHE_LOCK:
         if h in _VALIDATION_CACHE:
@@ -1199,16 +1208,13 @@ def _get_cached_validation(code: str) -> Optional[dict]:
 
 def _cache_validation(code: str, result: str) -> None:
     """Store a validation result in cache."""
-    import xxhash
-
     h = xxhash.xxh64(code.encode()).hexdigest()
     with _VALIDATION_CACHE_LOCK:
         _VALIDATION_CACHE[h] = (result, time.time())
-        # Prune old entries if cache grows too large
-        if len(_VALIDATION_CACHE) > VALIDATION_CACHE_MAX_SIZE:
-            oldest_key = min(_VALIDATION_CACHE, key=lambda k: _VALIDATION_CACHE[k][1])
-            del _VALIDATION_CACHE[oldest_key]
-            logger.debug(f"Validation cache evicted oldest: {oldest_key[:40]}")
+        _VALIDATION_CACHE.move_to_end(h)
+        # O(1) eviction via OrderedDict
+        while len(_VALIDATION_CACHE) > VALIDATION_CACHE_MAX_SIZE:
+            _VALIDATION_CACHE.popitem(last=False)
 
 
 def _get_cached_file_validation(file_path: str, mtime_ns: int, file_size: int) -> Optional[str]:
@@ -1237,10 +1243,10 @@ def _cache_file_validation(file_path: str, mtime_ns: int, file_size: int, result
     key = (file_path, mtime_ns, file_size)
     with _FILE_VALIDATION_CACHE_LOCK:
         _FILE_VALIDATION_CACHE[key] = (result, time.time())
-        if len(_FILE_VALIDATION_CACHE) > _FILE_VALIDATION_CACHE_MAX:
-            oldest_key = min(_FILE_VALIDATION_CACHE, key=lambda k: _FILE_VALIDATION_CACHE[k][1])
-            del _FILE_VALIDATION_CACHE[oldest_key]
-            logger.debug(f"File validation cache evicted oldest: {oldest_key[0][:40]}")
+        _FILE_VALIDATION_CACHE.move_to_end(key)
+        # O(1) eviction via OrderedDict
+        while len(_FILE_VALIDATION_CACHE) > _FILE_VALIDATION_CACHE_MAX:
+            _FILE_VALIDATION_CACHE.popitem(last=False)
 
 
 def _normalize_facade_response(raw: dict) -> dict:
@@ -1762,7 +1768,7 @@ async def search_docs(
         elif len(where_clauses) > 1:
             where = {"$and": where_clauses}
 
-        results = _query(query, n_results, where=where)
+        results = await _query_async(query, n_results, where=where)
 
         db_err = _check_query_error(results)
         if db_err:
@@ -1832,6 +1838,8 @@ async def search_docs(
         output_lines.append(_DIVIDER)
         return _cap_response("\n".join(output_lines))
 
+    except ToolError:
+        raise  # Don't double-wrap ToolError from inside the try block
     except Exception as e:
         logger.error(f"[search_docs] {e}")
         if "ChromaDB" in str(e) or _chroma_breaker.is_open():
@@ -1876,7 +1884,7 @@ async def _lookup_entry(name: str, category: str) -> str:
             )
 
         # Step 2: Semantic search within category
-        results = _query(name, 5, where={"category": category} if category else None)
+        results = await _query_async(name, 5, where={"category": category} if category else None)
         db_err = _check_query_error(results)
         if db_err:
             return db_err
@@ -1897,7 +1905,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                 )
 
         # Step 3: Broaden to all categories (only if highly relevant)
-        results = _query(name, 5)
+        results = await _query_async(name, 5)
         if results["ids"] and results["ids"][0]:
             top_meta = results["metadatas"][0][0]
             top_dist = results["distances"][0][0]
@@ -2098,7 +2106,7 @@ async def get_type(
             logger.debug(f"Exact type match failed: {e}")
 
         # Semantic fallback — still enforce category filter
-        results = _query(
+        results = await _query_async(
             f"type {name_lower} definition fields methods",
             5,
             where={"category": "type"}
@@ -2239,7 +2247,7 @@ async def get_examples(
     """
     try:
         query = query.strip()
-        results = _query(query, n_results, where={"has_examples": 1})
+        results = await _query_async(query, n_results, where={"has_examples": 1})
         db_err = _check_query_error(results)
         if db_err:
             raise ToolError(db_err)
@@ -2280,6 +2288,8 @@ async def get_examples(
         output_lines.append(_DIVIDER)
         return _cap_response("\n".join(output_lines))
 
+    except ToolError:
+        raise  # Don't double-wrap ToolError from inside the try block
     except Exception as e:
         logger.error(f"[get_examples] {e}")
         if _chroma_breaker.is_open():
@@ -2375,6 +2385,8 @@ async def list_namespace(
         output_lines.append(f"Total: {len(entries)} entries in namespace '{ns}'")
         return _cap_response("\n".join(output_lines))
 
+    except ToolError:
+        raise  # Don't double-wrap ToolError from inside the try block
     except Exception as e:
         logger.error(f"[list_namespace] {e}")
         if _chroma_breaker.is_open():
@@ -2429,14 +2441,14 @@ async def search_by_return_type(
                 where = {"$and": [{"category": "function"}, ret_filter]}
         except Exception as e:
             logger.debug(f"Return type probe failed: {e}")
-        results = _query(return_type, n_results, where=where)
+        results = await _query_async(return_type, n_results, where=where)
         db_err = _check_query_error(results)
         if db_err:
             return db_err
 
         if not results["ids"] or not results["ids"][0]:
             # Fallback: semantic search with category filter only
-            results = _query(
+            results = await _query_async(
                 f"functions returning {return_type}",
                 n_results,
                 where={"category": "function"},
@@ -2799,9 +2811,9 @@ async def fix_and_validate(
         fixes_list = []
 
         # Pattern 1: missing namespace (ema → ta.ema, sma → ta.sma, etc.)
-        # (?<!\.) prevents double-prefixing code that already has ta./math./etc.
+        # (?<!\.) prevents double-prefixing; \b ensures whole-word match
         bare_fn_pattern = re.compile(
-            r'(?<!\.)(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
+            r'(?<!\.)\b(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
             r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
             r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
         )
@@ -3284,7 +3296,7 @@ async def generate_indicator(
 
             # Single broad query — then prioritize ta.* results in Python.
             # Saves one full embedding + ChromaDB round-trip (~30-50ms).
-            combined_results = _query(
+            combined_results = await _query_async(
                 enriched_query, 10,
                 where={"category": "function"}
             )
@@ -3397,7 +3409,7 @@ async def generate_indicator(
         else:
             # Template matched — still run a search to populate relevant_funcs
             # for the "RELEVANT FUNCTIONS" section of the output
-            ta_results = _query(
+            ta_results = await _query_async(
                 description or name, 5,
                 where={"$and": [{"category": "function"}, {"namespace": "ta"}]}
             )
@@ -3534,7 +3546,7 @@ async def generate_strategy(
         safe_name = _sanitize_pine_string(name)
 
         # Search docs for strategy-related functions
-        relevant = _query(description, 5, where={"namespace": "strategy"})
+        relevant = await _query_async(description, 5, where={"namespace": "strategy"})
         db_err = _check_query_error(relevant)
         if db_err:
             return db_err
@@ -3669,56 +3681,56 @@ async def lookup_and_correct(
         changes_made = []
 
         # BUG FIX: Complete v5 → v6 namespace migration map
-        # NOTE: (?<!\.) prevents double-prefixing code that already has ta./math./etc.
+        # NOTE: (?<!\.) prevents double-prefixing; \b ensures whole-word match
         V5_TO_V6 = {
             # ta.* functions (most common v5 issue)
-            r'(?<!\.)ema\s*\(':          'ta.ema(',
-            r'(?<!\.)sma\s*\(':          'ta.sma(',
-            r'(?<!\.)rsi\s*\(':          'ta.rsi(',
-            r'(?<!\.)macd\s*\(':         'ta.macd(',
-            r'(?<!\.)atr\s*\(':          'ta.atr(',
-            r'(?<!\.)bb\s*\(':           'ta.bb(',
-            r'(?<!\.)stoch\s*\(':        'ta.stoch(',
-            r'(?<!\.)wma\s*\(':          'ta.wma(',
-            r'(?<!\.)hma\s*\(':          'ta.hma(',
-            r'(?<!\.)vwap\b':            'ta.vwap',
-            r'(?<!\.)crossover\s*\(':    'ta.crossover(',
-            r'(?<!\.)crossunder\s*\(':   'ta.crossunder(',
-            r'(?<!\.)highest\s*\(':      'ta.highest(',
-            r'(?<!\.)lowest\s*\(':       'ta.lowest(',
-            r'(?<!\.)barssince\s*\(':    'ta.barssince(',
-            r'(?<!\.)valuewhen\s*\(':    'ta.valuewhen(',
-            r'(?<!\.)linreg\s*\(':       'ta.linreg(',
-            r'(?<!\.)mom\s*\(':          'ta.mom(',
-            r'(?<!\.)cum\s*\(':          'ta.cum(',
-            r'(?<!\.)change\s*\(':       'ta.change(',
-            r'(?<!\.)pivothigh\s*\(':    'ta.pivothigh(',
-            r'(?<!\.)pivotlow\s*\(':     'ta.pivotlow(',
-            r'(?<!\.)supertrend\s*\(':   'ta.supertrend(',
-            r'(?<!\.)correlation\s*\(':  'ta.correlation(',
-            r'(?<!\.)percentrank\s*\(':  'ta.percentrank(',
-            r'(?<!\.)dmi\s*\(':          'ta.dmi(',
-            r'(?<!\.)stdev\s*\(':        'ta.stdev(',
-            r'(?<!\.)variance\s*\(':     'ta.variance(',
+            r'(?<!\.)\bema\s*\(':          'ta.ema(',
+            r'(?<!\.)\bsma\s*\(':          'ta.sma(',
+            r'(?<!\.)\brsi\s*\(':          'ta.rsi(',
+            r'(?<!\.)\bmacd\s*\(':         'ta.macd(',
+            r'(?<!\.)\batr\s*\(':          'ta.atr(',
+            r'(?<!\.)\bbb\s*\(':           'ta.bb(',
+            r'(?<!\.)\bstoch\s*\(':        'ta.stoch(',
+            r'(?<!\.)\bwma\s*\(':          'ta.wma(',
+            r'(?<!\.)\bhma\s*\(':          'ta.hma(',
+            r'(?<!\.)\bvwap\b':            'ta.vwap',
+            r'(?<!\.)\bcrossover\s*\(':    'ta.crossover(',
+            r'(?<!\.)\bcrossunder\s*\(':   'ta.crossunder(',
+            r'(?<!\.)\bhighest\s*\(':      'ta.highest(',
+            r'(?<!\.)\blowest\s*\(':       'ta.lowest(',
+            r'(?<!\.)\bbarssince\s*\(':    'ta.barssince(',
+            r'(?<!\.)\bvaluewhen\s*\(':    'ta.valuewhen(',
+            r'(?<!\.)\blinreg\s*\(':       'ta.linreg(',
+            r'(?<!\.)\bmom\s*\(':          'ta.mom(',
+            r'(?<!\.)\bcum\s*\(':          'ta.cum(',
+            r'(?<!\.)\bchange\s*\(':       'ta.change(',
+            r'(?<!\.)\bpivothigh\s*\(':    'ta.pivothigh(',
+            r'(?<!\.)\bpivotlow\s*\(':     'ta.pivotlow(',
+            r'(?<!\.)\bsupertrend\s*\(':   'ta.supertrend(',
+            r'(?<!\.)\bcorrelation\s*\(':  'ta.correlation(',
+            r'(?<!\.)\bpercentrank\s*\(':  'ta.percentrank(',
+            r'(?<!\.)\bdmi\s*\(':          'ta.dmi(',
+            r'(?<!\.)\bstdev\s*\(':        'ta.stdev(',
+            r'(?<!\.)\bvariance\s*\(':     'ta.variance(',
             # request.* functions
-            r'(?<!\.)security\s*\(':     'request.security(',
+            r'(?<!\.)\bsecurity\s*\(':     'request.security(',
             # math.* functions
-            r'(?<!\.)abs\s*\(':          'math.abs(',
-            r'(?<!\.)round\s*\(':        'math.round(',
-            r'(?<!\.)floor\s*\(':        'math.floor(',
-            r'(?<!\.)ceil\s*\(':         'math.ceil(',
-            r'(?<!\.)pow\s*\(':          'math.pow(',
-            r'(?<!\.)sqrt\s*\(':         'math.sqrt(',
-            r'(?<!\.)log\s*\(':          'math.log(',
-            r'(?<!\.)exp\s*\(':          'math.exp(',
-            r'(?<!\.)sign\s*\(':         'math.sign(',
-            r'(?<!\.)sin\s*\(':          'math.sin(',
-            r'(?<!\.)cos\s*\(':          'math.cos(',
-            r'(?<!\.)max\s*\(':          'math.max(',
-            r'(?<!\.)min\s*\(':          'math.min(',
+            r'(?<!\.)\babs\s*\(':          'math.abs(',
+            r'(?<!\.)\bround\s*\(':        'math.round(',
+            r'(?<!\.)\bfloor\s*\(':        'math.floor(',
+            r'(?<!\.)\bceil\s*\(':         'math.ceil(',
+            r'(?<!\.)\bpow\s*\(':          'math.pow(',
+            r'(?<!\.)\bsqrt\s*\(':         'math.sqrt(',
+            r'(?<!\.)\blog\s*\(':          'math.log(',
+            r'(?<!\.)\bexp\s*\(':          'math.exp(',
+            r'(?<!\.)\bsign\s*\(':         'math.sign(',
+            r'(?<!\.)\bsin\s*\(':          'math.sin(',
+            r'(?<!\.)\bcos\s*\(':          'math.cos(',
+            r'(?<!\.)\bmax\s*\(':          'math.max(',
+            r'(?<!\.)\bmin\s*\(':          'math.min(',
             # str.* functions
-            r'(?<!\.)tostring\s*\(':     'str.tostring(',
-            r'(?<!\.)tonumber\s*\(':     'str.tonumber(',
+            r'(?<!\.)\btostring\s*\(':     'str.tostring(',
+            r'(?<!\.)\btonumber\s*\(':     'str.tonumber(',
         }
 
         # v6 breaking changes: transp, when, implicit bool, bool=na
@@ -3757,7 +3769,7 @@ async def lookup_and_correct(
         errors_after = validation_after.get("errors", [])
 
         # Step 4: Search docs for intent
-        intent_results = _query(error_description, 3)
+        intent_results = await _query_async(error_description, 3)
         # Non-critical: if DB is down for intent lookup, just show no docs section
 
         intent_err = _check_query_error(intent_results)
@@ -3982,7 +3994,7 @@ async def suggest_functions(
         if current_line:
             query_text += f" | current line: {current_line}"
 
-        results = _query(query_text, n_results, where={"category": "function"})
+        results = await _query_async(query_text, n_results, where={"category": "function"})
 
         db_err = _check_query_error(results)
         if db_err:
