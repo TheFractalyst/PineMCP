@@ -45,6 +45,18 @@ def source_tag(meta: dict) -> str:
     return "[Local]"
 
 
+def is_function_like(meta: dict) -> bool:
+    """Check if an entry has function characteristics regardless of stored category.
+
+    Many TradingView entries are scraped as 'variable' but take parameters
+    (e.g. strategy.closedtrades.profit(trade_num), request.security(...)).
+    """
+    syntax = meta.get("syntax") or ""
+    has_parens = "(" in syntax and ")" in syntax
+    has_params = bool(meta.get("raw_parameters"))
+    return has_parens or has_params
+
+
 def source_line(meta: dict) -> str:
     return section_line("SOURCE: [Local]")
 

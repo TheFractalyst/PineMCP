@@ -78,17 +78,17 @@ async def validate_syntax(
             # Add quick code analysis for richer output
             code_lines = code.strip().splitlines()
             code_analysis = []
-            is_strategy = any("strategy(" in l for l in code_lines)
-            is_indicator = any("indicator(" in l for l in code_lines)
-            is_library = any("library(" in l for l in code_lines)
+            is_strategy = any("strategy(" in line for line in code_lines)
+            is_indicator = any("indicator(" in line for line in code_lines)
+            is_library = any("library(" in line for line in code_lines)
             script_type = "strategy" if is_strategy else ("indicator" if is_indicator else ("library" if is_library else "unknown"))
-            plots = sum(1 for l in code_lines if l.strip().startswith("plot(") or l.strip().startswith("plotshape(") or l.strip().startswith("plotchar("))
-            inputs = sum(1 for l in code_lines if "input." in l)
-            has_request = any("request." in l for l in code_lines)
-            imports = [l.strip() for l in code_lines if l.strip().startswith("import ")]
-            var_count = sum(1 for l in code_lines if l.strip().startswith("var ") or l.strip().startswith("varip "))
-            has_methods = any("method " in l for l in code_lines)
-            has_types = any("type " in l and "//" not in l.split("type ")[0][-3:] for l in code_lines if not l.strip().startswith("//"))
+            plots = sum(1 for line in code_lines if line.strip().startswith("plot(") or line.strip().startswith("plotshape(") or line.strip().startswith("plotchar("))
+            inputs = sum(1 for line in code_lines if "input." in line)
+            has_request = any("request." in line for line in code_lines)
+            imports = [line.strip() for line in code_lines if line.strip().startswith("import ")]
+            var_count = sum(1 for line in code_lines if line.strip().startswith("var ") or line.strip().startswith("varip "))
+            has_methods = any("method " in line for line in code_lines)
+            has_types = any("type " in line and "//" not in line.split("type ")[0][-3:] for line in code_lines if not line.strip().startswith("//"))
 
             code_analysis.append(f"Script type: {script_type}")
             code_analysis.append(f"Lines: {len(code_lines)}")
@@ -198,12 +198,12 @@ async def validate_and_explain(
             code_lines = code.strip().splitlines()
             plots = sum(
                 1
-                for l in code_lines
-                if l.strip().startswith("plot(") or l.strip().startswith("plotshape(")
+                for line in code_lines
+                if line.strip().startswith("plot(") or line.strip().startswith("plotshape(")
             )
-            inputs = sum(1 for l in code_lines if "input." in l)
-            is_strategy = any("strategy(" in l for l in code_lines)
-            is_indicator = any("indicator(" in l for l in code_lines)
+            inputs = sum(1 for line in code_lines if "input." in line)
+            is_strategy = any("strategy(" in line for line in code_lines)
+            is_indicator = any("indicator(" in line for line in code_lines)
             script_type = (
                 "strategy"
                 if is_strategy
@@ -401,10 +401,29 @@ async def fix_and_validate(
             fixes_list.append("Removed transp= parameter (v6: use color.new() instead)")
 
         # Pattern 3: v6 breaking change — when= parameter removed from strategy.*
-        # Match: , when=<condition>) at end of strategy call, replace with just )
-        when_pattern = re.compile(r',\s*when\s*=\s*[^)]+\)')
-        if when_pattern.search(fixed_code):
-            fixed_code = when_pattern.sub(')', fixed_code)
+        # Use function-based replacement to handle arbitrarily nested parens.
+        def _remove_when_param(code: str) -> str:
+            """Remove when= parameter from strategy.entry/exit calls."""
+            when_start = re.search(r',\s*when\s*=', code)
+            if not when_start:
+                return code
+            # Walk forward from when= value start, counting balanced parens
+            pos = when_start.end()
+            depth = 0
+            while pos < len(code):
+                ch = code[pos]
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    if depth == 0:
+                        # This closing paren belongs to the strategy.entry() call
+                        return code[:when_start.start()] + ')' + code[pos + 1:]
+                    depth -= 1
+                pos += 1
+            return code  # unbalanced — return unchanged
+
+        if re.search(r',\s*when\s*=', fixed_code):
+            fixed_code = _remove_when_param(fixed_code)
             fixes_list.append("Removed when= parameter (v6: wrap in if block instead)")
 
         # Pattern 4: strategy.* called in indicator context
@@ -604,7 +623,11 @@ async def validate_file(
         return "ERROR: Only .ps and .pine files are accepted. Please provide a PineScript file with a .ps or .pine extension."
 
     # Security: path must be within an allowed base directory
-    allowed = any(resolved.startswith(base) for base in _ALLOWED_BASE_DIRS)
+    # Use base + "/" to prevent prefix attacks (e.g. /Users/user/Documents_evil)
+    allowed = any(
+        resolved.startswith(base + "/") or resolved == base
+        for base in _ALLOWED_BASE_DIRS
+    )
     if not allowed:
         return (
             "ERROR: Access denied. File must be in an allowed directory.\n"
