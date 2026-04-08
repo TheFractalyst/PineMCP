@@ -24,7 +24,7 @@ from core.db import (
     get_type_by_name_async,
 )
 from core.hot_cache import cache_lookup, ensure_hot_cache
-from formatters.entry import format_entry_detail
+from formatters.entry import format_entry_detail, is_function_like
 from formatters.errors import (
     safe_error,
     circuit_breaker_msg,
@@ -38,15 +38,8 @@ from formatters.errors import (
 
 
 def _is_function_like(meta: dict) -> bool:
-    """Check if an entry has function characteristics regardless of stored category.
-
-    Many TradingView entries are scraped as 'variable' but take parameters
-    (e.g. strategy.closedtrades.profit(trade_num), request.security(...)).
-    """
-    syntax = meta.get("syntax") or ""
-    has_parens = "(" in syntax and ")" in syntax
-    has_params = bool(meta.get("raw_parameters"))
-    return has_parens or has_params
+    """Check if an entry has function characteristics regardless of stored category."""
+    return is_function_like(meta)
 
 
 def _pick_best_version(result: dict) -> tuple:

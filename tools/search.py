@@ -23,6 +23,7 @@ from formatters.entry import (
     _DIVIDER,
     format_examples_text,
     format_params_text,
+    is_function_like,
     relevance_pct,
     source_tag,
 )
@@ -37,10 +38,7 @@ from formatters.errors import (
 
 def _is_function_like(meta: dict) -> bool:
     """Check if an entry has function characteristics regardless of stored category."""
-    syntax = meta.get("syntax") or ""
-    has_parens = "(" in syntax and ")" in syntax
-    has_params = bool(meta.get("raw_parameters"))
-    return has_parens or has_params
+    return is_function_like(meta)
 
 
 def _return_type_matches(query_type: str, field_type: str) -> bool:

@@ -306,6 +306,10 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
         name_preserved = name.strip()
         name_lower = name.lower().strip()
 
+        # Guard: reject empty/whitespace-only names to avoid returning all entries
+        if not name_lower:
+            return []
+
         # BUG FIX: If name contains ".", it's fully qualified — exact match only, no namespace fallback
         if "." in name_lower:
             # Fully qualified — exact match only, no namespace fuzzy fallback
@@ -334,12 +338,14 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                 logger.debug(f"Qualified lookup failed: {e}")
             # Try with type=function specifically
             try:
+                if where:
+                    typed_where = {"$and": [{"name": {"$in": name_variants}}, where]}
+                else:
+                    # Skip $and with single element — ChromaDB rejects it
+                    # (already covered by the exact match above)
+                    raise RuntimeError("skip")
                 typed = col.get(
-                    where={
-                        "$and": [{"name": {"$in": name_variants}}, where]
-                        if where
-                        else [{"name": {"$in": name_variants}}]
-                    },
+                    where=typed_where,
                     include=["metadatas", "documents"],
                 )
                 if typed["ids"]:
