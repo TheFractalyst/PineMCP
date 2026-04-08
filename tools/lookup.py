@@ -7,7 +7,7 @@ LOOKUP tools (6): get_function, get_variable, get_type, get_constant,
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import tool
@@ -20,6 +20,8 @@ from core.db import (
     query_async,
     search_by_name_async,
     get_all_where_async,
+    get_by_names_async,
+    get_type_by_name_async,
 )
 from core.hot_cache import cache_lookup, ensure_hot_cache
 from formatters.entry import format_entry_detail
@@ -104,19 +106,15 @@ async def _lookup_entry(name: str, category: str) -> str:
         # Step 0.5: Exact name match across all categories — pick best version
         # (handles entries stored with wrong category, e.g. constant stored as function)
         try:
-            col = _db.get_collection()
             name_variants = list({name_preserved, name_lower})
-            all_versions = col.get(
-                where={"name": {"$in": name_variants}},
-                include=["metadatas", "documents"]
-            )
+            all_versions = await get_by_names_async(name_variants)
             if all_versions["ids"]:
                 # Find the version matching the requested category
-                for meta, doc in zip(all_versions["metadatas"], all_versions["documents"]):
+                for meta, doc in zip(
+                    all_versions["metadatas"], all_versions["documents"]
+                ):
                     if not category or meta.get("category") == category:
-                        return format_entry_detail(
-                            meta.get("name", name), meta, doc
-                        )
+                        return format_entry_detail(meta.get("name", name), meta, doc)
                 # If no exact category match, pick the best version
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
@@ -140,7 +138,9 @@ async def _lookup_entry(name: str, category: str) -> str:
             )
 
         # Step 2: Semantic search within category
-        results = await query_async(name, 5, where={"category": category} if category else None)
+        results = await query_async(
+            name, 5, where={"category": category} if category else None
+        )
         db_err = check_query_error(results)
         if db_err:
             return db_err
@@ -150,8 +150,9 @@ async def _lookup_entry(name: str, category: str) -> str:
             top_name = top_meta.get("name", "").lower().replace("()", "").strip()
             search_name = name.lower().replace("()", "").strip()
             # Only return if name matches or relevance is very strong (distance < 0.35 = 65%+)
-            name_match = (search_name == top_name or
-                         (len(search_name) >= 3 and search_name in top_name))
+            name_match = search_name == top_name or (
+                len(search_name) >= 3 and search_name in top_name
+            )
             if name_match or top_dist < 0.35:
                 return format_entry_detail(
                     top_meta.get("name", name),
@@ -167,11 +168,11 @@ async def _lookup_entry(name: str, category: str) -> str:
             top_dist = results["distances"][0][0]
             top_name = top_meta.get("name", "").lower().replace("()", "").strip()
             search_name = name.lower().replace("()", "").strip()
-            name_match_broad = (search_name == top_name or
-                               (len(search_name) >= 3 and search_name in top_name))
-            if (
-                name_match_broad
-                or (top_dist < 0.35 and top_meta.get("category") == category)
+            name_match_broad = search_name == top_name or (
+                len(search_name) >= 3 and search_name in top_name
+            )
+            if name_match_broad or (
+                top_dist < 0.35 and top_meta.get("category") == category
             ):
                 return format_entry_detail(
                     top_meta.get("name", name),
@@ -209,6 +210,7 @@ async def _lookup_entry(name: str, category: str) -> str:
         if _db._chroma_breaker.is_open():
             return circuit_breaker_msg()
         from formatters.errors import error
+
         return error(category, safe_error(e, category))
 
 
@@ -217,13 +219,23 @@ async def _lookup_entry(name: str, category: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Get Function Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Get Function Docs",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def get_function(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=200,
-        description="Entry name e.g. 'ta.ema', 'close', 'array'",
-    )],
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=200,
+            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+        ),
+    ],
 ) -> str:
     """
     Get complete documentation for a PineScript v6 function.
@@ -258,19 +270,13 @@ async def get_function(
         # 'variable'/'constant' versions. Pick the version with the most info.
         # Use $in to match both original case and lowercase (DB stores mixed case).
         try:
-            col = _db.get_collection()
             name_variants = list({name_preserved, name_lower})
-            all_versions = col.get(
-                where={"name": {"$in": name_variants}},
-                include=["metadatas", "documents"]
-            )
+            all_versions = await get_by_names_async(name_variants)
             if all_versions["ids"]:
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
                     return format_entry_detail(
-                        best_meta.get("name", name),
-                        best_meta,
-                        best_doc
+                        best_meta.get("name", name), best_meta, best_doc
                     )
         except Exception as e:
             logger.debug(f"Exact name match failed: {e}")
@@ -290,13 +296,23 @@ async def get_function(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Get Variable Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Get Variable Docs",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def get_variable(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=200,
-        description="Entry name e.g. 'ta.ema', 'close', 'array'",
-    )],
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=200,
+            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+        ),
+    ],
 ) -> str:
     """
     Get documentation for a PineScript v6 built-in variable.
@@ -317,13 +333,23 @@ async def get_variable(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Get Type Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Get Type Docs",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def get_type(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=200,
-        description="Entry name e.g. 'ta.ema', 'close', 'array'",
-    )],
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=200,
+            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+        ),
+    ],
 ) -> str:
     """
     Get documentation for a PineScript v6 type.
@@ -344,25 +370,14 @@ async def get_type(
             return result
 
         # Filter by category="type" — never return function entries
-        col = _db.get_collection()
         name_lower = name.lower().strip()
-
-        # Always filter by category="type" — never return function entries
         try:
-            result = col.get(
-                where={"$and": [
-                    {"name": {"$in": [name_lower, f"type.{name_lower}"]}},
-                    {"category": "type"}
-                ]},
-                include=["documents", "metadatas"]
-            )
+            result = await get_type_by_name_async(name)
             if result["ids"]:
                 best_meta = result["metadatas"][0]
                 best_doc = result["documents"][0]
                 formatted = format_entry_detail(
-                    best_meta.get("name", name),
-                    best_meta,
-                    best_doc
+                    best_meta.get("name", name), best_meta, best_doc
                 )
 
                 # Enrich thin type entries with available methods
@@ -373,12 +388,16 @@ async def get_type(
                         methods = []
                         for e in ns_entries:
                             m = e["metadata"]
-                            if m.get("category") == "function" and m.get("name", "").startswith(f"{ns}."):
+                            if m.get("category") == "function" and m.get(
+                                "name", ""
+                            ).startswith(f"{ns}."):
                                 methods.append(m.get("name", ""))
                         if methods:
                             methods.sort()
                             methods_str = ", ".join(methods[:30])
-                            formatted += f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
+                            formatted += (
+                                f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
+                            )
                     except Exception:
                         pass
 
@@ -390,7 +409,7 @@ async def get_type(
         results = await query_async(
             f"type {name_lower} definition fields methods",
             5,
-            where={"category": "type"}
+            where={"category": "type"},
         )
         db_err = check_query_error(results)
         if db_err:
@@ -407,26 +426,29 @@ async def get_type(
             top_meta = results["metadatas"][0][0]
             top_doc = results["documents"][0][0]
             formatted = format_entry_detail(
-                top_meta.get("name", name),
-                top_meta,
-                top_doc,
-                top_dist
+                top_meta.get("name", name), top_meta, top_doc, top_dist
             )
 
             # Enrich thin type entries with available methods from the same namespace
             top_name_clean = top_meta.get("name", "").lower().split(".")[0]
             if top_name_clean and len(top_doc) < 500:
                 try:
-                    ns_entries = await get_all_where_async({"namespace": top_name_clean})
+                    ns_entries = await get_all_where_async(
+                        {"namespace": top_name_clean}
+                    )
                     methods = []
                     for e in ns_entries:
                         m = e["metadata"]
-                        if m.get("category") == "function" and m.get("name", "").startswith(f"{top_name_clean}."):
+                        if m.get("category") == "function" and m.get(
+                            "name", ""
+                        ).startswith(f"{top_name_clean}."):
                             methods.append(m.get("name", ""))
                     if methods:
                         methods.sort()
                         methods_str = ", ".join(methods[:30])
-                        formatted += f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
+                        formatted += (
+                            f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
+                        )
                 except Exception:
                     pass
 
@@ -450,13 +472,23 @@ async def get_type(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Get Constant Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Get Constant Docs",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def get_constant(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=200,
-        description="Entry name e.g. 'ta.ema', 'close', 'array'",
-    )],
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=200,
+            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+        ),
+    ],
 ) -> str:
     """
     Get documentation for a PineScript v6 built-in constant.
@@ -477,13 +509,23 @@ async def get_constant(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Get Keyword Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Get Keyword Docs",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def get_keyword(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=200,
-        description="Entry name e.g. 'ta.ema', 'close', 'array'",
-    )],
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=200,
+            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+        ),
+    ],
 ) -> str:
     """
     Get documentation for a PineScript v6 keyword.
@@ -504,13 +546,23 @@ async def get_keyword(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Get Operator Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Get Operator Docs",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def get_operator(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=200,
-        description="Entry name e.g. 'ta.ema', 'close', 'array'",
-    )],
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=200,
+            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+        ),
+    ],
 ) -> str:
     """
     Get documentation for a PineScript v6 operator.

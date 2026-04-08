@@ -55,8 +55,7 @@ class ChromaDBCircuitBreaker:
         # NOTE: Must remain synchronous — called from get_collection() which is sync
         self.failures += 1
         logger.warning(
-            f"ChromaDB failure {self.failures}/{self.threshold}: "
-            f"{type(exc).__name__}"
+            f"ChromaDB failure {self.failures}/{self.threshold}: {type(exc).__name__}"
         )
         if self.failures >= self.threshold:
             self.open_until = time.time() + self.cooldown
@@ -82,13 +81,44 @@ _name_index: dict[str, list[dict]] = {}
 _name_index_built: bool = False
 
 # Common PineScript parameter names that should NOT trigger doc lookups
-_COMMON_PARAM_NAMES = frozenset({
-    "length", "len", "period", "source", "src", "mult", "multiplier", "factor",
-    "offset", "basis", "dev", "deviation", "signal", "fast", "slow", "size",
-    "threshold", "limit", "color", "title", "minval", "maxval", "step",
-    "defval", "group", "inline", "confirm", "options", "tooltip",
-    "bar_index", "gap", "style", "width", "transparency",
-})
+_COMMON_PARAM_NAMES = frozenset(
+    {
+        "length",
+        "len",
+        "period",
+        "source",
+        "src",
+        "mult",
+        "multiplier",
+        "factor",
+        "offset",
+        "basis",
+        "dev",
+        "deviation",
+        "signal",
+        "fast",
+        "slow",
+        "size",
+        "threshold",
+        "limit",
+        "color",
+        "title",
+        "minval",
+        "maxval",
+        "step",
+        "defval",
+        "group",
+        "inline",
+        "confirm",
+        "options",
+        "tooltip",
+        "bar_index",
+        "gap",
+        "style",
+        "width",
+        "transparency",
+    }
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Collection initialization
@@ -103,8 +133,7 @@ def get_collection():
     global _collection
     if _chroma_breaker.is_open():
         raise RuntimeError(
-            "ChromaDB circuit breaker is open (cooldown). "
-            "Please wait and try again."
+            "ChromaDB circuit breaker is open (cooldown). Please wait and try again."
         )
     # Fast path: already initialized (no lock needed for read)
     if _collection is not None:
@@ -159,7 +188,9 @@ def build_name_index() -> None:
         col = get_collection()
         total = col.count()
         result = col.get(include=["metadatas", "documents"], limit=total)
-        for rid, meta, doc in zip(result["ids"], result["metadatas"], result["documents"]):
+        for rid, meta, doc in zip(
+            result["ids"], result["metadatas"], result["documents"]
+        ):
             key = (meta.get("name") or "").lower().strip()
             if key:
                 entry = {"id": rid, "metadata": meta, "document": doc}
@@ -167,7 +198,9 @@ def build_name_index() -> None:
                     _name_index[key] = []
                 _name_index[key].append(entry)
         _name_index_built = True
-        logger.info(f"Name index built: {len(_name_index)} unique names from {total} entries")
+        logger.info(
+            f"Name index built: {len(_name_index)} unique names from {total} entries"
+        )
     except Exception as e:
         logger.error(f"Failed to build name index: {e}")
 
@@ -264,9 +297,7 @@ def get_by_id(entry_id: str) -> Optional[dict]:
         return None
 
 
-def search_by_name(
-    name: str, where: Optional[dict] = None
-) -> list[tuple[float, dict]]:
+def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float, dict]]:
     """Exact then fuzzy name lookup. Scans up to MAX_FUZZY_SCAN_ENTRIES for fuzzy match."""
     try:
         from rapidfuzz import fuzz
@@ -283,7 +314,7 @@ def search_by_name(
             try:
                 exact = col.get(
                     where={"name": {"$in": name_variants}},
-                    include=["metadatas", "documents"]
+                    include=["metadatas", "documents"],
                 )
                 if exact["ids"]:
                     return [
@@ -304,8 +335,12 @@ def search_by_name(
             # Try with type=function specifically
             try:
                 typed = col.get(
-                    where={"$and": [{"name": {"$in": name_variants}}, where] if where else [{"name": {"$in": name_variants}}]},
-                    include=["metadatas", "documents"]
+                    where={
+                        "$and": [{"name": {"$in": name_variants}}, where]
+                        if where
+                        else [{"name": {"$in": name_variants}}]
+                    },
+                    include=["metadatas", "documents"],
                 )
                 if typed["ids"]:
                     return [
@@ -336,7 +371,11 @@ def search_by_name(
                         hits = [h for h in hits if h["metadata"].get("category") == cat]
                     for clause in where.get("$and", []):
                         if "category" in clause:
-                            hits = [h for h in hits if h["metadata"].get("category") == clause["category"]]
+                            hits = [
+                                h
+                                for h in hits
+                                if h["metadata"].get("category") == clause["category"]
+                            ]
                 if hits:
                     return [(100.0, h) for h in hits]
 
@@ -348,7 +387,9 @@ def search_by_name(
             if where:
                 cat = where.get("category")
                 if cat:
-                    exact_where = {"$and": [{"name": {"$in": name_variants}}, {"category": cat}]}
+                    exact_where = {
+                        "$and": [{"name": {"$in": name_variants}}, {"category": cat}]
+                    }
             exact = col.get(where=exact_where, include=["metadatas", "documents"])
             if exact["ids"]:
                 return [
@@ -397,7 +438,9 @@ def get_all_where(where: dict | None, limit: int | None = None) -> list[dict]:
             limit = col.count()
         # Handle empty where clause - ChromaDB doesn't accept {} as where
         if where:
-            result = col.get(where=where, include=["metadatas", "documents"], limit=limit)
+            result = col.get(
+                where=where, include=["metadatas", "documents"], limit=limit
+            )
         else:
             result = col.get(include=["metadatas", "documents"], limit=limit)
         entries = []
@@ -411,13 +454,60 @@ def get_all_where(where: dict | None, limit: int | None = None) -> list[dict]:
         return []
 
 
-async def search_by_name_async(name: str, where: Optional[dict] = None) -> list[tuple[float, dict]]:
+async def search_by_name_async(
+    name: str, where: Optional[dict] = None
+) -> list[tuple[float, dict]]:
     """Async wrapper for search_by_name — avoids blocking event loop."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, search_by_name, name, where)
 
 
-async def get_all_where_async(where: dict | None, limit: int | None = None) -> list[dict]:
+async def get_all_where_async(
+    where: dict | None, limit: int | None = None
+) -> list[dict]:
     """Async wrapper for get_all_where — avoids blocking event loop."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, get_all_where, where, limit)
+
+
+def get_by_names(names: list[str]) -> dict:
+    """Synchronous: fetch entries by exact name list using $in filter. Returns ChromaDB get() result."""
+    try:
+        col = get_collection()
+        return col.get(
+            where={"name": {"$in": names}}, include=["metadatas", "documents"]
+        )
+    except Exception as e:
+        logger.debug(f"get_by_names failed: {e}")
+        return {"ids": [], "metadatas": [], "documents": []}
+
+
+async def get_by_names_async(names: list[str]) -> dict:
+    """Async wrapper for get_by_names — avoids blocking event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_by_names, names)
+
+
+def get_type_by_name(name: str) -> dict:
+    """Synchronous: fetch type entries by name. Returns ChromaDB get() result."""
+    try:
+        col = get_collection()
+        name_lower = name.lower().strip()
+        return col.get(
+            where={
+                "$and": [
+                    {"name": {"$in": [name_lower, f"type.{name_lower}"]}},
+                    {"category": "type"},
+                ]
+            },
+            include=["documents", "metadatas"],
+        )
+    except Exception as e:
+        logger.debug(f"get_type_by_name failed: {e}")
+        return {"ids": [], "metadatas": [], "documents": []}
+
+
+async def get_type_by_name_async(name: str) -> dict:
+    """Async wrapper for get_type_by_name — avoids blocking event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_type_by_name, name)

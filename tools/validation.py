@@ -20,7 +20,6 @@ from pydantic import Field
 
 import core.caches as _caches_module
 import core.db as _db
-import core.pine_facade as _facade_module
 from core.pine_facade import call_pine_facade, enrich_error_with_code, pine_cb
 from core.caches import get_cached_file_validation, set_cached_file_validation
 from core.config import _ALLOWED_BASE_DIRS
@@ -28,12 +27,10 @@ from core.db import _COMMON_PARAM_NAMES
 from core.hot_cache import cache_lookup
 from formatters.errors import (
     cap_response,
-    circuit_breaker_msg,
     error,
     lookup_fix_hint,
     extract_name_from_error,
     safe_error,
-    sanitize_pine_string,
 )
 from tools.lookup import _lookup_entry
 
@@ -236,7 +233,7 @@ async def validate_and_explain(
         if is_fallback:
             note = meta.get("note", "Local linter catches ~50% of common errors.")
             lines.append(f"Note: {note}")
-        lines.append(f"Status: FAILED")
+        lines.append("Status: FAILED")
         lines.append(f"Errors: {len(errors)} | Warnings: {len(warnings)}")
         lines.append("")
 
@@ -260,7 +257,7 @@ async def validate_and_explain(
                         lines.append(f"    {dl}")
                 else:
                     lines.append(
-                        f"    Not found in docs — may be misspelled or v5-only syntax"
+                        "    Not found in docs — may be misspelled or v5-only syntax"
                     )
 
             hint = lookup_fix_hint(text)
@@ -452,12 +449,12 @@ async def fix_and_validate(
 
         # Build response
         lines = [
-            f"FIX AND VALIDATE REPORT",
+            "FIX AND VALIDATE REPORT",
             f"{'='*50}",
             f"Error: {error_description}",
-            f"",
+            "",
             f"HINT: {matched_hint or 'No specific hint — check PineScript v6 syntax'}",
-            f"",
+            "",
             f"Fix Applied: {fix_applied}",
         ]
         if doc_context:
@@ -610,8 +607,8 @@ async def validate_file(
     allowed = any(resolved.startswith(base) for base in _ALLOWED_BASE_DIRS)
     if not allowed:
         return (
-            f"ERROR: Access denied. File must be in an allowed directory.\n"
-            f"Allowed directories: ~/Documents, ~/Desktop, ~/Projects, ~/repos"
+            "ERROR: Access denied. File must be in an allowed directory.\n"
+            "Allowed directories: ~/Documents, ~/Desktop, ~/Projects, ~/repos"
         )
 
     # Check file existence
@@ -701,7 +698,7 @@ async def validate_file(
         if success and not errors and not warnings:
             response += "VALID -- PineScript v6 code compiles successfully.\n\n"
             response += f"Compiler: {compiler_label}\n"
-            response += f"Errors: 0 | Warnings: 0\n"
+            response += "Errors: 0 | Warnings: 0\n"
             if is_fallback and meta.get("note"):
                 response += f"\nNote: {meta['note']}\n"
             set_cached_file_validation(resolved, mtime_ns, fsize, response)

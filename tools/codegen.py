@@ -18,8 +18,7 @@ from pydantic import Field
 
 import core.db as _db
 from core.db import query_async
-from core.pine_facade import call_pine_facade, enrich_error_with_code
-from core.hot_cache import ensure_hot_cache
+from core.pine_facade import call_pine_facade
 from core.caches import codegen_cache_key, get_codegen_cache, set_codegen_cache
 from formatters.errors import (
     cap_response,
@@ -40,26 +39,46 @@ from templates.v5_migration import V5_TO_V6
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Generate Indicator Template", readOnlyHint=False, openWorldHint=True, destructiveHint=True, idempotentHint=False))
+@tool(
+    annotations=ToolAnnotations(
+        title="Generate Indicator Template",
+        readOnlyHint=False,
+        openWorldHint=True,
+        destructiveHint=True,
+        idempotentHint=False,
+    )
+)
 async def generate_indicator(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=100,
-        description="Indicator display name",
-    )],
-    description: Annotated[str, Field(
-        default="",
-        max_length=500,
-        description="What the indicator calculates",
-    )] = "",
-    inputs: Annotated[str | None, Field(
-        default=None,
-        description="Comma-separated input descriptions, e.g. 'length=14,src=close,mult=2.0'",
-    )] = None,
-    overlay: Annotated[bool, Field(
-        default=False,
-        description="True if indicator overlays the price chart",
-    )] = False,
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=100,
+            description="Indicator display name",
+        ),
+    ],
+    description: Annotated[
+        str,
+        Field(
+            default="",
+            max_length=500,
+            description="What the indicator calculates",
+        ),
+    ] = "",
+    inputs: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Comma-separated input descriptions, e.g. 'length=14,src=close,mult=2.0'",
+        ),
+    ] = None,
+    overlay: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="True if indicator overlays the price chart",
+        ),
+    ] = False,
 ) -> str:
     """
     Generate a syntactically correct PineScript v6 indicator template.
@@ -78,7 +97,9 @@ async def generate_indicator(
         safe_name = sanitize_pine_string(name)
 
         # ── Cache check: avoid re-compiling identical templates ──
-        cache_key = codegen_cache_key(safe_name, description or "", inputs or "", overlay)
+        cache_key = codegen_cache_key(
+            safe_name, description or "", inputs or "", overlay
+        )
         cached_result = get_codegen_cache(cache_key)
         if cached_result:
             return cached_result
@@ -86,7 +107,7 @@ async def generate_indicator(
         # ── Phase 0: Check for known indicator templates ──
         template_source = "none"
         matched_keywords = extract_indicator_keywords(description or name)
-        calc_stub = "plot(close, \"Price\", color.blue)"  # safe default
+        calc_stub = 'plot(close, "Price", color.blue)'  # safe default
         if matched_keywords:
             family = matched_keywords[0]
             if family in _INDICATOR_TEMPLATES:
@@ -118,7 +139,15 @@ async def generate_indicator(
                     if val.startswith('"') or val.startswith("'"):
                         pine_type = "string"
                         default_val = val
-                    elif val in ("close", "open", "high", "low", "hl2", "hlc3", "ohlc4"):
+                    elif val in (
+                        "close",
+                        "open",
+                        "high",
+                        "low",
+                        "hl2",
+                        "hlc3",
+                        "ohlc4",
+                    ):
                         pine_type = "source"
                         default_val = val
                     elif val.lower() in ("true", "false"):
@@ -155,21 +184,33 @@ async def generate_indicator(
                         default_val = "true"
 
                 if pine_type == "source":
-                    input_lines.append(f'{var_name} = input.source({default_val}, "{display_name}")')
+                    input_lines.append(
+                        f'{var_name} = input.source({default_val}, "{display_name}")'
+                    )
                 elif pine_type == "int":
-                    input_lines.append(f'int {var_name} = input.int({default_val}, "{display_name}")')
+                    input_lines.append(
+                        f'int {var_name} = input.int({default_val}, "{display_name}")'
+                    )
                 elif pine_type == "float":
-                    input_lines.append(f'float {var_name} = input.float({default_val}, "{display_name}")')
+                    input_lines.append(
+                        f'float {var_name} = input.float({default_val}, "{display_name}")'
+                    )
                 elif pine_type == "bool":
-                    input_lines.append(f'bool {var_name} = input.bool({default_val}, "{display_name}")')
+                    input_lines.append(
+                        f'bool {var_name} = input.bool({default_val}, "{display_name}")'
+                    )
                 elif pine_type == "string":
-                    input_lines.append(f'string {var_name} = input.string({default_val}, "{display_name}")')
+                    input_lines.append(
+                        f'string {var_name} = input.string({default_val}, "{display_name}")'
+                    )
                 elif pine_type == "color":
-                    input_lines.append(f'{var_name} = input.color({default_val}, "{display_name}")')
+                    input_lines.append(
+                        f'{var_name} = input.color({default_val}, "{display_name}")'
+                    )
 
         # ── Phase 2: Search docs with namespace-aware queries ──
         relevant_funcs = []
-        calc_stub_phase2 = "plot(close, \"Price\", color.blue)"  # safe default
+        calc_stub_phase2 = 'plot(close, "Price", color.blue)'  # safe default
 
         if template_source == "none":
             enrich_terms = {
@@ -189,11 +230,12 @@ async def generate_indicator(
                 "williams": "ta.wpr williams percent range",
             }
             kw = extract_indicator_keywords(description or name)
-            enriched_query = f"{description} {enrich_terms.get(kw[0], '')}" if kw else description
+            enriched_query = (
+                f"{description} {enrich_terms.get(kw[0], '')}" if kw else description
+            )
 
             combined_results = await query_async(
-                enriched_query, 10,
-                where={"category": "function"}
+                enriched_query, 10, where={"category": "function"}
             )
             db_err = check_query_error(combined_results)
             if db_err:
@@ -205,7 +247,10 @@ async def generate_indicator(
 
             if combined_results.get("ids") and combined_results["ids"][0]:
                 for i, (meta, dist) in enumerate(
-                    zip(combined_results["metadatas"][0], combined_results["distances"][0])
+                    zip(
+                        combined_results["metadatas"][0],
+                        combined_results["distances"][0],
+                    )
                 ):
                     fname = meta.get("name", "?")
                     fsyntax = meta.get("syntax", "")
@@ -223,8 +268,6 @@ async def generate_indicator(
             # Phase 3: Relevance gating
             if best_meta is not None:
                 top_name = best_meta.get("name", "")
-                top_desc = (best_meta.get("raw_description") or "").lower()
-                desc_lower = (description or "").lower()
 
                 strong_name_match = False
                 for kw_str in extract_indicator_keywords(description or name):
@@ -252,8 +295,14 @@ async def generate_indicator(
                     param_names = []
                     if raw_params:
                         try:
-                            params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
-                            param_names = [p.get("name", "") for p in params if isinstance(p, dict)]
+                            params = (
+                                json.loads(raw_params)
+                                if isinstance(raw_params, str)
+                                else raw_params
+                            )
+                            param_names = [
+                                p.get("name", "") for p in params if isinstance(p, dict)
+                            ]
                         except (json.JSONDecodeError, TypeError):
                             pass
 
@@ -282,16 +331,21 @@ async def generate_indicator(
                     args = ", ".join(args_list) if args_list else "close"
                     calc_stub_phase2 = (
                         f"result = {top_name}({args})\n"
-                        f"plot(result, \"Result\", color.orange)"
+                        f'plot(result, "Result", color.orange)'
                     )
-                    template_source = f"search:{top_name} (dist={best_dist:.3f}, {best_query_label})"
+                    template_source = (
+                        f"search:{top_name} (dist={best_dist:.3f}, {best_query_label})"
+                    )
                 else:
-                    template_source = f"rejected:{top_name} (dist={best_dist:.3f}, too far)"
+                    template_source = (
+                        f"rejected:{top_name} (dist={best_dist:.3f}, too far)"
+                    )
         else:
             # Template matched — still run a search to populate relevant_funcs section
             ta_results = await query_async(
-                description or name, 5,
-                where={"$and": [{"category": "function"}, {"namespace": "ta"}]}
+                description or name,
+                5,
+                where={"$and": [{"category": "function"}, {"namespace": "ta"}]},
             )
             if ta_results.get("ids") and ta_results["ids"][0]:
                 for meta in ta_results["metadatas"][0][:5]:
@@ -377,36 +431,59 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Generate Strategy Template", readOnlyHint=False, openWorldHint=True, destructiveHint=True, idempotentHint=False))
+@tool(
+    annotations=ToolAnnotations(
+        title="Generate Strategy Template",
+        readOnlyHint=False,
+        openWorldHint=True,
+        destructiveHint=True,
+        idempotentHint=False,
+    )
+)
 async def generate_strategy(
-    name: Annotated[str, Field(
-        min_length=1,
-        max_length=100,
-        description="Strategy display name",
-    )],
-    description: Annotated[str, Field(
-        default="",
-        max_length=500,
-        description="Trading strategy description",
-    )] = "",
-    initial_capital: Annotated[int, Field(
-        default=10000,
-        ge=1,
-        le=1000000,
-        description="Starting capital (default 10000)",
-    )] = 10000,
-    commission_pct: Annotated[float, Field(
-        default=0.1,
-        ge=0.0,
-        le=1.0,
-        description="Commission percentage (default 0.1)",
-    )] = 0.1,
-    pyramiding: Annotated[int, Field(
-        default=1,
-        ge=1,
-        le=10,
-        description="Max simultaneous positions (default 1)",
-    )] = 1,
+    name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=100,
+            description="Strategy display name",
+        ),
+    ],
+    description: Annotated[
+        str,
+        Field(
+            default="",
+            max_length=500,
+            description="Trading strategy description",
+        ),
+    ] = "",
+    initial_capital: Annotated[
+        int,
+        Field(
+            default=10000,
+            ge=1,
+            le=1000000,
+            description="Starting capital (default 10000)",
+        ),
+    ] = 10000,
+    commission_pct: Annotated[
+        float,
+        Field(
+            default=0.1,
+            ge=0.0,
+            le=1.0,
+            description="Commission percentage (default 0.1)",
+        ),
+    ] = 0.1,
+    pyramiding: Annotated[
+        int,
+        Field(
+            default=1,
+            ge=1,
+            le=10,
+            description="Max simultaneous positions (default 1)",
+        ),
+    ] = 1,
 ) -> str:
     """
     Generate a syntactically correct PineScript v6 strategy template.
@@ -427,7 +504,12 @@ async def generate_strategy(
         safe_name = sanitize_pine_string(name)
 
         # ── Cache check: avoid re-compiling identical templates ──
-        cache_key = codegen_cache_key(safe_name, description or "", f"{initial_capital}|{commission_pct}|{pyramiding}", True)
+        cache_key = codegen_cache_key(
+            safe_name,
+            description or "",
+            f"{initial_capital}|{commission_pct}|{pyramiding}",
+            True,
+        )
         cached_result = get_codegen_cache(cache_key)
         if cached_result:
             return cached_result
@@ -494,11 +576,12 @@ if barstate.islast
         validation = await call_pine_facade(template)
         if not validation["success"]:
             errors_str = "\n".join(
-                f"  Line {e['line']}: {e['text']}"
-                for e in validation["errors"][:5]
+                f"  Line {e['line']}: {e['text']}" for e in validation["errors"][:5]
             )
-            return (f"⚠️ Template generation failed validation:\n{errors_str}\n\n"
-                    f"Raw template for manual fix:\n```pine\n{template}\n```")
+            return (
+                f"⚠️ Template generation failed validation:\n{errors_str}\n\n"
+                f"Raw template for manual fix:\n```pine\n{template}\n```"
+            )
 
         lines = []
         lines.append("GENERATED STRATEGY TEMPLATE")
@@ -531,16 +614,30 @@ if barstate.islast
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Lookup and Correct Code", readOnlyHint=True, openWorldHint=True, destructiveHint=True, idempotentHint=False))
+@tool(
+    annotations=ToolAnnotations(
+        title="Lookup and Correct Code",
+        readOnlyHint=True,
+        openWorldHint=True,
+        destructiveHint=True,
+        idempotentHint=False,
+    )
+)
 async def lookup_and_correct(
-    code: Annotated[str, Field(
-        max_length=50000,
-        description="The PineScript code (can be partial or full script)",
-    )] = "",
-    error_description: Annotated[str, Field(
-        max_length=500,
-        description="What the code is supposed to do",
-    )] = "",
+    code: Annotated[
+        str,
+        Field(
+            max_length=50000,
+            description="The PineScript code (can be partial or full script)",
+        ),
+    ] = "",
+    error_description: Annotated[
+        str,
+        Field(
+            max_length=500,
+            description="What the code is supposed to do",
+        ),
+    ] = "",
 ) -> str:
     """
     Given a PineScript code snippet and what it's supposed to do,
@@ -570,24 +667,26 @@ async def lookup_and_correct(
         changes_made = []
 
         # v6 breaking changes
-        transp_pattern = re.compile(r',\s*transp\s*=\s*\d+')
+        transp_pattern = re.compile(r",\s*transp\s*=\s*\d+")
         if transp_pattern.search(fixed_code):
-            fixed_code = transp_pattern.sub('', fixed_code)
+            fixed_code = transp_pattern.sub("", fixed_code)
             changes_made.append("Removed transp= parameter (v6: use color.new())")
 
-        bool_na = re.compile(r'\bbool\s+(\w+)\s*=\s*na\b')
+        bool_na = re.compile(r"\bbool\s+(\w+)\s*=\s*na\b")
         if bool_na.search(fixed_code):
-            fixed_code = bool_na.sub(r'var bool \1 = false', fixed_code)
+            fixed_code = bool_na.sub(r"var bool \1 = false", fixed_code)
             changes_made.append("Changed 'bool x = na' to 'var bool x = false' (v6)")
 
-        implicit_bool = re.compile(r'\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])')
+        implicit_bool = re.compile(
+            r"\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])"
+        )
         if implicit_bool.search(fixed_code):
-            fixed_code = implicit_bool.sub(r'if \1 > 0', fixed_code)
+            fixed_code = implicit_bool.sub(r"if \1 > 0", fixed_code)
             changes_made.append("Added explicit > 0 (v6: implicit bool removed)")
 
-        study_pattern = re.compile(r'\bstudy\s*\(')
+        study_pattern = re.compile(r"\bstudy\s*\(")
         if study_pattern.search(fixed_code):
-            fixed_code = study_pattern.sub('indicator(', fixed_code)
+            fixed_code = study_pattern.sub("indicator(", fixed_code)
             changes_made.append("Replaced study() → indicator() (v6)")
 
         # Apply ALL V5→V6 namespace replacements
@@ -604,7 +703,12 @@ async def lookup_and_correct(
         intent_results = await query_async(error_description, 3)
         intent_err = check_query_error(intent_results)
         if intent_err:
-            intent_results = {"ids": [[]], "metadatas": [[]], "documents": [[]], "distances": [[]]}
+            intent_results = {
+                "ids": [[]],
+                "metadatas": [[]],
+                "documents": [[]],
+                "distances": [[]],
+            }
 
         lines = []
         lines.append("LOOKUP AND CORRECT REPORT")
@@ -619,7 +723,9 @@ async def lookup_and_correct(
                 line_num = err.get("line", "?")
                 col_num = err.get("column", "?")
                 err_type = err.get("type", "error")
-                lines.append(f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}")
+                lines.append(
+                    f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}"
+                )
             if len(errors) > 3:
                 lines.append(f"  ... and {len(errors) - 3} more issues")
             lines.append("")
@@ -645,12 +751,16 @@ async def lookup_and_correct(
                 line_num = err.get("line", "?")
                 col_num = err.get("column", "?")
                 err_type = err.get("type", "error")
-                lines.append(f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}")
+                lines.append(
+                    f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}"
+                )
             if len(errors_after) > 3:
                 lines.append(f"  ... and {len(errors_after) - 3} more issues")
             lines.append("")
         else:
-            lines.append("AFTER FIXES: ✅ All issues resolved! Code compiles successfully.")
+            lines.append(
+                "AFTER FIXES: ✅ All issues resolved! Code compiles successfully."
+            )
             lines.append("")
 
         # Show relevant docs for intent

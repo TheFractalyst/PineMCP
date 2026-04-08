@@ -80,11 +80,12 @@ _cache_counter_lock = threading.Lock()
 
 async def build_hot_cache() -> bool:
     """Load priority entries into memory for sub-millisecond lookups. Returns True on success."""
-    global _cache_hits, _cache_misses
+    global _cache_hits, _cache_misses, _hot_cache_built
     logger.info("Building hot cache...")
     try:
         col = get_collection()
         count = 0
+        dupes = 0
 
         # Load all entries from priority namespaces
         for namespace in PRIORITY_NAMESPACES:
@@ -98,6 +99,8 @@ async def build_hot_cache() -> bool:
                 ):
                     key = meta.get("name", "").lower().strip()
                     if key:
+                        if key in HOT_CACHE:
+                            dupes += 1
                         HOT_CACHE[key] = {"id": rid, "document": doc, "metadata": meta}
                         count += 1
             except Exception as e:
@@ -122,7 +125,10 @@ async def build_hot_cache() -> bool:
             except Exception as e:
                 logger.debug(f"Hot cache load failed for '{name}': {e}")
 
-        logger.info(f"Hot cache ready: {count} entries loaded into memory")
+        logger.info(
+            f"Hot cache ready: {count} entries loaded, {len(HOT_CACHE)} unique keys ({dupes} key collisions)"
+        )
+        _hot_cache_built = True
         return True
     except Exception as e:
         logger.error(f"Failed to build hot cache: {e}")
