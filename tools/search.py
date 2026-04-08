@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
+import xxhash
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import tool
 from loguru import logger
@@ -48,6 +49,7 @@ def _return_type_matches(query_type: str, field_type: str) -> bool:
     Uses word-boundary-aware matching to avoid 'int' matching 'point'.
     """
     import re
+
     # Exact match
     if query_type == field_type:
         return True
@@ -55,26 +57,29 @@ def _return_type_matches(query_type: str, field_type: str) -> bool:
     # e.g., "float" in "series float" ✓, "int" in "point" ✗
     if query_type in field_type:
         # Check that query_type appears as a complete word in field_type
-        pattern = rf'(?:^|[\s<>,\[\]]){re.escape(query_type)}(?:$|[\s<>,\[\]])'
+        pattern = rf"(?:^|[\s<>,\[\]]){re.escape(query_type)}(?:$|[\s<>,\[\]])"
         return bool(re.search(pattern, field_type))
     # Field is a substring of query — e.g., "series float" matches query "float"
     if field_type in query_type:
         return True
     return False
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL 1: search_docs
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-async def _short_query_search(query: str, n_results: int,
-                              category_filter: str | None,
-                              namespace_filter: str | None) -> str:
+async def _short_query_search(
+    query: str,
+    n_results: int,
+    category_filter: str | None,
+    namespace_filter: str | None,
+) -> str:
     """Handle very short queries (≤3 chars) using exact name matching.
 
     Semantic embeddings produce poor vectors for short strings like 'ta', 'if'.
     """
-    import core.db as _db_mod
     from core.db import search_by_name_async
 
     candidates = await search_by_name_async(query)
@@ -100,7 +105,11 @@ async def _short_query_search(query: str, n_results: int,
         name = meta.get("name", "?")
         category = meta.get("category", "?").upper()
         namespace = meta.get("namespace") or ""
-        ns = f"{namespace}." if namespace and not name.startswith(f"{namespace}.") else ""
+        ns = (
+            f"{namespace}."
+            if namespace and not name.startswith(f"{namespace}.")
+            else ""
+        )
         desc = meta.get("raw_description", "")
         first_para = desc.split("\n\n")[0][:200] if desc else ""
 
@@ -113,27 +122,46 @@ async def _short_query_search(query: str, n_results: int,
     return cap_response("\n".join(output_lines))
 
 
-@tool(annotations=ToolAnnotations(title="Search PineScript Docs", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Search PineScript Docs",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def search_docs(
-    query: Annotated[str, Field(
-        min_length=1,
-        max_length=500,
-        description="Natural language or code query about PineScript v6",
-    )],
-    n_results: Annotated[int, Field(
-        default=5,
-        ge=1,
-        le=30,
-        description="Number of results (1-30, default 5)",
-    )] = 5,
-    category_filter: Annotated[str | None, Field(
-        default=None,
-        description="'function','variable','type',etc.",
-    )] = None,
-    namespace_filter: Annotated[str | None, Field(
-        default=None,
-        description="Namespace e.g. 'ta', 'strategy'",
-    )] = None,
+    query: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=500,
+            description="Natural language or code query about PineScript v6",
+        ),
+    ],
+    n_results: Annotated[
+        int,
+        Field(
+            default=5,
+            ge=1,
+            le=30,
+            description="Number of results (1-30, default 5)",
+        ),
+    ] = 5,
+    category_filter: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="'function','variable','type',etc.",
+        ),
+    ] = None,
+    namespace_filter: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Namespace e.g. 'ta', 'strategy'",
+        ),
+    ] = None,
 ) -> str:
     """
     Semantic search across the complete PineScript v6 knowledge base.
@@ -152,7 +180,9 @@ async def search_docs(
         # Short query fallback: semantic embeddings perform poorly on 1-3 char
         # queries. Use exact name matching instead.
         if len(query) <= 3:
-            return await _short_query_search(query, n_results, category_filter, namespace_filter)
+            return await _short_query_search(
+                query, n_results, category_filter, namespace_filter
+            )
 
         where_clauses: list[dict] = []
         if category_filter:
@@ -182,7 +212,11 @@ async def search_docs(
                     supp["documents"][0],
                     supp["distances"][0],
                 ):
-                    if rid not in existing_ids and meta.get("category") != "function" and _is_function_like(meta):
+                    if (
+                        rid not in existing_ids
+                        and meta.get("category") != "function"
+                        and _is_function_like(meta)
+                    ):
                         # Override category so display shows FUNCTION, not VARIABLE
                         meta = {**meta, "category": "function"}
                         results["ids"][0].append(rid)
@@ -211,8 +245,9 @@ async def search_docs(
             )
         ):
             # Dedup: skip if content is >85% similar to already shown result
+            # Use xxhash for deterministic dedup (Python hash() is randomized per process)
             content_key = doc[:120].strip().lower()
-            content_hash = hash(content_key)
+            content_hash = xxhash.xxh64(content_key.encode()).intdigest()
             if content_hash in seen_hashes:
                 continue
             seen_hashes.add(content_hash)
@@ -228,7 +263,6 @@ async def search_docs(
             name = meta.get("name", "?")
             category = meta.get("category", "?").upper()
             namespace = meta.get("namespace") or ""
-            syntax = meta.get("syntax") or ""
             ns = (
                 f"{namespace}."
                 if namespace and not name.startswith(f"{namespace}.")
@@ -278,19 +312,32 @@ async def search_docs(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Get Code Examples", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Get Code Examples",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def get_examples(
-    query: Annotated[str, Field(
-        min_length=1,
-        max_length=500,
-        description="Concept to find code examples for",
-    )],
-    n_results: Annotated[int, Field(
-        default=4,
-        ge=1,
-        le=20,
-        description="Number of examples to return",
-    )] = 4,
+    query: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=500,
+            description="Concept to find code examples for",
+        ),
+    ],
+    n_results: Annotated[
+        int,
+        Field(
+            default=4,
+            ge=1,
+            le=20,
+            description="Number of examples to return",
+        ),
+    ] = 4,
 ) -> str:
     """
     Find real PineScript v6 code examples by concept.
@@ -363,17 +410,30 @@ async def get_examples(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="List Namespace Members", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="List Namespace Members",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def list_namespace(
-    namespace: Annotated[str, Field(
-        min_length=1,
-        max_length=50,
-        description="Namespace e.g. 'ta', 'strategy'",
-    )],
-    category_filter: Annotated[str | None, Field(
-        default=None,
-        description="Optional category filter",
-    )] = None,
+    namespace: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=50,
+            description="Namespace e.g. 'ta', 'strategy'",
+        ),
+    ],
+    category_filter: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Optional category filter",
+        ),
+    ] = None,
 ) -> str:
     """
     List ALL members of a PineScript v6 namespace.
@@ -393,7 +453,12 @@ async def list_namespace(
 
         if category_filter:
             # ChromaDB requires $and for multiple conditions
-            where = {"$and": [{"namespace": ns if ns.lower() != "global" else ""}, {"category": category_filter}]}
+            where = {
+                "$and": [
+                    {"namespace": ns if ns.lower() != "global" else ""},
+                    {"category": category_filter},
+                ]
+            }
 
         entries = await get_all_where_async(where)
         if not entries:
@@ -449,7 +514,9 @@ async def list_namespace(
         remaining = {k: v for k, v in groups.items() if k not in shown_cats}
         if remaining:
             for cat in sorted(remaining):
-                cat_entries = sorted(remaining[cat], key=lambda e: e["metadata"].get("name", ""))
+                cat_entries = sorted(
+                    remaining[cat], key=lambda e: e["metadata"].get("name", "")
+                )
                 output_lines.append(f"{cat.upper()}S ({len(cat_entries)}):")
                 for entry in cat_entries:
                     name = entry["metadata"].get("name", "?")
@@ -473,19 +540,32 @@ async def list_namespace(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Search by Return Type", readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@tool(
+    annotations=ToolAnnotations(
+        title="Search by Return Type",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    )
+)
 async def search_by_return_type(
-    return_type: Annotated[str, Field(
-        min_length=1,
-        max_length=100,
-        description="Return type e.g. 'series float', 'line', 'array<int>'",
-    )],
-    n_results: Annotated[int, Field(
-        default=10,
-        ge=1,
-        le=50,
-        description="Number of results (1-50, default 10)",
-    )] = 10,
+    return_type: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=100,
+            description="Return type e.g. 'series float', 'line', 'array<int>'",
+        ),
+    ],
+    n_results: Annotated[
+        int,
+        Field(
+            default=10,
+            ge=1,
+            le=50,
+            description="Number of results (1-50, default 10)",
+        ),
+    ] = 10,
 ) -> str:
     """
     Find all PineScript v6 functions that return a specific type.
@@ -538,7 +618,9 @@ async def search_by_return_type(
             matched = direct_matches + [s for s in semantic_matches if s[2] < 0.4]
         else:
             # No direct returns-field match — show semantic results with a warning
-            matched = [(m, d, dist, False) for m, d, dist in all_results[:5] if dist < 0.6]
+            matched = [
+                (m, d, dist, False) for m, d, dist in all_results[:5] if dist < 0.6
+            ]
 
         if not matched:
             return (
@@ -560,8 +642,14 @@ async def search_by_return_type(
             syntax = meta.get("syntax") or name
             returns = meta.get("returns") or ""
             namespace = meta.get("namespace") or ""
-            ns = f"{namespace}." if namespace and not name.startswith(f"{namespace}.") else ""
-            match_type = "direct match" if is_direct else f"semantic ({relevance_pct(dist)})"
+            ns = (
+                f"{namespace}."
+                if namespace and not name.startswith(f"{namespace}.")
+                else ""
+            )
+            match_type = (
+                "direct match" if is_direct else f"semantic ({relevance_pct(dist)})"
+            )
 
             output_lines.append(f"  {ns}{name}")
             if returns:
