@@ -42,6 +42,7 @@ from tools.lookup import _lookup_entry
 @tool(annotations=ToolAnnotations(title="Validate PineScript Code", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def validate_syntax(
     code: Annotated[str, Field(
+        min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
     )] = "",
@@ -166,6 +167,7 @@ async def validate_syntax(
 @tool(annotations=ToolAnnotations(title="Validate and Explain Errors", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def validate_and_explain(
     code: Annotated[str, Field(
+        min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
     )] = "",
@@ -292,6 +294,7 @@ async def validate_and_explain(
 @tool(annotations=ToolAnnotations(title="Fix and Validate Code", readOnlyHint=True, openWorldHint=True, destructiveHint=True, idempotentHint=False))
 async def fix_and_validate(
     code: Annotated[str, Field(
+        min_length=1,
         max_length=50000,
         description="The failing PineScript v6 code",
     )] = "",
@@ -498,8 +501,9 @@ async def fix_and_validate(
 @tool(annotations=ToolAnnotations(title="Debug Pine Facade", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def debug_pine_facade(
     code: Annotated[str, Field(
-        max_length=50000,
-        description="Complete PineScript v6 source code to compile",
+            min_length=1,
+            max_length=50000,
+            description="Complete PineScript v6 source code to compile",
     )] = "",
 ) -> str:
     """
@@ -694,8 +698,8 @@ async def validate_file(
                     response += f"  WARNING {idx} -- Line {line}, Col {col}\n"
                     response += f"    {text}\n\n"
 
-                # Cache the fast-reject result (file won't compile remotely either)
-                set_cached_file_validation(resolved, mtime_ns, fsize, response)
+                # Do NOT cache linter-only failures — remote compiler may find
+                # different/additional errors. Only cache confirmed remote failures.
                 return response
 
         except Exception as e:

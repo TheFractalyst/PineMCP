@@ -42,7 +42,7 @@ def check_constants(source):
     """Check constants exist."""
     checks = []
     
-    if "MAX_TOOL_RESPONSE_CHARS = 8000" in source:
+    if "MAX_TOOL_RESPONSE_CHARS = 80000" in source:
         checks.append("PASS: MAX_TOOL_RESPONSE_CHARS constant found")
     else:
         checks.append("FAIL: MAX_TOOL_RESPONSE_CHARS constant missing")

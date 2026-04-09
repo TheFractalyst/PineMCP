@@ -37,7 +37,7 @@ from fastmcp.server.middleware.timing import DetailedTimingMiddleware
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
 from fastmcp.server.providers.filesystem import FileSystemProvider
 
-from core.config import INSTRUCTIONS
+from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS
 from core.db import get_collection, build_name_index
 from core.embeddings import get_model, _model_executor, _embedding_model_ready
 from core.hot_cache import build_hot_cache, _hot_cache_built
@@ -84,8 +84,9 @@ async def cache_lifespan(server):
         _hc._hot_cache_built = True
     logger.info("Hot cache ready")
     yield
-    # Shutdown: close HTTP client
+    # Shutdown: close HTTP client and thread pool
     shutdown_http_client()
+    _model_executor.shutdown(wait=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -138,13 +139,13 @@ mcp = FastMCP(
     name="PineScript v6 Complete Reference",
     instructions=INSTRUCTIONS,
     lifespan=db_lifespan | model_lifespan | cache_lifespan,
-    mask_error_details=True,
+    mask_error_details=False,
     providers=[FileSystemProvider(_mcp_dir, reload=False)],
     middleware=[
         _lookup_cache_mw,
         _search_cache_mw,
-        DetailedTimingMiddleware(),
-        ResponseLimitingMiddleware(max_size=500_000),
+        DetailedTimingMiddleware(enabled=os.getenv("LOG_LEVEL", "INFO") == "DEBUG"),
+        ResponseLimitingMiddleware(max_size=MAX_TOOL_RESPONSE_CHARS + 10_000),
     ],
 )
 

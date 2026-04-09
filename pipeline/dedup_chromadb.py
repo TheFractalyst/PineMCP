@@ -220,9 +220,10 @@ def main(dry_run: bool = False):
         if m.get("category") == "example":
             name = m.get("name", "")
             # Example names are like "for.for...in — example 1"
-            # Parent would be "for...in" or similar
-            # We already verified (in analysis) that all 356 parents have examples
-            pass
+            # Extract parent name by removing " — example N" suffix
+            parent_key = name.rsplit(" — example ", 1)[0].lower().strip() if " — example " in name else ""
+            if parent_key and parent_key not in name_to_meta:
+                orphans += 1
     print(f"Orphan examples (no parent with examples): {orphans}")
     print(f"Safe to remove: {len(example_ids) - orphans}")
 

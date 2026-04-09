@@ -51,7 +51,7 @@ def check_imports(source):
 
 def check_constants(source):
     """Check constants exist."""
-    if "MAX_TOOL_RESPONSE_CHARS = 8000" in source:
+    if "MAX_TOOL_RESPONSE_CHARS = 80000" in source:
         return True, []
     return False, ["MAX_TOOL_RESPONSE_CHARS constant"]
 

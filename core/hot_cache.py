@@ -100,8 +100,13 @@ async def build_hot_cache() -> bool:
                     key = meta.get("name", "").lower().strip()
                     if key:
                         if key in HOT_CACHE:
-                            dupes += 1
-                        HOT_CACHE[key] = {"id": rid, "document": doc, "metadata": meta}
+                            # Keep the entry with richer documentation
+                            existing_doc = HOT_CACHE[key]["document"] or ""
+                            if len(doc or "") > len(existing_doc):
+                                HOT_CACHE[key] = {"id": rid, "document": doc, "metadata": meta}
+                                dupes += 1
+                        else:
+                            HOT_CACHE[key] = {"id": rid, "document": doc, "metadata": meta}
                         count += 1
             except Exception as e:
                 logger.warning(

@@ -226,7 +226,7 @@ async def get_function(
         Field(
             min_length=1,
             max_length=200,
-            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+            description="Function name e.g. 'ta.ema', 'strategy.entry', 'array.new', 'request.security'",
         ),
     ],
 ) -> str:
@@ -303,7 +303,7 @@ async def get_variable(
         Field(
             min_length=1,
             max_length=200,
-            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+            description="Built-in variable name e.g. 'close', 'barstate.isconfirmed', 'syminfo.tickerid', 'volume'",
         ),
     ],
 ) -> str:
@@ -340,7 +340,7 @@ async def get_type(
         Field(
             min_length=1,
             max_length=200,
-            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+            description="Type name e.g. 'array', 'matrix', 'map', 'line', 'label', 'box', 'table', 'color'",
         ),
     ],
 ) -> str:
@@ -391,8 +391,8 @@ async def get_type(
                             formatted += (
                                 f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Type method enrichment failed: {e}")
 
                 return formatted
         except Exception as e:
@@ -442,8 +442,8 @@ async def get_type(
                         formatted += (
                             f"\n\nAVAILABLE METHODS ({len(methods)}): {methods_str}"
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Type method enrichment (fallback) failed: {e}")
 
             return formatted
 
@@ -479,7 +479,7 @@ async def get_constant(
         Field(
             min_length=1,
             max_length=200,
-            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+            description="Constant name e.g. 'color.red', 'strategy.long', 'shape.circle', 'location.top'",
         ),
     ],
 ) -> str:
@@ -516,7 +516,7 @@ async def get_keyword(
         Field(
             min_length=1,
             max_length=200,
-            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+            description="Keyword name e.g. 'if', 'for', 'while', 'switch', 'var', 'import', 'type'",
         ),
     ],
 ) -> str:
@@ -553,7 +553,7 @@ async def get_operator(
         Field(
             min_length=1,
             max_length=200,
-            description="Entry name e.g. 'ta.ema', 'close', 'array'",
+            description="Operator name e.g. ':=', '+=', '==', '!=', '?', '=>', '[]', 'and', 'or', 'not'",
         ),
     ],
 ) -> str:

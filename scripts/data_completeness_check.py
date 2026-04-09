@@ -61,7 +61,7 @@ def check_response_completeness(source):
     
     # Check for response capping with preservation
     if "_cap_response" in source and "MAX_TOOL_RESPONSE_CHARS" in source:
-        completeness.append("✅ Response capping with size limit (8000 chars)")
+        completeness.append("✅ Response capping with size limit (80000 chars)")
     else:
         completeness.append("❌ Missing proper response capping")
     

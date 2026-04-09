@@ -35,7 +35,6 @@ async def get_stats() -> str:
                 "validation_cache_entries": len(_caches_module._VALIDATION_CACHE),
                 "file_validation_cache_entries": len(_caches_module._FILE_VALIDATION_CACHE),
                 "embedding_model_ready": _embedding_model_ready.is_set(),
-                "total_tools": 20,
                 "version": "4.0",
             },
             indent=2,
@@ -46,7 +45,13 @@ async def get_stats() -> str:
         return json.dumps(
             {
                 "error": safe_error(e, "get_stats"),
-                "total_tools": 20,
+                "total_entries": None,
+                "hot_cache_entries": None,
+                "pine_facade_circuit_open": None,
+                "chroma_circuit_open": None,
+                "validation_cache_entries": None,
+                "file_validation_cache_entries": None,
+                "embedding_model_ready": _embedding_model_ready.is_set(),
                 "version": "4.0",
             },
             indent=2,

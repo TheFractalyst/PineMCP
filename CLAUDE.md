@@ -37,6 +37,21 @@ Before writing ANY calculation logic:
 
 Common traps: manual EMA loops → `ta.ema()`, hand-rolled RSI → `ta.rsi()`, crossover with history → `ta.crossover()`, cumulative sum → `ta.cum()`, multi-TF → `request.security()`.
 
+## MCP Consultation (Non-Negotiable)
+When working on PineScript files, you MUST consult the MCP before writing code.
+Do NOT rely on training data — PineScript v6 has breaking changes from v5 and
+subtle type system rules that training data gets wrong.
+
+1. **Before using any function**: `get_function(name)` — verify exact params, types, return type
+2. **Before using any variable/constant**: `get_variable(name)` or `get_constant(name)`
+3. **Before using a type**: `get_type(name)` — get all fields, methods, constructors
+4. **When unsure what exists**: `suggest_functions(description)` or `search_docs(query)`
+5. **When exploring a namespace**: `get_namespace_cheatsheet(namespace)` for quick scan
+6. **After every edit**: `validate_syntax(code)` — confirm it compiles
+7. **On compilation error**: `validate_and_explain(code)` — get error + doc-referenced fix
+
+The MCP has 3,400+ entries. Use it liberally — it costs nothing and prevents bugs.
+
 ## Workflow
 - **Read .ps/.pine** → auto-validate with `validate_syntax`
 - **Edit .ps/.pine** → re-validate after every edit
