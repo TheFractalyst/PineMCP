@@ -144,9 +144,8 @@ mcp = FastMCP(
     middleware=[
         _lookup_cache_mw,
         _search_cache_mw,
-        DetailedTimingMiddleware(enabled=os.getenv("LOG_LEVEL", "INFO") == "DEBUG"),
         ResponseLimitingMiddleware(max_size=MAX_TOOL_RESPONSE_CHARS + 10_000),
-    ],
+    ] + ([DetailedTimingMiddleware()] if os.getenv("LOG_LEVEL", "INFO") == "DEBUG" else []),
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
