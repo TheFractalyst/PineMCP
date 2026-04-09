@@ -1,54 +1,115 @@
 # PineScript v6 Complete Reference — MCP Server
 
-Production-grade MCP (Model Context Protocol) server providing the complete PineScript v6 reference documentation via **20 specialized tools** backed by a local ChromaDB vector store, **TradingView's official pine-facade compiler**, and a memory-first hot cache.
+Production MCP server providing the complete PineScript v6 reference via **20 tools** backed by a local ChromaDB vector store, TradingView's official `pine-facade` compiler, and a memory-first hot cache.
 
-Combines two data sources into one unified knowledge base:
-1. **Local parsed documentation** — 1,242 entries from PDF/Markdown
-2. **Live TradingView reference** — ~1,360 entries scraped from the official site
-3. **Merged total** — ~1,400–1,600 unique entries
+## What It Does
+
+An AI coding assistant (Claude, Cursor, Windsurf, etc.) calls these tools to:
+- Look up any PineScript v6 function, type, variable, constant, keyword, or operator
+- Search documentation semantically
+- Validate code against TradingView's real compiler
+- Generate scaffolded indicators/strategies that compile
+- Get namespace cheatsheets and function suggestions
+
+**Two data sources merged into one index:**
+1. Local parsed documentation (PDF/Markdown) — ~1,242 entries
+2. Live TradingView reference (scraped) — ~1,360 entries
+3. Merged unique entries — ~1,400–1,600
 
 ## Architecture
 
 ```
-  server.py                ← FastMCP 3.0 entry point (FileSystemProvider + composable lifespans)
-  core/                    ← ChromaDB, embeddings, caches, pine-facade, hot cache
-  formatters/              ← Pure formatting functions (entry detail, errors, box drawing)
-  templates/               ← Indicator templates, v5→v6 migration map
-  tools/                   ← 20 @tool + 1 @resource (auto-discovered)
-  pipeline/                ← Data pipeline: discover → scrape → merge+index
-  data/                    ← ChromaDB source data, pinescriptv6/ docs
+server.py              ← FastMCP 3.0 entry point (stdio transport)
+core/
+  db.py                ← ChromaDB client, name index
+  embeddings.py        ← SentenceTransformer (all-MiniLM-L6-v2)
+  hot_cache.py         ← Pre-loaded namespace cache for instant lookups
+  pine_facade.py       ← TradingView compiler client (validation tools)
+  caches.py            ← LRU caches (validation, search)
+  config.py            ← Server instructions, constants
+formatters/            ← Pure functions: entry formatting, error display
+templates/             ← Indicator templates, v5→v6 migration map
+tools/                 ← 20 @tool + 1 @resource (auto-discovered via FileSystemProvider)
+  lookup.py            ← 6 tools: get_function/variable/type/constant/keyword/operator
+  search.py            ← 4 tools: search_docs, get_examples, search_by_return_type, list_namespace
+  validation.py        ← 5 tools: validate_syntax, validate_and_explain, fix_and_validate, debug_pine_facade, validate_file
+  codegen.py           ← 3 tools: generate_indicator, generate_strategy, lookup_and_correct
+  context.py           ← 2 tools: suggest_functions, get_namespace_cheatsheet
+  resources/stats.py   ← 1 resource: pinescript://stats
+pipeline/              ← Data pipeline: discover → scrape → merge+index
+tests/                 ← 134 pytest tests
+data/                  ← Source data for ChromaDB indexing (tracked in git)
 ```
 
-**Data pipeline:**
+**Data flow:**
 ```
-  PDF docs ──→ pipeline/parse_docs.py ──→ data/pinescript_chunks.json ──┐
-                                                                         ├→ pipeline/merge_and_index.py ──→ ChromaDB ──→ server.py ──→ AI
-  TradingView ──→ pipeline/discover_entries.py ──→ pipeline/scrape_entries.py ──┘
+PDF/MD docs ──→ pipeline/parse_docs.py ──→ data/pinescript_chunks.json ──┐
+                                                                          ├→ pipeline/merge_and_index.py ──→ ChromaDB ──→ server.py ──→ AI
+TradingView ──→ pipeline/discover_entries.py ──→ pipeline/scrape_entries.py ──┘
 
-  pine-facade.tradingview.com ──→ compile endpoint ──→ validate_syntax / validate_and_explain ──→ AI
+pine-facade.tradingview.com ──→ compile endpoint ──→ validation tools ──→ AI
 ```
 
-**3-stage pipeline:** discover → scrape → merge+index
-**Compiler integration:** pine-facade for 100% accurate validation
+**Startup sequence** (composable lifespans):
+1. `db_lifespan` — Open ChromaDB collection + build name index
+2. `model_lifespan` — Load SentenceTransformer model (thread pool) + warmup inference
+3. `cache_lifespan` — Build hot cache for popular namespaces (ta, math, str, etc.)
+
+**Two-tier caching:**
+- MCP-level: `ResponseCachingMiddleware` (1h for lookups, 5m for search)
+- Internal: LRU caches in `core/caches.py` (validation results, search results)
+- Hot cache: Pre-loaded namespace entries for instant `get_function("ta.ema")` etc.
 
 ## Quick Start
 
 ```bash
-make install                # Setup venv + deps
-make index                  # Re-index ChromaDB (skip scraping)
-make test                   # Run 134 tests
-make serve                  # Start MCP server
-make check                  # Verify 20 tools + 1 resource
+# Clone
+git clone https://github.com/TheFractalyst/pinescript-mcp.git
+cd pinescript-mcp
 
-# Or use run.sh directly:
-./run.sh                    # Full pipeline
-./run.sh --skip-scrape      # Skip scraping, just merge+index
-./run.sh --rescrape         # Force re-scrape
+# Full setup (venv + deps + Playwright + scrape + index)
+chmod +x run.sh
+./run.sh
+
+# Or step by step:
+make install          # venv + pip install -r requirements.txt
+make index            # re-index ChromaDB from existing data (skip scraping)
+make index-full       # full re-scrape + re-index
+make test             # run 134 tests
+make serve            # start MCP server (stdio)
+make check            # verify 20 tools + 1 resource registered
+make lint             # ruff lint
+make bench            # benchmark suite
 ```
 
-## Tools (20 total)
+**After setup, the `pinescript_db/` directory (~1.5 GB) is generated locally.** It is gitignored and not in the repo. It gets rebuilt by `make index` from the tracked data files in `data/`.
 
-### Lookup Tools (6) — `tools/lookup.py`
+## IDE Configuration
+
+All configs use the same pattern — replace `/ABSOLUTE/PATH/TO` with your clone path.
+
+### Claude Code
+Create `.mcp.json` in your project root:
+```json
+{
+  "mcpServers": {
+    "pinescript-v6": {
+      "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
+      "args": ["/ABSOLUTE/PATH/TO/server.py"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) under `mcpServers`.
+
+### Cursor / Windsurf / OpenCode
+See `config.json` in this repo for complete configs for each IDE.
+
+## Tools Reference (20 tools + 1 resource)
+
+### Lookup (6) — `tools/lookup.py`
 | Tool | Description |
 |------|-------------|
 | `get_function(name)` | Full docs: syntax, all overloads, params, examples |
@@ -58,50 +119,40 @@ make check                  # Verify 20 tools + 1 resource
 | `get_keyword(name)` | Keyword syntax and examples |
 | `get_operator(name)` | Operator description and examples |
 
-### Search Tools (4) — `tools/search.py`
+### Search (4) — `tools/search.py`
 | Tool | Description |
 |------|-------------|
-| `search_docs(query)` | Semantic search across everything |
-| `get_examples(query)` | Find real working code by concept |
-| `search_by_return_type(type)` | Find functions returning a type |
-| `list_namespace(namespace)` | All members of a namespace |
+| `search_docs(query)` | Semantic search across all entries |
+| `get_examples(query)` | Find working code examples by concept |
+| `search_by_return_type(type)` | Find all functions returning a given type |
+| `list_namespace(namespace)` | All members of a namespace (e.g. `ta`, `math`) |
 
-### Validation Tools (5) — `tools/validation.py`
+### Validation (5) — `tools/validation.py`
 | Tool | Description |
 |------|-------------|
-| `validate_syntax(code)` | Validate code using TradingView's official compiler |
-| `validate_and_explain(code)` | Validate + cross-reference errors against docs |
-| `fix_and_validate(code, error)` | Look up fixes from docs, show validation |
-| `debug_pine_facade(code)` | Raw compiler diagnostics for debugging |
+| `validate_syntax(code)` | Compile check via TradingView's pine-facade |
+| `validate_and_explain(code)` | Validate + cross-reference errors against docs for fixes |
+| `fix_and_validate(code, error)` | Look up doc-referenced fixes, re-validate |
+| `debug_pine_facade(code)` | Raw compiler diagnostics |
 | `validate_file(file_path)` | Validate by file path (no size limits) |
 
-### Code Generation Tools (3) — `tools/codegen.py`
+### Code Generation (3) — `tools/codegen.py`
 | Tool | Description |
 |------|-------------|
-| `generate_indicator(name, ...)` | Generate validated indicator template |
-| `generate_strategy(name, ...)` | Generate validated strategy template |
+| `generate_indicator(name, ...)` | Scaffold a validated indicator template |
+| `generate_strategy(name, ...)` | Scaffold a validated strategy template |
 | `lookup_and_correct(code, intent)` | Validate + search docs + explain fixes |
 
-### Smart Context Tools (2) — `tools/context.py`
+### Context (2) — `tools/context.py`
 | Tool | Description |
 |------|-------------|
 | `suggest_functions(context, ...)` | Suggest relevant functions with signatures |
-| `get_namespace_cheatsheet(namespace)` | Compact cheatsheet for an entire namespace |
+| `get_namespace_cheatsheet(namespace)` | Compact reference for an entire namespace |
 
-## Competitive Comparison
-
-| Feature | This MCP | iamrichardD | erevus | pinescript-mcp |
-|---------|----------|-------------|--------|----------------|
-| Doc entries | ~1,600 | 884 | 0 | ~200 |
-| Semantic search | Yes | Yes | No | No |
-| Live TradingView scraping | Yes | No | No | No |
-| pine-facade validation | Yes | No | Yes | No |
-| Validation + docs combined | Yes | No | No | No |
-| Code generation (validated) | Yes | No | No | No |
-| Memory-first cache | Yes | Yes | No | No |
-| Namespace cheatsheets | Yes | No | No | No |
-| Overload tracking | Yes | No | No | No |
-| Total MCP tools | **20** | ~5 | 1 | ~3 |
+### Resource (1) — `tools/resources/stats.py`
+| Resource | Description |
+|----------|-------------|
+| `pinescript://stats` | Database stats: entry count, collection info |
 
 ## Environment Variables
 
@@ -110,61 +161,83 @@ make check                  # Verify 20 tools + 1 resource
 | `PINESCRIPT_DB_PATH` | `./pinescript_db` | ChromaDB database path |
 | `PINESCRIPT_COLLECTION` | `pinescript_v6` | ChromaDB collection name |
 | `PINESCRIPT_EMBED_MODEL` | `all-MiniLM-L6-v2` | SentenceTransformer model |
-| `PINESCRIPT_MAX_RESULTS` | `30` | Maximum results per query |
-| `SCRAPE_DELAY_MS` | `1500` | Delay between scrape requests |
+| `PINESCRIPT_MAX_RESULTS` | `30` | Max results per search query |
+| `SCRAPE_DELAY_MS` | `1500` | Delay between scrape requests (ms) |
 | `SCRAPE_WORKERS` | `2` | Concurrent scrape workers |
 | `LOG_LEVEL` | `INFO` | Loguru log level |
 | `PINE_FACADE_TIMEOUT` | `20` | Pine-facade request timeout (seconds) |
 | `VALIDATION_CACHE_TTL` | `300` | Validation cache TTL (seconds) |
-| `HOT_CACHE_NAMESPACES` | `ta,strategy,...` | Namespaces loaded into hot cache |
+| `HOT_CACHE_NAMESPACES` | `ta,strategy,...` | Comma-separated namespaces for hot cache |
 
 ## Pipeline Scripts
 
-### discover_entries.py (Stage 1)
 ```bash
+# Stage 1: Discover entries from TradingView
 python pipeline/discover_entries.py [--output FILE] [--headful] [--debug]
-```
 
-### scrape_entries.py (Stage 2)
-```bash
+# Stage 2: Scrape entry content
 python pipeline/scrape_entries.py [--index FILE] [--output FILE] [--headful] [--debug]
 python pipeline/scrape_entries.py --entry fun_ta.ema      # single entry
 python pipeline/scrape_entries.py --retry-failed           # retry failures
-```
 
-### merge_and_index.py (Stage 3)
-```bash
+# Stage 3: Merge local + scraped data and index into ChromaDB
 python pipeline/merge_and_index.py [--local FILE] [--live FILE] [--db PATH] [--reset] [--dry-run]
 ```
 
-## Updating Docs
+## Updating Documentation
 
 ```bash
-./run.sh --rescrape --reset-db           # Full re-scrape
-python pipeline/merge_and_index.py --reset  # Quick re-index
-./run.sh --entry=fun_ta.ema                 # Single entry
+./run.sh --rescrape --reset-db           # Full re-scrape from TradingView + rebuild index
+python pipeline/merge_and_index.py --reset  # Quick re-index from existing data
+./run.sh --entry=fun_ta.ema                 # Scrape + index a single entry
 ```
 
 ## Troubleshooting
 
-1. **"ChromaDB has failed too many times"** — Run `./run.sh` to rebuild the database.
-2. **"No module named 'chromadb'"** — Activate the venv: `source .venv/bin/activate`.
-3. **"Playwright install failed"** — Run: `python -m playwright install chromium`.
-4. **Low entry count (< 850)** — TradingView may have changed page structure. Use `--headful --debug`.
-5. **Scrape timeout** — Increase `SCRAPE_DELAY_MS` to 3000.
-6. **Server won't start** — Verify `pinescript_db/` exists. Run `python pipeline/merge_and_index.py`.
-7. **"Entry not found"** — Use `search_docs()` for fuzzy matching.
-8. **Pine-facade unavailable** — Circuit breaker activates after 5 failures. Waits 2 min before retrying.
+| Problem | Solution |
+|---------|----------|
+| "ChromaDB has failed too many times" | Run `./run.sh` to rebuild the database |
+| "No module named 'chromadb'" | `source .venv/bin/activate` then retry |
+| "Playwright install failed" | `python -m playwright install chromium` |
+| Low entry count (< 850) | TradingView may have changed page structure. Use `--headful --debug` |
+| Scrape timeout | Increase `SCRAPE_DELAY_MS` to 3000 |
+| Server won't start | Verify `pinescript_db/` exists. Run `python pipeline/merge_and_index.py` |
+| "Entry not found" | Use `search_docs()` for fuzzy matching |
+| Pine-facade unavailable | Circuit breaker activates after 5 failures, auto-retries after 2 min |
 
-## IDE Configuration
+## Dependencies
 
-See `config.json` for complete configurations. Replace `/ABSOLUTE/PATH/` with the actual path.
+```
+fastmcp>=3.0.0
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+playwright>=1.40.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+httpx>=0.27.0
+tenacity>=8.2.0
+fake-useragent>=1.5.0
+aiofiles>=23.2.0
+tqdm>=4.66.0
+rapidfuzz>=3.0.0
+xxhash>=3.0.0
+```
 
-### Claude Desktop
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`.
+## Disk Usage
 
-### Claude Code
-Add `.mcp.json` to your project root.
+| What | Size | In Git? |
+|------|------|---------|
+| Source code (183 files) | ~13 MB | Yes |
+| `data/` (source JSON for indexing) | ~12 MB | Partially |
+| `pinescript_db/` (ChromaDB index) | ~1.5 GB | No (gitignored, rebuilt by `make index`) |
+| `.git/` | ~422 MB | N/A |
+| `.venv/` | ~2 GB | No (gitignored) |
 
-### Cursor / Windsurf / OpenCode
-Add the respective config files — see `config.json` for exact paths.
+**Total clone from GitHub: ~13 MB. Local after setup: ~2 GB.**
+
+## License
+
+MIT
