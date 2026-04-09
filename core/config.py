@@ -18,7 +18,7 @@ DB_PATH = os.getenv(
 )
 COLLECTION = os.getenv("PINESCRIPT_COLLECTION", "pinescript_v6")
 EMBED_MODEL = os.getenv("PINESCRIPT_EMBED_MODEL", "all-MiniLM-L6-v2")
-MAX_RESULTS = int(os.getenv("PINESCRIPT_MAX_RESULTS", "30"))
+MAX_RESULTS = int(os.getenv("PINESCRIPT_MAX_RESULTS", "100"))
 PINE_FACADE_URL = os.getenv(
     "PINE_FACADE_URL",
     "https://pine-facade.tradingview.com/pine-facade/translate_light?user_name=admin&v=3",
@@ -26,7 +26,7 @@ PINE_FACADE_URL = os.getenv(
 PINE_FACADE_TIMEOUT = int(os.getenv("PINE_FACADE_TIMEOUT", "20"))
 VALIDATION_CACHE_TTL = int(os.getenv("VALIDATION_CACHE_TTL", "300"))
 VALIDATION_CACHE_MAX_SIZE = int(os.getenv("VALIDATION_CACHE_SIZE", "500"))
-MAX_TOOL_RESPONSE_CHARS = 8000
+MAX_TOOL_RESPONSE_CHARS = 80000
 MAX_FUZZY_SCAN_ENTRIES = 5000
 
 # Pre-computed at import time (not inside per-call hot path)
@@ -56,6 +56,27 @@ This server provides complete local PineScript v6 reference documentation
 via a ChromaDB vector store with 3,400+ entries covering all functions,
 variables, types, constants, keywords, operators, and user guides.
 
+MANDATORY USAGE PATTERN (NON-NEGOTIABLE)
+─────────────────────────────────────────
+When working on ANY PineScript file (.ps, .pine), you MUST consult this
+server before writing code. Do NOT rely on training data or assumptions.
+
+BEFORE writing a function call or using a built-in:
+  1. get_function(name) — get exact parameter types, order, return type, and examples
+  2. If unsure of the name: suggest_functions(description) or search_docs(query)
+
+BEFORE using a variable, constant, or type:
+  1. get_variable(name) or get_constant(name) — verify it exists and check behavior
+  2. get_type(name) — for UDTs, arrays, matrices, maps — get all fields/methods
+
+BEFORE using a namespace you haven't memorized:
+  1. get_namespace_cheatsheet(namespace) — quick scan of all members
+  2. list_namespace(namespace) — full list with descriptions
+
+AFTER every edit to a .ps/.pine file:
+  1. validate_syntax(code) or validate_file(file_path) — confirm it compiles
+  2. If errors: validate_and_explain(code) — get diagnostics + doc-referenced fixes
+
 WHEN TO USE EACH TOOL
 ──────────────────────
 LOOKUP TOOLS (use for specific names you know):
@@ -71,6 +92,20 @@ SEARCH TOOLS (use when you don't know exact name):
   get_examples(concept)            Find real working code by concept
   search_by_return_type(type)      Find functions returning a type
   list_namespace(namespace)        All members of a namespace
+  suggest_functions(context)       Find the right function for a task
+  get_namespace_cheatsheet(ns)     Compact reference for a namespace
+
+VALIDATION TOOLS (use after every edit):
+  validate_syntax(code)            Compile check via TradingView's pine-facade
+  validate_and_explain(code)       Compile + cross-reference errors against docs
+  validate_file(file_path)         Validate by file path (for large files)
+  fix_and_validate(code, error)    Auto-fix known issues and validate
+  debug_pine_facade(code)          Raw compiler response for debugging
+
+CODEGEN TOOLS (use for scaffolding):
+  generate_indicator(name, ...)    Scaffold a validated indicator
+  generate_strategy(name, ...)     Scaffold a validated strategy
+  lookup_and_correct(code, desc)   Validate + correct code with doc lookup
 
 IMPORTANT NOTES
 ───────────────
@@ -81,4 +116,7 @@ IMPORTANT NOTES
 - Use the `var` keyword for variables that should preserve state across bars.
 - Strategy scripts require //@version=6 and strategy() declaration.
 - Indicator scripts require //@version=6 and indicator() declaration.
+- NEVER guess parameter types or function signatures — always verify with get_function().
+- TradingView ships 60+ ta.* functions, 40+ math.* functions, and extensive
+  request.*/str.*/array.*/matrix.*/map.* utilities. Check before writing custom logic.
 """

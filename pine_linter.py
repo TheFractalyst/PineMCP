@@ -76,7 +76,7 @@ _TA_FUNCTIONS = frozenset({
     "dev", "percentrank", "percentile_nearest_rank",
     "percentile_linear_interpolation",
     "linreg", "median", "mode", "cum", "tr",
-    "change", "mom", "highest", "lowest", "highestbars",
+    "change", "highest", "lowest", "highestbars",
     "lowestbars", "cross", "crossover", "crossunder",
     "valuewhen", "barssince", "rising", "falling",
     "pivotshigh", "pivotslow", "iff",

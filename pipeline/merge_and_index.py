@@ -111,6 +111,14 @@ def merge_entries(
             merged_entry.update(local_entry)
             merged_entry.update(live_entry)
 
+            # Preserve richer documentation: if local had more content, keep it
+            local_doc = (local_entry.get("description") or "") + (local_entry.get("syntax") or "")
+            live_doc = (live_entry.get("description") or "") + (live_entry.get("syntax") or "")
+            if len(local_doc) > len(live_doc):
+                for field in ("description", "syntax", "remarks", "returns"):
+                    if local_entry.get(field) and (not live_entry.get(field) or len(local_entry[field]) > len(live_entry.get(field, ""))):
+                        merged_entry[field] = local_entry[field]
+
             # Examples: concatenate and deduplicate
             local_examples = local_entry.get("examples", [])
             live_examples = live_entry.get("examples", [])
@@ -262,7 +270,7 @@ def build_document_text(entry: dict[str, Any]) -> str:
     examples = entry.get("examples") or []
     if examples:
         parts.append("EXAMPLES:")
-        for ex in examples[:3]:  # Embed up to 3 examples for search
+        for ex in examples:  # Embed all examples for search
             parts.append(ex)
 
     see_also = entry.get("see_also") or []

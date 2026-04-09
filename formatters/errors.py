@@ -145,6 +145,10 @@ def cap_response(text: str, limit: int = MAX_TOOL_RESPONSE_CHARS) -> str:
     last_fence = truncated.rfind("```")
     if last_fence > limit * 0.8:
         truncated = truncated[:last_fence]
+    # Close any unclosed markdown code fences
+    fence_count = truncated.count("```")
+    if fence_count % 2 != 0:
+        truncated += "\n```"
     omitted = len(text) - len(truncated)
     return truncated + f"\n\n[...truncated — {omitted:,} chars omitted]"
 

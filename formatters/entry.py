@@ -172,7 +172,7 @@ def format_entry_detail(
     """Format a complete detailed entry for get_* tools."""
 
     # Check for hollow results
-    if not doc or len(doc) < 50:
+    if not doc or len(doc) < 10:
         return (
             f"'{name}' was found but has no local documentation.\n"
             f"This is likely a newer v6 feature not yet indexed."

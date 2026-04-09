@@ -42,9 +42,9 @@ from templates.v5_migration import V5_TO_V6
 @tool(
     annotations=ToolAnnotations(
         title="Generate Indicator Template",
-        readOnlyHint=False,
-        openWorldHint=True,
-        destructiveHint=True,
+        readOnlyHint=True,
+        openWorldHint=False,
+        destructiveHint=False,
         idempotentHint=False,
     )
 )
@@ -393,7 +393,9 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
         lines = []
         lines.append("GENERATED INDICATOR TEMPLATE:")
         lines.append("=" * 50)
+        lines.append("```pine")
         lines.append(code)
+        lines.append("```")
         lines.append("")
 
         if errors:
@@ -434,9 +436,9 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 @tool(
     annotations=ToolAnnotations(
         title="Generate Strategy Template",
-        readOnlyHint=False,
-        openWorldHint=True,
-        destructiveHint=True,
+        readOnlyHint=True,
+        openWorldHint=False,
+        destructiveHint=False,
         idempotentHint=False,
     )
 )
@@ -618,8 +620,8 @@ if barstate.islast
     annotations=ToolAnnotations(
         title="Lookup and Correct Code",
         readOnlyHint=True,
-        openWorldHint=True,
-        destructiveHint=True,
+        openWorldHint=False,
+        destructiveHint=False,
         idempotentHint=False,
     )
 )
@@ -627,6 +629,7 @@ async def lookup_and_correct(
     code: Annotated[
         str,
         Field(
+            min_length=1,
             max_length=50000,
             description="The PineScript code (can be partial or full script)",
         ),
@@ -634,6 +637,7 @@ async def lookup_and_correct(
     error_description: Annotated[
         str,
         Field(
+            min_length=1,
             max_length=500,
             description="What the code is supposed to do",
         ),
