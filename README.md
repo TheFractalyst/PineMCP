@@ -1,6 +1,6 @@
 # PineScript v6 Complete Reference — MCP Server
 
-Production MCP server providing the complete PineScript v6 reference via **20 tools** backed by a local ChromaDB vector store, TradingView's official `pine-facade` compiler, and a memory-first hot cache.
+Production MCP server providing the complete PineScript v6 reference via **20 tools + 1 resource** backed by a local ChromaDB vector store, TradingView's official `pine-facade` compiler, and a memory-first hot cache.
 
 ## What It Does
 
@@ -11,34 +11,41 @@ An AI coding assistant (Claude, Cursor, Windsurf, etc.) calls these tools to:
 - Generate scaffolded indicators/strategies that compile
 - Get namespace cheatsheets and function suggestions
 
-**Two data sources merged into one index:**
-1. Local parsed documentation (PDF/Markdown) — ~1,242 entries
-2. Live TradingView reference (scraped) — ~1,360 entries
-3. Merged unique entries — ~1,400–1,600
+**Data sources merged into one ChromaDB index:**
+- Local parsed documentation (PDF/Markdown) — ~1,242 entries
+- Live TradingView reference (scraped) — ~1,360 entries
+- Merged unique entries — ~3,686 total (per pinescript://stats resource)
 
 ## Architecture
 
 ```
-server.py              ← FastMCP 3.0 entry point (stdio transport)
-core/
-  db.py                ← ChromaDB client, name index
-  embeddings.py        ← SentenceTransformer (all-MiniLM-L6-v2)
-  hot_cache.py         ← Pre-loaded namespace cache for instant lookups
-  pine_facade.py       ← TradingView compiler client (validation tools)
-  caches.py            ← LRU caches (validation, search)
-  config.py            ← Server instructions, constants
-formatters/            ← Pure functions: entry formatting, error display
-templates/             ← Indicator templates, v5→v6 migration map
-tools/                 ← 20 @tool + 1 @resource (auto-discovered via FileSystemProvider)
-  lookup.py            ← 6 tools: get_function/variable/type/constant/keyword/operator
-  search.py            ← 4 tools: search_docs, get_examples, search_by_return_type, list_namespace
-  validation.py        ← 5 tools: validate_syntax, validate_and_explain, fix_and_validate, debug_pine_facade, validate_file
-  codegen.py           ← 3 tools: generate_indicator, generate_strategy, lookup_and_correct
-  context.py           ← 2 tools: suggest_functions, get_namespace_cheatsheet
-  resources/stats.py   ← 1 resource: pinescript://stats
+server.py              ← SINGLE entry point (FastMCP 3.0 + FileSystemProvider)
+pine_linter.py         ← Standalone linter (imported by core/pine_facade.py)
+Makefile               ← make test/serve/index/lint/bench/check
+CLAUDE.md              ← Agent rules + architecture map
+README.md              ← 20 tools + 1 resource, server.py entry point
+requirements.txt
+run.sh                 ← Pipeline orchestrator
+config.json            ← IDE registration configs (all point to server.py)
+core/                  ← Infrastructure
+  config.py, caches.py, embeddings.py, db.py, pine_facade.py, hot_cache.py
+formatters/            ← Pure functions
+  entry.py, errors.py
+templates/             ← PineScript templates + v5→v6 migration
+  indicators.py, v5_migration.py
+tools/                 ← 20 @tool + 1 resource (FileSystemProvider auto-discovers)
+  lookup.py          ← 6 lookup tools
+  search.py          ← 4 search tools
+  validation.py      ← 5 validation tools
+  codegen.py         ← 3 codegen tools
+  context.py         ← 2 context tools
+  resources/stats.py # pinescript://stats resource
+tests/                 ← 134 pytest tests (import directly from modules)
 pipeline/              ← Data pipeline: discover → scrape → merge+index
-tests/                 ← 134 pytest tests
-data/                  ← Source data for ChromaDB indexing (tracked in git)
+data/                  ← Large data files + pinescriptv6/ source docs
+bench/                 ← Benchmarks
+docs/                  ← Historical/operational docs
+scripts/               ← 31+ maintenance/utility scripts
 ```
 
 **Data flow:**
@@ -50,15 +57,30 @@ TradingView ──→ pipeline/discover_entries.py ──→ pipeline/scrape_ent
 pine-facade.tradingview.com ──→ compile endpoint ──→ validation tools ──→ AI
 ```
 
-**Startup sequence** (composable lifespans):
+**Startup sequence** (composable lifespans from server.py):
 1. `db_lifespan` — Open ChromaDB collection + build name index
 2. `model_lifespan` — Load SentenceTransformer model (thread pool) + warmup inference
 3. `cache_lifespan` — Build hot cache for popular namespaces (ta, math, str, etc.)
 
-**Two-tier caching:**
-- MCP-level: `ResponseCachingMiddleware` (1h for lookups, 5m for search)
-- Internal: LRU caches in `core/caches.py` (validation results, search results)
+**Three-tier caching:**
+- MCP-level middleware: `ResponseCachingMiddleware` (1h TTL for lookups, 5m TTL for search)
+- Internal LRU caches: `core/caches.py` (validation results, search results)
 - Hot cache: Pre-loaded namespace entries for instant `get_function("ta.ema")` etc.
+
+**Middleware stack:**
+- ResponseCachingMiddleware (lookup 1h, search 5m)
+- ResponseLimitingMiddleware (max response size)
+- DetailedTimingMiddleware (DEBUG mode only)
+
+## Standalone Linter
+
+`pine_linter.py` is a standalone PineScript syntax checker that can be used independently of the MCP server:
+
+```bash
+python pine_linter.py /path/to/script.ps
+```
+
+It provides fast local validation with basic error detection and is imported by `core/pine_facade.py` as a fallback when the remote TradingView compiler is unavailable or for large files.
 
 ## Quick Start
 
@@ -82,7 +104,7 @@ make lint             # ruff lint
 make bench            # benchmark suite
 ```
 
-**After setup, the `pinescript_db/` directory (~1.5 GB) is generated locally.** It is gitignored and not in the repo. It gets rebuilt by `make index` from the tracked data files in `data/`.
+**After setup, the `pinescript_db/` directory (~82MB) is generated locally.** It can be rebuilt by `make index` from the tracked data files in `data/`. For backup, the database can be committed to git (note: large file warning on GitHub).
 
 ## IDE Configuration
 
@@ -232,11 +254,11 @@ xxhash>=3.0.0
 |------|------|---------|
 | Source code (183 files) | ~13 MB | Yes |
 | `data/` (source JSON for indexing) | ~12 MB | Partially |
-| `pinescript_db/` (ChromaDB index) | ~1.5 GB | No (gitignored, rebuilt by `make index`) |
+| `pinescript_db/` (ChromaDB index) | ~82 MB | Yes (committed for backup) |
 | `.git/` | ~422 MB | N/A |
 | `.venv/` | ~2 GB | No (gitignored) |
 
-**Total clone from GitHub: ~13 MB. Local after setup: ~2 GB.**
+**Total clone from GitHub: ~95 MB (includes database). Local after setup: ~2 GB.**
 
 ## License
 
