@@ -27,7 +27,7 @@ import os
 if not os.path.exists(file_path):
     # Try to find it
     results = find_by_name(
-        SearchDirectory="/Users/fractalyst/Documents",
+        SearchDirectory="~/Documents",
         Pattern=os.path.basename(file_path)
     )
     if results:
@@ -97,7 +97,7 @@ def robust_validation(file_path: str) -> str:
 
 def fallback_standalone_script(file_path: str) -> str:
     """Use standalone validation script."""
-    cmd = f'cd /Users/fractalyst/pinescript_mcp && .venv/bin/python validate_file.py "{file_path}"'
+    cmd = f'cd ~/pinescript_mcp && .venv/bin/python validate_file.py "{file_path}"'
     result = run_command(cmd, Blocking=True)
     return result.output
 ```
@@ -118,7 +118,7 @@ print(f"File exists: {os.path.exists(file_path)}")
 
 # 2. Use standalone script instead
 result = run_command(
-    f'cd /Users/fractalyst/pinescript_mcp && .venv/bin/python validate_file.py "{file_path}"',
+    f'cd ~/pinescript_mcp && .venv/bin/python validate_file.py "{file_path}"',
     Blocking=True
 )
 
@@ -136,9 +136,9 @@ def find_or_ask(file_name: str) -> str:
     
     # Search common locations
     search_dirs = [
-        "/Users/fractalyst/Documents/Quantify - Deeptest/Strategies",
-        "/Users/fractalyst/Documents",
-        "/Users/fractalyst/pinescript_mcp"
+        "~/Documents/Quantify - Deeptest/Strategies",
+        "~/Documents",
+        "~/pinescript_mcp"
     ]
     
     for dir in search_dirs:
@@ -155,7 +155,7 @@ def find_or_ask(file_name: str) -> str:
     
     # List available .ps files
     all_ps = find_by_name(
-        SearchDirectory="/Users/fractalyst/Documents",
+        SearchDirectory="~/Documents",
         Pattern="*.ps"
     )
     for i, file in enumerate(all_ps[:10]):  # Show first 10
@@ -276,7 +276,7 @@ mcp5_validate_file(file_path="relative/path.ps")
 # Recovery: Convert to absolute path
 
 # Test 3: Large file
-mcp5_validate_file(file_path="/Users/fractalyst/Documents/Quantify - Deeptest/Strategies/VIX.ps")
+mcp5_validate_file(file_path="~/Documents/Quantify - Deeptest/Strategies/VIX.ps")
 # Expected: Local Linter fallback (normal)
 # Recovery: None needed, display results
 
@@ -309,7 +309,7 @@ pkill -f "pinescript_mcp.py"
 # Wait 2 seconds for auto-restart
 
 # 4. Test standalone script
-cd /Users/fractalyst/pinescript_mcp
+cd ~/pinescript_mcp
 .venv/bin/python validate_file.py "/path/to/file.ps"
 
 # 5. Check file permissions
@@ -344,7 +344,7 @@ Validation has failed ONLY when:
 
 2. **Use standalone script:**
    ```bash
-   cd /Users/fractalyst/pinescript_mcp
+   cd ~/pinescript_mcp
    .venv/bin/python validate_file.py "/path/to/file.ps"
    ```
 

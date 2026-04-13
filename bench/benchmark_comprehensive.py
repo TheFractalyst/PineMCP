@@ -11,7 +11,7 @@ Scores each tool on 4 dimensions (0-10 each):
 Total: 40 per tool, Overall: 800 max
 
 Usage:
-  /Users/fractalyst/pinescript_mcp/.venv/bin/python benchmark_comprehensive.py
+  .venv/bin/python benchmark_comprehensive.py
 """
 
 import asyncio

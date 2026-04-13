@@ -18,18 +18,18 @@ A standalone validation script bypasses Claude Code's parameter limitations by d
 
 ```bash
 # Navigate to MCP directory
-cd /Users/fractalyst/pinescript_mcp
+cd ~/pinescript_mcp
 
 # Validate any file
 .venv/bin/python validate_file.py "/path/to/your/file.ps"
 
 # Example: Validate VIX.ps
-.venv/bin/python validate_file.py "/Users/fractalyst/Documents/Quantify - Deeptest/Strategies/VIX.ps"
+.venv/bin/python validate_file.py "~/Documents/Strategies/VIX.ps"
 ```
 
 ### 2. Create Workflow Command
 
-Create `@/Users/fractalyst/.windsurf/workflows/pine-validate.md`:
+Create `@~/.windsurf/workflows/pine-validate.md`:
 
 ```markdown
 ---
@@ -41,7 +41,7 @@ description: Validate PineScript file using direct MCP call
 // turbo
 1. Run validation script:
    ```bash
-   cd /Users/fractalyst/pinescript_mcp && .venv/bin/python validate_file.py "$FILE_PATH"
+   cd ~/pinescript_mcp && .venv/bin/python validate_file.py "$FILE_PATH"
    ```
 
 2. Review validation results and fix any errors reported.
@@ -128,7 +128,7 @@ plot(close)' > /tmp/small.ps
 ### Test 2: Large File (Use Script)
 ```bash
 # Test VIX.ps (781 lines, 34KB)
-.venv/bin/python validate_file.py "/Users/fractalyst/Documents/Quantify - Deeptest/Strategies/VIX.ps"
+.venv/bin/python validate_file.py "~/Documents/Strategies/VIX.ps"
 ```
 
 ### Test 3: Verify MCP Tool Still Works

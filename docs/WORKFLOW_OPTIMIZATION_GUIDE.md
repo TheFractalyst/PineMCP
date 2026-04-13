@@ -227,10 +227,10 @@ python3 /tmp/test_timeout_fix.py
 {
   "mcpServers": {
     "pinescript-v6": {
-      "command": "/Users/fractalyst/pinescript_mcp/.venv/bin/python",
-      "args": ["/Users/fractalyst/pinescript_mcp/pinescript_mcp.py"],
+      "command": "~/pinescript_mcp/.venv/bin/python",
+      "args": ["~/pinescript_mcp/server.py"],
       "env": {
-        "PINESCRIPT_DB_PATH": "/Users/fractalyst/pinescript_mcp/pinescript_db",
+        "PINESCRIPT_DB_PATH": "~/pinescript_mcp/pinescript_db",
         "PINESCRIPT_COLLECTION": "pinescript_v6",
         "PINESCRIPT_EMBED_MODEL": "all-MiniLM-L6-v2",
         "PINESCRIPT_MAX_RESULTS": "20",

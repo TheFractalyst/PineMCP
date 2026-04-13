@@ -339,7 +339,7 @@ TOOL_TESTS = [
     {
         "name": "validate_file",
         "fn": validate_file,
-        "args": {"file_path": "/Users/fractalyst/Documents/Quantify - Deeptest/Strategies/DCA.ps"},
+        "args": {"file_path": "~/Documents/Strategies/DCA.ps"},
         "expected_keywords": ["file", "compiler", "errors"],
         "expected_sections": ["compiler", "errors", "lines"],
         "bad_args": [
