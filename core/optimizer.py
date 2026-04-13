@@ -5,7 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-52 detection rules (OPT-001 through OPT-056; OPT-019/024/025 are runtime-only).
+55 detection rules (OPT-001 through OPT-059; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -53,11 +53,28 @@ def _find_lines(lines: list[str], pattern: re.Pattern[str]) -> list[int]:
 
 
 def _strip_comments(line: str) -> str:
-    """Remove // comments from a line (naive — doesn't handle strings)."""
-    idx = line.find("//")
-    if idx >= 0:
-        return line[:idx]
+    """Remove // comments from a line, preserving // inside double-quoted strings."""
+    in_string = False
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch == '\\' and in_string and i + 1 < len(line):
+            i += 2  # skip escaped char inside string
+            continue
+        if ch == '"':
+            in_string = not in_string
+        elif ch == '/' and not in_string and i + 1 < len(line) and line[i + 1] == '/':
+            return line[:i]
+        i += 1
     return line
+
+
+def _code_has_keyword(code: str, keyword: str) -> bool:
+    """Check if keyword appears in code, ignoring comments."""
+    for line in code.splitlines():
+        if keyword in _strip_comments(line):
+            return True
+    return False
 
 
 def _count_in_scope(code: str, pattern: re.Pattern[str]) -> int:
@@ -189,7 +206,7 @@ def _detect_unprotected_drawings(code: str, lines: list[str]) -> list[Optimizati
     """OPT-005: Updating drawings on every historical bar when only last bar matters."""
     results: list[OptimizationResult] = []
     setter_pattern = re.compile(r"(table|box|line|label)\.(cell_set_|set_|cell_set_bgcolor)")
-    has_islast_guard = "barstate.islast" in code
+    has_islast_guard = _code_has_keyword(code, "barstate.islast")
 
     # Check for var-declared table/box/line/label with setters outside islast guard
     var_draw_pattern = re.compile(r"var\s+(table|box|line|label)\s+\w+")
@@ -312,18 +329,19 @@ def _detect_loop_invariant_motion(code: str, lines: list[str]) -> list[Optimizat
 def _detect_missing_max_bars_back(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-010: Late history reference without max_bars_back."""
     results: list[OptimizationResult] = []
-    has_max_bars_back = "max_bars_back(" in code
-    has_islast = "barstate.islast" in code
+    has_max_bars_back = _code_has_keyword(code, "max_bars_back(")
+    has_islast = _code_has_keyword(code, "barstate.islast")
 
     if has_islast and not has_max_bars_back:
         # Look for history references inside islast blocks
         for i, line in enumerate(lines):
             stripped = _strip_comments(line).strip()
-            if re.search(r"\w+\[\d+\]", stripped) and re.search(r"\[4\d{2,}\]", stripped):
+            m_offset = re.search(r"\[(\d{3,})\]", stripped)
+            if m_offset and int(m_offset.group(1)) >= 400:
                 results.append(_result(
                     _RULES_BY_ID["OPT-010"], i + 1,
                     stripped[:100],
-                    "Add `max_bars_back(varName, N)` before the history reference to avoid "
+                    f"Add `max_bars_back(varName, {m_offset.group(1)})` before the history reference to avoid "
                     "runtime re-execution across the entire dataset."
                 ))
                 break
@@ -350,7 +368,7 @@ def _detect_missing_calc_bars_count(code: str, lines: list[str]) -> list[Optimiz
     """OPT-012: Missing calc_bars_count for last-bar-only logic."""
     results: list[OptimizationResult] = []
     has_islast_heavy = code.count("barstate.islast") >= 1
-    has_calc_bars_count = "calc_bars_count" in code
+    has_calc_bars_count = _code_has_keyword(code, "calc_bars_count")
 
     if has_islast_heavy and not has_calc_bars_count:
         # Only suggest if there's drawing-heavy islast logic
@@ -367,7 +385,7 @@ def _detect_missing_calc_bars_count(code: str, lines: list[str]) -> list[Optimiz
 def _detect_na_drawing_coords(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-013: Drawing objects with na coordinates (wastes drawing slots)."""
     results: list[OptimizationResult] = []
-    na_coord_pattern = re.compile(r"(label|box|line)\.new\s*\(.*\?.*:.*\bna\b")
+    na_coord_pattern = re.compile(r"(label|box|line)\.new\s*\(.*\?.*:.*(?<![a-zA-Z])na(?![a-zA-Z])")
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
         if na_coord_pattern.search(stripped):
@@ -383,8 +401,8 @@ def _detect_na_drawing_coords(code: str, lines: list[str]) -> list[OptimizationR
 def _detect_plot_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-014: Exceeding 64 plot counts."""
     results: list[OptimizationResult] = []
-    plot_funcs = re.findall(r"\b(plot|plotarrow|plotbar|plotcandle|plotchar|plotshape|bgcolor|barcolor)\s*\(", code)
-    count = len(plot_funcs)
+    plot_pattern = re.compile(r"\b(plot|plotarrow|plotbar|plotcandle|plotchar|plotshape|bgcolor|barcolor)\s*\(")
+    count = _count_in_scope(code, plot_pattern)
     if count > 48:
         results.append(_result(
             _RULES_BY_ID["OPT-014"], 0,
@@ -398,13 +416,18 @@ def _detect_plot_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
 def _detect_request_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-015: Exceeding 40 unique request.*() calls."""
     results: list[OptimizationResult] = []
-    req_calls = re.findall(r"request\.\w+\s*\(", code)
-    unique_calls = set(req_calls)
-    if len(req_calls) > 35:
+    req_pattern = re.compile(r"request\.\w+\s*\(")
+    req_count = _count_in_scope(code, req_pattern)
+    # Track unique calls by full call context (function name + first args)
+    unique_calls: set[str] = set()
+    for ln in code.splitlines():
+        clean = _strip_comments(ln)
+        unique_calls.update(req_pattern.findall(clean))
+    if len(unique_calls) > 35:
         results.append(_result(
             _RULES_BY_ID["OPT-015"], 0,
-            f"Found {len(req_calls)} request.*() calls ({len(unique_calls)} unique)",
-            f"Approaching the 40 unique request.*() call limit ({len(req_calls)} total, "
+            f"Found {req_count} request.*() calls ({len(unique_calls)} unique)",
+            f"Approaching the 40 unique request.*() call limit ({req_count} total, "
             f"{len(unique_calls)} unique). Consolidate using tuple requests or reduce calls."
         ))
     return results
@@ -909,7 +932,7 @@ def _detect_table_creation_every_bar(code: str, lines: list[str]) -> list[Optimi
     """OPT-038: Table creation every bar without barstate.isfirst guard."""
     results: list[OptimizationResult] = []
     has_table_new = bool(re.search(r"table\.new\s*\(", code))
-    has_isfirst = "barstate.isfirst" in code
+    has_isfirst = _code_has_keyword(code, "barstate.isfirst")
     if has_table_new and not has_isfirst:
         for i, line in enumerate(lines):
             stripped = _strip_comments(line).strip()
@@ -930,7 +953,7 @@ def _detect_request_missing_calc_bars(code: str, lines: list[str]) -> list[Optim
     """OPT-041: request.*() calls missing calc_bars_count optimization."""
     results: list[OptimizationResult] = []
     req_pattern = re.compile(r"request\.(security|security_lower_tf|seed)\s*\(")
-    has_calc_bars = "calc_bars_count" in code
+    has_calc_bars = _code_has_keyword(code, "calc_bars_count")
     req_count = sum(1 for line in lines if req_pattern.search(_strip_comments(line)))
     if req_count >= 5 and not has_calc_bars:
         for i, line in enumerate(lines):
@@ -1039,7 +1062,7 @@ def _detect_unused_imports(code: str, lines: list[str]) -> list[OptimizationResu
 def _detect_calc_on_every_tick(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-046: calc_on_every_tick=true causes execution on every realtime tick."""
     results: list[OptimizationResult] = []
-    if re.search(r"calc_on_every_tick\s*=\s*true", code):
+    if any(re.search(r"calc_on_every_tick\s*=\s*true", _strip_comments(ln)) for ln in lines):
         results.append(_result(
             _RULES_BY_ID["OPT-046"], 0, "calc_on_every_tick = true",
             "calc_on_every_tick=true causes the strategy to execute on every realtime tick. "
@@ -1154,7 +1177,7 @@ def _detect_missing_isconfirmed(code: str, lines: list[str]) -> list[Optimizatio
     """OPT-052: Signal-producing logic without barstate.isconfirmed guard."""
     results: list[OptimizationResult] = []
     has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
-    has_isconfirmed = "barstate.isconfirmed" in code
+    has_isconfirmed = _code_has_keyword(code, "barstate.isconfirmed")
 
     if not has_strategy or has_isconfirmed:
         return results
@@ -1216,7 +1239,10 @@ def _detect_drawing_display_limit(code: str, lines: list[str]) -> list[Optimizat
     """OPT-055: Many drawings without max_*_count parameter."""
     results: list[OptimizationResult] = []
     drawing_count = _count_in_scope(code, re.compile(r"\b(line|box|label)\.new\s*\("))
-    has_max_count = bool(re.search(r"max_(lines|boxes|labels)_count\s*=", code))
+    has_max_count = any(
+        re.search(r"max_(lines|boxes|labels)_count\s*=", _strip_comments(ln))
+        for ln in lines
+    )
     if drawing_count > 50 and not has_max_count:
         results.append(_result(
             _RULES_BY_ID["OPT-055"], 0,
@@ -1252,6 +1278,69 @@ def _detect_map_size_limit(code: str, lines: list[str]) -> list[OptimizationResu
             "Populating a map inside a loop risks exceeding this limit. Use array.size() "
             "checks or pre-allocate with map.new() if possible."
         ))
+    return results
+
+
+def _detect_request_in_loop_variable(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-057: request.*() inside loop with variable arguments (request count explosion)."""
+    results: list[OptimizationResult] = []
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        # Match for loop headers
+        loop_match = re.search(r"\bfor\s+(\w+)\s+in\s+(\w+)", stripped)
+        if not loop_match:
+            loop_match = re.search(r"\bfor\s+(\w+)\s*=\s*\d+\s+to\s+", stripped)
+        if not loop_match:
+            continue
+        loop_var = loop_match.group(1) if loop_match else ""
+        # Check loop body for request.*() calls that use the loop variable
+        for j in range(i + 1, min(i + 15, len(lines))):
+            body = _strip_comments(lines[j]).strip()
+            body_indent = len(lines[j]) - len(lines[j].lstrip())
+            if body_indent <= len(line) - len(line.lstrip()) and body and not body.startswith(("else", "//")):
+                break
+            if re.search(r"\brequest\.\w+\s*\(", body) and loop_var and loop_var in body:
+                results.append(_result(
+                    _RULES_BY_ID["OPT-057"], j + 1, body[:100],
+                    "request.*() called inside a loop with the loop variable as an argument. "
+                    "Each iteration may create a unique request counting toward the 40-call limit. "
+                    "Pre-compute the values outside the loop or use a different approach."
+                ))
+                break
+        if results:
+            break
+    return results
+
+
+def _detect_footprint_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-058: request.footprint() called more than once (limit is 1 per script)."""
+    results: list[OptimizationResult] = []
+    count = _count_in_scope(code, re.compile(r"\brequest\.footprint\s*\("))
+    if count > 1:
+        results.append(_result(
+            _RULES_BY_ID["OPT-058"], 0,
+            f"Found {count} request.footprint() calls",
+            f"PineScript limits scripts to a single request.footprint() call ({count} found). "
+            "Remove duplicate calls."
+        ))
+    return results
+
+
+def _detect_drawing_past_max_bars(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-059: Drawing x-coordinate references beyond 10,000 bars."""
+    results: list[OptimizationResult] = []
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        # Check bar_index - N (backward) or bar_index + N (forward) beyond 10,000
+        m = re.search(r"bar_index\s*-\s*(\d+)", stripped)
+        if m and int(m.group(1)) > 9000:
+            if re.search(r"(line|box|label)\.(new|set_)", stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-059"], i + 1, stripped[:100],
+                    f"Drawing x-coordinate references {m.group(1)} bars back, exceeding the "
+                    "10,000-bar limit for xloc.bar_index drawings. Reduce the offset."
+                ))
+                break
     return results
 
 
@@ -1420,6 +1509,15 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-056", "Map populated in loop (50K limit)", "medium", "Memory/buffer",
           _detect_map_size_limit, "PineScript map size limit 50000 key-value pairs"),
+
+    _Rule("OPT-057", "request.*() in loop with variable args", "critical", "Request/TA waste",
+          _detect_request_in_loop_variable, "PineScript request.security inside loop variable arguments count limit"),
+
+    _Rule("OPT-058", "request.footprint() called more than once (limit 1)", "critical", "Resource limits",
+          _detect_footprint_limit, "PineScript request.footprint limit 1 per script"),
+
+    _Rule("OPT-059", "Drawing x-coordinate >10,000 bars", "high", "Drawing waste",
+          _detect_drawing_past_max_bars, "PineScript drawing bar_index coordinate limit 10000"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
