@@ -1,0 +1,75 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database files (ChromaDB — rebuild with `make index`)
+pinescript_db/
+pinescript_v6/
+
+# Environment files
+.env
+.env.*
+.envrc
+
+# Release artifacts
+pinescript_db.tar.gz
+
+# Scraped data (may be at root or data/)
+tv_entry_index.json
+tv_scraped_entries.json
+scrape_report.json
+quick_audit_report.json
+duplication_report.json
+data/tv_entry_index.json
+data/tv_scraped_entries.json
+data/scrape_report.json
+
+# Tool caches
+.ruff_cache/
+.playwright-mcp/
+
+# Claude Code project config (user-specific)
+.claude/settings.json
+
+# Misc
+*.bin
+failed_entries.txt
+
+# Temporary files
+*.tmp
+*.temp
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml

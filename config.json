@@ -1,0 +1,121 @@
+{
+  "_readme": [
+    "PineScript v6 MCP Server — IDE Registration Config",
+    "",
+    "IMPORTANT: Replace /ABSOLUTE/PATH/TO with the actual absolute path to",
+    "the directory containing server.py on YOUR machine.",
+    "",
+    "Example: if you cloned to /home/user/projects/pinescript_mcp/",
+    "then replace /ABSOLUTE/PATH/TO/server.py",
+    "with      /home/user/projects/pinescript_mcp/server.py",
+    "",
+    "Each IDE reads its config from a different location — see sections below."
+  ],
+
+  "claude_desktop": {
+    "_location": "~/.config/claude/claude_desktop_config.json  (macOS: ~/Library/Application Support/Claude/claude_desktop_config.json)",
+    "_instructions": "Merge the 'mcpServers' key into your existing claude_desktop_config.json, or create the file if it does not exist.",
+    "mcpServers": {
+      "pinescript-v6": {
+        "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
+        "env": {
+          "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
+          "PINESCRIPT_COLLECTION": "pinescript_v6",
+          "PINESCRIPT_EMBED_MODEL":"all-MiniLM-L6-v2",
+          "PINESCRIPT_MAX_RESULTS":"20",
+          "SCRAPE_DELAY_MS":       "1500",
+          "SCRAPE_WORKERS":        "2",
+          "PINE_FACADE_TIMEOUT":   "20",
+          "VALIDATION_CACHE_TTL":  "300",
+          "HOT_CACHE_NAMESPACES":  "ta,strategy,math,array,str,matrix,map",
+          "LOG_LEVEL":             "INFO"
+        }
+      }
+    }
+  },
+
+  "claude_code": {
+    "_location": ".mcp.json  (place in your project root directory)",
+    "_instructions": "Create or merge this file as .mcp.json at the root of your project.",
+    "mcpServers": {
+      "pinescript-v6": {
+        "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
+        "env": {
+          "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
+          "PINESCRIPT_COLLECTION": "pinescript_v6",
+          "PINESCRIPT_EMBED_MODEL":"all-MiniLM-L6-v2",
+          "PINESCRIPT_MAX_RESULTS":"20",
+          "SCRAPE_DELAY_MS":       "1500",
+          "SCRAPE_WORKERS":        "2",
+          "PINE_FACADE_TIMEOUT":   "20",
+          "VALIDATION_CACHE_TTL":  "300",
+          "HOT_CACHE_NAMESPACES":  "ta,strategy,math,array,str,matrix,map"
+        }
+      }
+    }
+  },
+
+  "cursor": {
+    "_location": ".cursor/mcp.json  (place in your project root, or ~/.cursor/mcp.json for global)",
+    "_instructions": "Create this file at .cursor/mcp.json in your project root.",
+    "mcpServers": {
+      "pinescript-v6": {
+        "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
+        "env": {
+          "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
+          "PINESCRIPT_COLLECTION": "pinescript_v6",
+          "PINESCRIPT_EMBED_MODEL":"all-MiniLM-L6-v2",
+          "PINESCRIPT_MAX_RESULTS":"20",
+          "PINE_FACADE_TIMEOUT":   "20",
+          "VALIDATION_CACHE_TTL":  "300",
+          "HOT_CACHE_NAMESPACES":  "ta,strategy,math,array,str,matrix,map"
+        }
+      }
+    }
+  },
+
+  "windsurf": {
+    "_location": "~/.codeium/windsurf/mcp_config.json  (global) or .windsurf/mcp.json (project-level)",
+    "_instructions": "Create or merge into ~/.codeium/windsurf/mcp_config.json for global access.",
+    "mcpServers": {
+      "pinescript-v6": {
+        "command": "/ABSOLUTE/PATH/TO/.venv/bin/python",
+        "args": ["/ABSOLUTE/PATH/TO/server.py"],
+        "env": {
+          "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
+          "PINESCRIPT_COLLECTION": "pinescript_v6",
+          "PINESCRIPT_EMBED_MODEL":"all-MiniLM-L6-v2",
+          "PINESCRIPT_MAX_RESULTS":"20",
+          "PINE_FACADE_TIMEOUT":   "20",
+          "VALIDATION_CACHE_TTL":  "300",
+          "HOT_CACHE_NAMESPACES":  "ta,strategy,math,array,str,matrix,map"
+        }
+      }
+    }
+  },
+
+  "opencode": {
+    "_location": "~/.config/opencode/config.json  OR  .opencode.json in project root",
+    "_instructions": "Add the mcp entry to your opencode config under 'mcp.servers'.",
+    "mcp": {
+      "servers": {
+        "pinescript-v6": {
+          "type": "local",
+          "command": ["/ABSOLUTE/PATH/TO/.venv/bin/python", "/ABSOLUTE/PATH/TO/server.py"],
+          "env": {
+            "PINESCRIPT_DB_PATH":    "/ABSOLUTE/PATH/TO/pinescript_db",
+            "PINESCRIPT_COLLECTION": "pinescript_v6",
+            "PINESCRIPT_EMBED_MODEL":"all-MiniLM-L6-v2",
+            "PINESCRIPT_MAX_RESULTS":"20",
+            "PINE_FACADE_TIMEOUT":   "20",
+            "VALIDATION_CACHE_TTL":  "300",
+            "HOT_CACHE_NAMESPACES":  "ta,strategy,math,array,str,matrix,map"
+          }
+        }
+      }
+    }
+  }
+}
