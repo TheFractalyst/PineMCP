@@ -11,16 +11,19 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastmcp.tools import tool
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from core.optimizer import analyze_code, format_results
 
 
 @tool(
-    annotations={
-        "readOnlyHint": True,
-        "openWorldHint": False,
-    },
+    annotations=ToolAnnotations(
+        title="Optimize PineScript Code",
+        readOnlyHint=True,
+        openWorldHint=False,
+        idempotentHint=True,
+    ),
 )
 async def optimize_code(
     code: Annotated[str, Field(

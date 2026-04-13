@@ -343,7 +343,8 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
             # Try with type=function specifically
             try:
                 if where:
-                    typed_where = {"$and": [{"name": {"$in": name_variants}}, where]}
+                    existing_clauses = where.get("$and", [where]) if isinstance(where, dict) else [where]
+                    typed_where = {"$and": [{"name": {"$in": name_variants}}] + list(existing_clauses)}
                 else:
                     # Skip $and with single element — ChromaDB rejects it
                     # (already covered by the exact match above)
@@ -397,8 +398,11 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
             if where:
                 cat = where.get("category")
                 if cat:
+                    existing_clauses = where.get("$and", [where])
                     exact_where = {
-                        "$and": [{"name": {"$in": name_variants}}, {"category": cat}]
+                        "$and": [{"name": {"$in": name_variants}}, {"category": cat}] + [
+                            c for c in existing_clauses if "category" not in c
+                        ]
                     }
             exact = col.get(where=exact_where, include=["metadatas", "documents"])
             if exact["ids"]:
