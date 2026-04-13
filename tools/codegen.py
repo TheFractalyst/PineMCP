@@ -635,7 +635,7 @@ async def lookup_and_correct(
             max_length=50000,
             description="The PineScript code (can be partial or full script)",
         ),
-    ] = "",
+    ],
     error_description: Annotated[
         str,
         Field(
@@ -643,7 +643,7 @@ async def lookup_and_correct(
             max_length=500,
             description="What the code is supposed to do",
         ),
-    ] = "",
+    ],
 ) -> str:
     """
     Given a PineScript code snippet and what it's supposed to do,

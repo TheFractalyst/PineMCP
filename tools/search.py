@@ -224,6 +224,11 @@ async def search_docs(
                         results["distances"][0].append(dist)
                         existing_ids.add(rid)
 
+        # Cap total results to n_results after supplementary additions
+        if results["ids"] and results["ids"][0] and len(results["ids"][0]) > n_results:
+            for key in ("ids", "metadatas", "documents", "distances"):
+                results[key][0] = results[key][0][:n_results]
+
         db_err = check_query_error(results)
         if db_err:
             return db_err
