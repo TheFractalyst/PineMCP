@@ -1124,6 +1124,228 @@ class TestOPT048PolylineLimit:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# New rules (OPT-049 through OPT-056)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestOPT049LookaheadFutureLeak:
+    """OPT-049: lookahead_on without [1] offset causes future data leak."""
+
+    def test_detects_lookahead_without_offset(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float val = request.security(syminfo.tickerid, "1D", close, '
+            'lookahead = barmerge.lookahead_on)\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt049 = [r for r in results if r.rule_id == "OPT-049"]
+        assert len(opt049) >= 1
+
+    def test_no_false_positive_with_offset(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float val = request.security(syminfo.tickerid, "1D", close[1], '
+            'lookahead = barmerge.lookahead_on)\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt049 = [r for r in results if r.rule_id == "OPT-049"]
+        assert len(opt049) == 0
+
+    def test_no_false_positive_no_lookahead(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float val = request.security(syminfo.tickerid, "1D", close)\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt049 = [r for r in results if r.rule_id == "OPT-049"]
+        assert len(opt049) == 0
+
+
+class TestOPT050TimenowRepaint:
+    """OPT-050: timenow usage causes inconsistent historical/realtime behavior."""
+
+    def test_detects_timenow(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'if time > timenow - 86400000\n    plot(close)'
+        )
+        results = analyze_code(code)
+        opt050 = [r for r in results if r.rule_id == "OPT-050"]
+        assert len(opt050) >= 1
+
+    def test_no_false_positive_time(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'if time > timestamp(2024, 1, 1, 0, 0)\n    plot(close)'
+        )
+        results = analyze_code(code)
+        opt050 = [r for r in results if r.rule_id == "OPT-050"]
+        assert len(opt050) == 0
+
+
+class TestOPT051IsnewSignalRepaint:
+    """OPT-051: barstate.isnew for signal logic repaints."""
+
+    def test_detects_isnew_with_strategy_entry(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'if barstate.isnew\n    strategy.entry("Long", strategy.long)'
+        )
+        results = analyze_code(code)
+        opt051 = [r for r in results if r.rule_id == "OPT-051"]
+        assert len(opt051) >= 1
+
+    def test_no_false_positive_isnew_no_signal(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'if barstate.isnew\n    var count = 0'
+        )
+        results = analyze_code(code)
+        opt051 = [r for r in results if r.rule_id == "OPT-051"]
+        assert len(opt051) == 0
+
+
+class TestOPT052MissingIsconfirmed:
+    """OPT-052: Strategy signal without barstate.isconfirmed guard."""
+
+    def test_detects_unconfirmed_entry(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'strategy.entry("Long", strategy.long)'
+        )
+        results = analyze_code(code)
+        opt052 = [r for r in results if r.rule_id == "OPT-052"]
+        assert len(opt052) >= 1
+
+    def test_no_false_positive_with_isconfirmed(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'if barstate.isconfirmed\n    strategy.entry("Long", strategy.long)'
+        )
+        results = analyze_code(code)
+        opt052 = [r for r in results if r.rule_id == "OPT-052"]
+        assert len(opt052) == 0
+
+    def test_no_false_positive_indicator(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt052 = [r for r in results if r.rule_id == "OPT-052"]
+        assert len(opt052) == 0
+
+
+class TestOPT053NonStandardChartStrategy:
+    """OPT-053: Strategy on non-standard chart data."""
+
+    def test_detects_heikin_ashi_strategy(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'float ha = request.security(ticker.heikinashi(syminfo.tickerid), "1D", close)\n'
+            'plot(ha)'
+        )
+        results = analyze_code(code)
+        opt053 = [r for r in results if r.rule_id == "OPT-053"]
+        assert len(opt053) >= 1
+
+    def test_no_false_positive_standard_ticker(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'float val = request.security(syminfo.tickerid, "1D", close)\n'
+            'plot(val)'
+        )
+        results = analyze_code(code)
+        opt053 = [r for r in results if r.rule_id == "OPT-053"]
+        assert len(opt053) == 0
+
+    def test_no_false_positive_indicator_with_ha(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float ha = request.security(ticker.heikinashi(syminfo.tickerid), "1D", close)\n'
+            'plot(ha)'
+        )
+        results = analyze_code(code)
+        opt053 = [r for r in results if r.rule_id == "OPT-053"]
+        assert len(opt053) == 0
+
+
+class TestOPT054LowerTfRequest:
+    """OPT-054: request.security_lower_tf() repainting risk."""
+
+    def test_detects_lower_tf_request(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'arr = request.security_lower_tf(syminfo.tickerid, "5", close)\n'
+            'plot(array.size(arr))'
+        )
+        results = analyze_code(code)
+        opt054 = [r for r in results if r.rule_id == "OPT-054"]
+        assert len(opt054) >= 1
+
+    def test_no_false_positive_normal_request(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float val = request.security(syminfo.tickerid, "1D", close)\n'
+            'plot(val)'
+        )
+        results = analyze_code(code)
+        opt054 = [r for r in results if r.rule_id == "OPT-054"]
+        assert len(opt054) == 0
+
+
+class TestOPT055DrawingDisplayLimit:
+    """OPT-055: Many drawings without max_*_count parameter."""
+
+    def test_detects_many_drawings_no_max_count(self):
+        calls = "\n".join(f'line.new(bar_index, high[{i}], bar_index + 1, close)' for i in range(55))
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt055 = [r for r in results if r.rule_id == "OPT-055"]
+        assert len(opt055) >= 1
+
+    def test_no_false_positive_with_max_count(self):
+        calls = "\n".join(f'line.new(bar_index, high[{i}], bar_index + 1, close)' for i in range(55))
+        code = f'//@version=6\nindicator("test", max_lines_count=500)\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt055 = [r for r in results if r.rule_id == "OPT-055"]
+        assert len(opt055) == 0
+
+    def test_no_false_positive_few_drawings(self):
+        code = '//@version=6\nindicator("test")\nline.new(bar_index, high, bar_index + 1, close)\nplot(close)'
+        results = analyze_code(code)
+        opt055 = [r for r in results if r.rule_id == "OPT-055"]
+        assert len(opt055) == 0
+
+
+class TestOPT056MapSizeLimit:
+    """OPT-056: Map populated in loop approaching 50K limit."""
+
+    def test_detects_map_put_in_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'for i = 0 to 100\n'
+            '    map.put(m, str.tostring(i), close[i])\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) >= 1
+
+    def test_no_false_positive_no_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'map.put(m, "key", close)\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Clean code tests — no false positives
 # ─────────────────────────────────────────────────────────────────────────────
 
