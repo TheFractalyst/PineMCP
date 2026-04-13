@@ -553,6 +553,7 @@ async def generate_strategy(
                 relevant_funcs.append(f"//   {fname}: {fsyntax[:80]}")
 
         # BUG FIX: Use correct v6 input.bool syntax (default value first, then title)
+        desc_comment = f"\n// Description: {description}" if description else ""
         template = f"""//@version=6
 strategy("{safe_name}", overlay=true,
     initial_capital={initial_capital},
@@ -563,7 +564,7 @@ strategy("{safe_name}", overlay=true,
     pyramiding={pyramiding},
     margin_long=0, margin_short=0,
     calc_on_every_tick=false)
-
+{desc_comment}
 // ── Inputs ──────────────────────────────────────────────────
 enableLong  = input.bool(true,  "Enable Long",  group="Filters")
 enableShort = input.bool(false, "Enable Short", group="Filters")

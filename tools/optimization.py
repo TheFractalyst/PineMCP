@@ -30,6 +30,7 @@ async def optimize_code(
         description="Complete PineScript v6 source code to analyze for performance anti-patterns. "
                     "Can be a full script or a code snippet.",
         min_length=10,
+        max_length=50000,
     )],
 ) -> str:
     """Analyze PineScript v6 code for performance anti-patterns and optimization opportunities.
