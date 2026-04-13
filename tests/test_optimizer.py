@@ -115,12 +115,20 @@ label.new(longCond ? bar_index : na, 0, text="Buy")
         opt013 = [r for r in results if r.rule_id == "OPT-013"]
         assert len(opt013) >= 1
 
+    def test_no_false_positive_no_na(self):
+        code = (
+            '//@version=6\nindicator("test")'
+            '\nlabel.new(bar_index, high, text="Buy")\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt013 = [r for r in results if r.rule_id == "OPT-013"]
+        assert len(opt013) == 0
+
 
 class TestOPT015RequestLimit:
     """OPT-015: Approaching request.*() call limit."""
 
     def test_detects_many_request_calls(self):
-        # Generate code with 40+ request calls
         calls = "\n".join(
             f'float r{i} = request.security(syminfo.tickerid, "{tf}", close)'
             for i, tf in enumerate(["1D"] * 40)
@@ -135,7 +143,6 @@ class TestOPT017LargeScript:
     """OPT-017: Very large script approaching token limits."""
 
     def test_detects_large_script(self):
-        # Generate a script with 4000+ lines
         lines = ["//@version=6", 'indicator("test")']
         for i in range(4000):
             lines.append(f"float var{i} = {i}.0")
@@ -144,6 +151,13 @@ class TestOPT017LargeScript:
         results = analyze_code(code)
         opt017 = [r for r in results if r.rule_id == "OPT-017"]
         assert len(opt017) >= 1
+
+    def test_no_false_positive_small_script(self):
+        lines = ["//@version=6", 'indicator("test")', 'plot(close)']
+        code = "\n".join(lines)
+        results = analyze_code(code)
+        opt017 = [r for r in results if r.rule_id == "OPT-017"]
+        assert len(opt017) == 0
 
 
 class TestOPT023LargeLoop:
@@ -391,6 +405,13 @@ class TestOPT014PlotLimit:
         opt014 = [r for r in results if r.rule_id == "OPT-014"]
         assert len(opt014) >= 1
 
+    def test_no_false_positive_few_plots(self):
+        calls = "\n".join(f'plot(close, "p{i}")' for i in range(20))
+        code = f"//@version=6\nindicator('test')\n{calls}"
+        results = analyze_code(code)
+        opt014 = [r for r in results if r.rule_id == "OPT-014"]
+        assert len(opt014) == 0
+
 
 class TestOPT016LargeTuple:
     """OPT-016: Large tuple in request.*() call."""
@@ -407,6 +428,16 @@ plot(close)
         opt016 = [r for r in results if r.rule_id == "OPT-016"]
         assert len(opt016) >= 1
 
+    def test_no_false_positive_small_tuple(self):
+        elements = ", ".join("close" for _ in range(20))
+        code = (
+            f'//@version=6\nindicator("test")\n[{elements}]'
+            f' = request.security(syminfo.tickerid, "1D", [{elements}])\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt016 = [r for r in results if r.rule_id == "OPT-016"]
+        assert len(opt016) == 0
+
 
 class TestOPT018ManyVarsPerScope:
     """OPT-018: Many variable declarations per scope."""
@@ -420,6 +451,16 @@ class TestOPT018ManyVarsPerScope:
         results = analyze_code(code)
         opt018 = [r for r in results if r.rule_id == "OPT-018"]
         assert len(opt018) >= 1
+
+    def test_no_false_positive_few_vars(self):
+        lines = ["//@version=6", 'indicator("test")']
+        for i in range(50):
+            lines.append(f"float var{i} = {i}.0")
+        lines.append("plot(close)")
+        code = "\n".join(lines)
+        results = analyze_code(code)
+        opt018 = [r for r in results if r.rule_id == "OPT-018"]
+        assert len(opt018) == 0
 
 
 class TestOPT020UnboundedArrayGrowth:
@@ -437,6 +478,15 @@ plot(array.size(arr))
         opt020 = [r for r in results if r.rule_id == "OPT-020"]
         assert len(opt020) >= 1
 
+    def test_no_false_positive_bounded_queue(self):
+        code = (
+            '//@version=6\nindicator("test")\narr = array.new<float>()'
+            '\narray.push(arr, close)\narray.shift(arr)\nplot(array.size(arr))'
+        )
+        results = analyze_code(code)
+        opt020 = [r for r in results if r.rule_id == "OPT-020"]
+        assert len(opt020) == 0
+
 
 class TestOPT022ForwardBarsDrawing:
     """OPT-022: Forward bars >500 for drawing x-coordinates."""
@@ -451,6 +501,15 @@ plot(close)
         results = analyze_code(code)
         opt022 = [r for r in results if r.rule_id == "OPT-022"]
         assert len(opt022) >= 1
+
+    def test_no_false_positive_small_forward(self):
+        code = (
+            '//@version=6\nindicator("test")'
+            '\nline.new(bar_index, close, bar_index + 50, close)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt022 = [r for r in results if r.rule_id == "OPT-022"]
+        assert len(opt022) == 0
 
 
 class TestOPT026HistoryOnLocalScopeVar:
@@ -532,6 +591,52 @@ plot(past)
         assert len(opt031) >= 1
 
 
+class TestOPT036TableCountLimit:
+    """OPT-036: Table count approaching 9-table-per-chart limit."""
+
+    def test_detects_8_tables(self):
+        calls = "\n".join(
+            f'var table t{i} = table.new(position.top_right, 2, 2)'
+            for i in range(8)
+        )
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt036 = [r for r in results if r.rule_id == "OPT-036"]
+        assert len(opt036) >= 1
+
+    def test_no_false_positive_few_tables(self):
+        code = (
+            '//@version=6\nindicator("test")'
+            '\nvar table t = table.new(position.top_right, 2, 2)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt036 = [r for r in results if r.rule_id == "OPT-036"]
+        assert len(opt036) == 0
+
+
+class TestOPT038TableCreationEveryBar:
+    """OPT-038: Table creation every bar without barstate.isfirst guard."""
+
+    def test_detects_table_new_without_isfirst(self):
+        code = (
+            '//@version=6\nindicator("test")'
+            '\ntable t = table.new(position.top_right, 2, 2)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt038 = [r for r in results if r.rule_id == "OPT-038"]
+        assert len(opt038) >= 1
+
+    def test_no_false_positive_isfirst_guarded(self):
+        code = (
+            '//@version=6\nindicator("test")\nvar table t = na'
+            '\nif barstate.isfirst\n    t := table.new(position.top_right, 2, 2)'
+            '\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt038 = [r for r in results if r.rule_id == "OPT-038"]
+        assert len(opt038) == 0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean code tests — no false positives
 # ─────────────────────────────────────────────────────────────────────────────
@@ -572,7 +677,6 @@ class TestFormatResults:
         assert "No issues found" in report
 
     def test_results_sorted_by_severity(self):
-        # analyze_code sorts by severity — test that end-to-end
         code = """\
 //@version=6
 indicator("test")
@@ -585,7 +689,6 @@ for i = 1 to 50000
 """
         results = analyze_code(code)
         if len(results) >= 2:
-            # First finding should be higher severity than later ones
             first_sev = results[0].severity
             assert first_sev in ("critical", "high")
 
@@ -617,11 +720,9 @@ class TestBrandingMiddleware:
             assert "Fractalyst" in footer
 
     def test_branding_disabled_with_env(self):
-        # Store original
         original = os.environ.get("BRANDING")
         os.environ["BRANDING"] = "0"
         try:
-            # The middleware checks BRANDING env var at call time
             assert os.getenv("BRANDING", "1") == "0"
         finally:
             if original is None:

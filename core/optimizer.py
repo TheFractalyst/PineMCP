@@ -5,9 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-28 detection rules (OPT-001 through OPT-032; 4 runtime-only issues not
-statically detectable).
-
+36 detection rules (OPT-001 through OPT-040; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -85,7 +83,7 @@ def _result(rule: _Rule, line: int, snippet: str, suggestion: str) -> Optimizati
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Detection rules — 32 anti-patterns
+# Detection rules — 36 anti-patterns
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _detect_reimplemented_builtins(code: str, lines: list[str]) -> list[OptimizationResult]:
@@ -736,6 +734,198 @@ def _detect_realtime_tick_repaint(code: str, lines: list[str]) -> list[Optimizat
     return results
 
 
+def _detect_collection_in_request(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-035: Returning arrays/collections from request.*() calls."""
+    results: list[OptimizationResult] = []
+    pattern = re.compile(r"request\.\w+\s*\([^)]*array\.(new|from)\s*<")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if pattern.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-035"], i + 1, stripped[:100],
+                "Do not return arrays/collections from request.*() calls on every bar. "
+                "Each bar creates a new copy in memory. Use request.security() for scalar "
+                "values only, or compute the array once inside the requested context."
+            ))
+            break
+    # Also check multi-line patterns
+    if not results:
+        req_pattern = re.compile(r"request\.\w+\s*\(")
+        for i, line in enumerate(lines):
+            stripped = _strip_comments(line).strip()
+            if req_pattern.search(stripped):
+                block = " ".join(_strip_comments(lines[j]).strip() for j in range(i, min(i + 5, len(lines))))
+                if re.search(r"array\.(new|from)\s*<", block) and not results:
+                    results.append(_result(
+                        _RULES_BY_ID["OPT-035"], i + 1, stripped[:100],
+                        "Do not return arrays/collections from request.*() calls on every bar. "
+                        "Each bar creates a new copy in memory."
+                    ))
+                    break
+    return results
+
+
+def _detect_unused_request(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-039: Unused request.*() result."""
+    results: list[OptimizationResult] = []
+    req_pattern = re.compile(r"^(?:(?:int|float|bool|string|color|array|matrix|map)\s+)?(\w+)\s*=\s*request\.\w+\s*\(")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = req_pattern.match(stripped)
+        if m:
+            var_name = m.group(1)
+            # Count references to var_name in other lines
+            ref_count = 0
+            for j, other_line in enumerate(lines):
+                if j == i:
+                    continue
+                other = _strip_comments(other_line).strip()
+                if re.search(rf"\b{var_name}\b", other):
+                    ref_count += 1
+            if ref_count == 0:
+                results.append(_result(
+                    _RULES_BY_ID["OPT-039"], i + 1, stripped[:100],
+                    f"The result of this request.*() call is assigned to '{var_name}' but never used. "
+                    "Remove it to reduce execution overhead."
+                ))
+                break
+    return results
+
+
+def _detect_var_in_loop_header(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-033: var in loop header causes loop to exit after first iteration."""
+    pattern = re.compile(r"\bfor\s+var(?:_(?:int|float|bool|string|color))?\s+\w+\s*=")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if pattern.search(stripped):
+            return [_result(
+                _RULES_BY_ID["OPT-033"], i + 1, stripped,
+                "Remove 'var' from the loop header variable declaration. Using 'var' in a loop "
+                "header causes the loop to exit after the first iteration because the variable "
+                "persists across bars instead of being scoped to the loop."
+            )]
+    return []
+
+
+def _detect_variable_shadowing(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-034: Variable shadowing (= instead of :=) in local scope."""
+    results: list[OptimizationResult] = []
+    # Collect global-scope variable assignments
+    global_vars: set[str] = set()
+    for line in lines:
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent == 0:
+            m = re.match(r"^(\w+)\s*=\s*", stripped)
+            if m and m.group(1) not in (
+                "if", "for", "while", "switch", "else", "var", "varip",
+                "indicator", "strategy", "library", "import", "export",
+                "true", "false",
+            ):
+                global_vars.add(m.group(1))
+
+    # Check indented lines for shadow assignments
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent > 0:
+            m = re.match(r"^(\w+)\s*=\s*", stripped)
+            if m and m.group(1) in global_vars:
+                # Exclude if it has a type prefix (new local declaration)
+                if not re.match(
+                    r"^(int|float|bool|string|color|table|box|line|label|array|matrix|map)\s+",
+                    stripped,
+                ):
+                    results.append(_result(
+                        _RULES_BY_ID["OPT-034"], i + 1, stripped[:100],
+                        f"Use ':=' to reassign outer-scope variable '{m.group(1)}' instead of "
+                        f"'=' which creates a new local variable that shadows it."
+                    ))
+                    break  # Report once
+    return results
+
+
+def _detect_strategy_no_date_filter(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-037: strategy() with strategy.entry() but no time/date filter."""
+    results: list[OptimizationResult] = []
+    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
+    has_entry = bool(re.search(r"\bstrategy\.entry\s*\(", code))
+    if not (has_strategy and has_entry):
+        return results
+    time_filters = (
+        "time(", "year(", "month(", "dayofmonth(", "hour(", "minute(",
+        "timenow", "timestamp(", "input.time", "timeframe.",
+    )
+    has_filter = any(tf in code for tf in time_filters)
+    if not has_filter:
+        results.append(_result(
+            _RULES_BY_ID["OPT-037"], 0, "strategy() with strategy.entry()",
+            "Strategy has entries but no time/date filter (time(), year(), timestamp(), etc.). "
+            "Without a date range, the strategy runs on the entire chart history which is slow "
+            "and produces irrelevant backtest results. Add a date filter like "
+            "'useDateFilter = input.bool(true)' with 'if useDateFilter and time > timestamp(...)'."
+        ))
+    return results
+
+
+def _detect_manual_array_get_loop(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-040: Manual for i=0 to size-1 with array.get() — use for...in instead."""
+    results: list[OptimizationResult] = []
+    for_loop_pattern = re.compile(r"\bfor\s+\w+\s*=\s*0\s+to\s+array\.size\s*\(\s*(\w+)\s*\)\s*-\s*1")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = for_loop_pattern.search(stripped)
+        if m:
+            arr_name = m.group(1)
+            block = "\n".join(
+                _strip_comments(lines[j]).strip()
+                for j in range(i, min(i + 10, len(lines)))
+            )
+            if re.search(rf"array\.get\s*\(\s*{arr_name}\s*,", block):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-040"], i + 1, stripped[:100],
+                    f"Manual index loop with array.get() is slower than 'for...in'. "
+                    f"Replace with: 'for item in {arr_name}' to iterate directly."
+                ))
+                break
+    return results
+
+
+def _detect_table_count_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-036: Approaching the 9-table-per-chart limit."""
+    results: list[OptimizationResult] = []
+    count = _count_in_scope(code, re.compile(r"table\.new\s*\("))
+    if count > 7:
+        results.append(_result(
+            _RULES_BY_ID["OPT-036"], 0,
+            f"Found {count} table.new() calls",
+            f"Approaching the 9-table-per-chart limit ({count} found, limit is 9). "
+            "Reduce table count by reusing a single table with conditional content."
+        ))
+    return results
+
+
+def _detect_table_creation_every_bar(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-038: Table creation every bar without barstate.isfirst guard."""
+    results: list[OptimizationResult] = []
+    has_table_new = bool(re.search(r"table\.new\s*\(", code))
+    has_isfirst = "barstate.isfirst" in code
+    if has_table_new and not has_isfirst:
+        for i, line in enumerate(lines):
+            stripped = _strip_comments(line).strip()
+            if re.search(r"table\.new\s*\(", stripped):
+                indent = len(line) - len(line.lstrip())
+                if indent == 0:
+                    results.append(_result(
+                        _RULES_BY_ID["OPT-038"], i + 1, stripped[:100],
+                        "Create tables once on the first bar using `if barstate.isfirst` "
+                        "with `var`, then update cells on `barstate.islast`. Creating tables "
+                        "on every bar wastes resources."
+                    ))
+                    break
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -827,6 +1017,30 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-032", "calc_on_order_fills 4x overhead", "medium", "Strategy perf",
           _detect_calc_on_order_fills, "calc_on_order_fills strategy performance overhead"),
+
+    _Rule("OPT-033", "'var' in loop header (exits after 1st iteration)", "high", "Correctness",
+          _detect_var_in_loop_header, "PineScript var keyword loop header iteration bug"),
+
+    _Rule("OPT-034", "Variable shadowing (= instead of :=)", "high", "Correctness",
+          _detect_variable_shadowing, "PineScript variable shadowing assignment operator := vs = scope"),
+
+    _Rule("OPT-035", "Returning collections from request.*()", "critical", "Request/TA waste",
+          _detect_collection_in_request, "PineScript request.security array collection memory per bar"),
+
+    _Rule("OPT-036", "Table count approaching 9-table limit", "medium", "Resource limits",
+          _detect_table_count_limit, "PineScript table.new maximum 9 tables per chart limit"),
+
+    _Rule("OPT-037", "Strategy without date filter", "medium", "Strategy perf",
+          _detect_strategy_no_date_filter, "PineScript strategy backtest date range filter time year"),
+
+    _Rule("OPT-038", "Table creation without barstate.isfirst guard", "high", "Drawing waste",
+          _detect_table_creation_every_bar, "PineScript table.new barstate.isfirst optimization create once"),
+
+    _Rule("OPT-039", "Unused request.*() result", "medium", "Request/TA waste",
+          _detect_unused_request, "PineScript request.security unused result removal optimization"),
+
+    _Rule("OPT-040", "Manual array.get() loop vs for...in", "medium", "Loop waste",
+          _detect_manual_array_get_loop, "PineScript for...in array iteration optimization"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
