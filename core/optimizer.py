@@ -232,16 +232,19 @@ def _detect_unprotected_drawings(code: str, lines: list[str]) -> list[Optimizati
 def _detect_invariant_in_loop(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-006: Recalculating invariant values inside a per-bar loop."""
     results: list[OptimizationResult] = []
-    loop_pattern = re.compile(r"^\s*for\s+\w+\s*=")
+    loop_pattern = re.compile(r"^\s*for\s+(\w+)\s*=")
     invariant_funcs = re.compile(r"(math\.(cos|sin|sqrt|log|exp|pow)|array\.(min|max|range|size))\s*\(")
+    loop_var = ""
     in_loop = False
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
-        if loop_pattern.match(lines[i]):
+        loop_m = loop_pattern.match(lines[i])
+        if loop_m:
+            loop_var = loop_m.group(1)
             in_loop = True
         elif in_loop and stripped and not stripped.startswith(("for ", "if ", "else", "//")):
-            # Check if line has invariant function calls
-            if invariant_funcs.search(stripped) and "i" not in stripped.split("(")[0]:
+            # Check if line has invariant function calls (not using loop variable)
+            if invariant_funcs.search(stripped) and loop_var not in stripped.split("(")[0]:
                 results.append(_result(
                     _RULES_BY_ID["OPT-006"], i + 1,
                     stripped[:100],
@@ -418,12 +421,21 @@ def _detect_request_limit(code: str, lines: list[str]) -> list[OptimizationResul
     results: list[OptimizationResult] = []
     req_pattern = re.compile(r"request\.\w+\s*\(")
     req_count = _count_in_scope(code, req_pattern)
-    # Track unique calls by full call context (function name + first args)
+    # Track unique call signatures (function name + first two args)
     unique_calls: set[str] = set()
+    req_sig = re.compile(r"request\.\w+\s*\([^,]{0,80},\s*[^,]{0,30}")
     for ln in code.splitlines():
         clean = _strip_comments(ln)
-        unique_calls.update(req_pattern.findall(clean))
-    if len(unique_calls) > 35:
+        unique_calls.update(req_sig.findall(clean))
+    # Flag if many diverse calls (unique > 15) or many total calls with diversity
+    if req_count > 35 and len(unique_calls) > 1:
+        results.append(_result(
+            _RULES_BY_ID["OPT-015"], 0,
+            f"Found {req_count} request.*() calls ({len(unique_calls)} unique)",
+            f"Approaching the 40 unique request.*() call limit ({req_count} total, "
+            f"{len(unique_calls)} unique). Consolidate using tuple requests or reduce calls."
+        ))
+    elif len(unique_calls) > 35:
         results.append(_result(
             _RULES_BY_ID["OPT-015"], 0,
             f"Found {req_count} request.*() calls ({len(unique_calls)} unique)",

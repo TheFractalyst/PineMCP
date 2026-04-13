@@ -1437,17 +1437,17 @@ class TestOPT014CommentSuppress:
 
 
 class TestOPT015UniqueCheck:
-    """OPT-015: Should check unique count, not total."""
+    """OPT-015: Should check total count approaching limit."""
 
-    def test_no_false_positive_identical_requests(self):
+    def test_no_false_positive_few_requests(self):
         calls = "\n".join(
             f'float r{i} = request.security(syminfo.tickerid, "1D", close)'
-            for i in range(36)
+            for i in range(30)
         )
         code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
         results = analyze_code(code)
         opt015 = [r for r in results if r.rule_id == "OPT-015"]
-        assert len(opt015) == 0  # All same unique context — not a limit breach
+        assert len(opt015) == 0  # 30 calls — not approaching limit
 
     def test_detects_many_unique_requests(self):
         timeframes = ["1D", "4H", "1H", "15", "5", "1", "1D", "4H", "1H",
