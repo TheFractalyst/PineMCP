@@ -34,7 +34,7 @@ Examples of unacceptable behavior include:
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported by opening an issue or contacting the repository maintainer directly.
+reported by opening an issue or contacting the project maintainer at contact@deeptest.io.
 
 All complaints will be reviewed and investigated fairly.
 
