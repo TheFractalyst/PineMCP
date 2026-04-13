@@ -7,7 +7,7 @@ test:            ## Run full test suite (134 tests)
 	.venv/bin/python -m pytest tests/ -q
 
 bench:           ## Run benchmark suite
-	.venv/bin/python bench/bench_v2.py
+	.venv/bin/python scripts/bench/bench_v2.py
 
 index:           ## Re-index ChromaDB (skip scraping, use existing data)
 	./run.sh --skip-scrape

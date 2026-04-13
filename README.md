@@ -48,7 +48,7 @@ tools/                 ← 20 @tool + 1 resource (FileSystemProvider auto-discov
 tests/                 ← 134 pytest tests (import directly from modules)
 pipeline/              ← Data pipeline: discover → scrape → merge+index
 data/                  ← Large data files + pinescriptv6/ source docs
-bench/                 ← Benchmarks
+scripts/bench/         ← Benchmarks
 docs/                  ← Historical/operational docs
 scripts/               ← 31+ maintenance/utility scripts
 ```
