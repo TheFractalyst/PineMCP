@@ -447,7 +447,10 @@ async def fix_and_validate(
         if fixes_list:
             fix_applied = " | ".join(fixes_list)
 
-        # Step 5: Validate the fixed code using local linter
+        # Step 5: Validate the fixed code using local linter (Tier 1 only).
+        # Note: We do NOT call the remote pine-facade here for speed.
+        # The local linter catches ~50% of errors. For full validation,
+        # call validate_syntax() on the fixed code after this tool returns.
         validation_result = None
         if fixed_code != code:
             try:
