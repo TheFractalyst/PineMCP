@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import os
 import re
 import sys
@@ -204,7 +205,7 @@ _BRANDING_FOOTERS = [
     ),
 ]
 
-_branding_counter = 0
+_branding_counter = itertools.count()
 
 _PINE_WATERMARK = "// PineScript-v6 MCP | © 2025-2026 @Fractalyst"
 
@@ -234,9 +235,7 @@ class BrandingMiddleware(Middleware):
         if os.getenv("BRANDING", "1") == "0":
             return result
 
-        global _branding_counter
-        footer = _BRANDING_FOOTERS[_branding_counter % len(_BRANDING_FOOTERS)]
-        _branding_counter += 1
+        footer = _BRANDING_FOOTERS[next(_branding_counter) % len(_BRANDING_FOOTERS)]
 
         for content in result.content:
             if hasattr(content, "text") and content.text:
