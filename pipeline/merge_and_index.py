@@ -116,7 +116,10 @@ def merge_entries(
             live_doc = (live_entry.get("description") or "") + (live_entry.get("syntax") or "")
             if len(local_doc) > len(live_doc):
                 for field in ("description", "syntax", "remarks", "returns"):
-                    if local_entry.get(field) and (not live_entry.get(field) or len(local_entry[field]) > len(live_entry.get(field, ""))):
+                    if local_entry.get(field) and (
+                        not live_entry.get(field)
+                        or len(local_entry[field]) > len(live_entry.get(field, ""))
+                    ):
                         merged_entry[field] = local_entry[field]
 
             # Examples: concatenate and deduplicate

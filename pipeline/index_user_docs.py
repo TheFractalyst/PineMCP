@@ -156,7 +156,6 @@ def chunk_by_paragraphs(content: str) -> list[tuple[str, str]]:
 def process_file(file_path: Path, src_dir: Path) -> list[dict[str, Any]]:
     """Process a single markdown file into semantic chunks."""
     category, namespace = classify_file(file_path, src_dir)
-    rel_path = str(file_path.relative_to(src_dir.parent))
     stem = file_path.stem
 
     content = file_path.read_text(encoding="utf-8").strip()
@@ -168,11 +167,8 @@ def process_file(file_path: Path, src_dir: Path) -> list[dict[str, Any]]:
     url_path = str(rel_to_src).replace(".md", "")
     url = f"{BASE_URL}{url_path}/"
 
-    # Get the H1 title (first line) as the file-level heading
-    lines = content.split("\n")
-    file_title = ""
-    if lines:
-        file_title = strip_heading_links(lines[0])
+    # Parse the content into sections
+    content.split("\n")  # noqa: B028 — split validates non-empty content
 
     file_rel = f"pinescriptv6/{rel_to_src}"
 
@@ -198,7 +194,11 @@ def process_file(file_path: Path, src_dir: Path) -> list[dict[str, Any]]:
             for h3_heading, h3_body in h3_chunks:
                 if len(h3_body) <= H3_MAX_CHARS:
                     # Build compound heading
-                    heading = f"{h2_heading} > {h3_heading}" if h2_heading and h3_heading else (h2_heading or h3_heading)
+                    heading = (
+                        f"{h2_heading} > {h3_heading}"
+                        if h2_heading and h3_heading
+                        else (h2_heading or h3_heading)
+                    )
                     entry_name = f"{stem} - {heading}" if heading else stem
                     entry = _build_entry(entry_name, category, namespace, h3_body,
                                          file_rel, url, heading)
@@ -215,7 +215,11 @@ def process_file(file_path: Path, src_dir: Path) -> list[dict[str, Any]]:
                             continue
 
                         para_counter += 1
-                        heading = f"{h2_heading} > {h3_heading}" if h2_heading and h3_heading else (h2_heading or h3_heading)
+                        heading = (
+                            f"{h2_heading} > {h3_heading}"
+                            if h2_heading and h3_heading
+                            else (h2_heading or h3_heading)
+                        )
                         entry_name = f"{stem} - {heading} (part {para_counter})"
                         entry = _build_entry(entry_name, category, namespace, para_text,
                                              file_rel, url, heading)

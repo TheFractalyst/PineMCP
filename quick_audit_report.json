@@ -1,9 +1,0 @@
-{
-  "timestamp": "2026-04-03T13:12:23Z",
-  "db_total": 3014,
-  "coverage_pct": 33.9,
-  "ground_truth": 545,
-  "covered": 185,
-  "new_entries": 365,
-  "missing_before": 360
-}
