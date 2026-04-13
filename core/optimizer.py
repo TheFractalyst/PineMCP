@@ -5,7 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-36 detection rules (OPT-001 through OPT-040; OPT-019/024/025 are runtime-only).
+44 detection rules (OPT-001 through OPT-048; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -83,7 +83,7 @@ def _result(rule: _Rule, line: int, snippet: str, suggestion: str) -> Optimizati
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Detection rules — 36 anti-patterns
+# Detection rules — 44 anti-patterns
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _detect_reimplemented_builtins(code: str, lines: list[str]) -> list[OptimizationResult]:
@@ -91,7 +91,7 @@ def _detect_reimplemented_builtins(code: str, lines: list[str]) -> list[Optimiza
     results: list[OptimizationResult] = []
     # Look for functions that iterate source[i] in a for loop and accumulate
     # This catches patterns like: for i = 1 to length - 1 / result := math.max(result, source[i])
-    func_pattern = re.compile(r"for\s+\w+\s*=\s*\d+\s+to\s+length\b")
+    func_pattern = re.compile(r"for\s+\w+\s*=\s*\d+\s+to\s+\w+")
     accum_pattern = re.compile(r"(math\.(max|min)|\+=).*(?:source|close|open|high|low)\[")
     in_func = False
     for i, line in enumerate(lines):
@@ -926,6 +926,157 @@ def _detect_table_creation_every_bar(code: str, lines: list[str]) -> list[Optimi
     return results
 
 
+def _detect_request_missing_calc_bars(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-041: request.*() calls missing calc_bars_count optimization."""
+    results: list[OptimizationResult] = []
+    req_pattern = re.compile(r"request\.(security|security_lower_tf|seed)\s*\(")
+    has_calc_bars = "calc_bars_count" in code
+    req_count = sum(1 for line in lines if req_pattern.search(_strip_comments(line)))
+    if req_count >= 5 and not has_calc_bars:
+        for i, line in enumerate(lines):
+            stripped = _strip_comments(line).strip()
+            if req_pattern.search(stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-041"], i + 1, stripped[:100],
+                    f"Script has {req_count} request.*() calls but no calc_bars_count parameter. "
+                    "Add calc_bars_count to request.*() calls to restrict historical data retrieval "
+                    "and reduce runtime."
+                ))
+                break
+    return results
+
+
+def _detect_drawing_id_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-042: Drawing object count approaching 500-ID limit."""
+    results: list[OptimizationResult] = []
+    drawing_pattern = re.compile(r"\b(line|box|label)\.new\s*\(")
+    count = _count_in_scope(code, drawing_pattern)
+    if count > 400:
+        results.append(_result(
+            _RULES_BY_ID["OPT-042"], 0,
+            f"Found {count} drawing creation calls",
+            f"Approaching the 500-drawing-ID limit ({count} found, limit is 500 per type). "
+            "Use `var` to reuse drawing objects and update with setters. "
+            "Wrap creation in conditional blocks to avoid wasting IDs."
+        ))
+    return results
+
+
+def _detect_code_duplication(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-043: Repeated code blocks that should be extracted into functions."""
+    results: list[OptimizationResult] = []
+    # Count identical non-trivial lines (ignoring comments, blanks, declarations)
+    stripped_lines = []
+    for line in lines:
+        s = _strip_comments(line).strip()
+        if len(s) > 20 and not s.startswith("//@version") and not s.startswith("indicator(") and not s.startswith("strategy("):
+            stripped_lines.append(s)
+    # Group by identical content
+    from collections import Counter
+    line_counts = Counter(stripped_lines)
+    for line_text, count in line_counts.most_common(5):
+        if count >= 5:
+            results.append(_result(
+                _RULES_BY_ID["OPT-043"], 0, line_text[:100],
+                f"Identical code line repeated {count} times. Extract into a function "
+                "to reduce compiled tokens and improve maintainability."
+            ))
+            break
+    return results
+
+
+def _detect_strategy_order_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-044: Strategy likely to exceed 9000 order limit."""
+    results: list[OptimizationResult] = []
+    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
+    has_entry = bool(re.search(r"\bstrategy\.entry\s*\(", code))
+    if not (has_strategy and has_entry):
+        return results
+    # Detect strategies with unconditional entry on every bar
+    entry_in_global = False
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if "strategy.entry" in stripped:
+            indent = len(line) - len(line.lstrip())
+            # Entry at global scope (no if guard) = order on every bar
+            if indent == 0:
+                entry_in_global = True
+                break
+    if entry_in_global:
+        results.append(_result(
+            _RULES_BY_ID["OPT-044"], 0, "Unconditional strategy.entry() at global scope",
+            "strategy.entry() at global scope creates an order on every bar. "
+            "The backtesting limit is 9,000 orders (1M in Deep Backtesting). "
+            "Add entry conditions (e.g., if block with signal check) to reduce order count."
+        ))
+    return results
+
+
+def _detect_unused_imports(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-045: Import statements where the library prefix is never used."""
+    results: list[OptimizationResult] = []
+    import_pattern = re.compile(r"^import\s+\S+\s+(?:as\s+)?(\w+)\s*")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = import_pattern.match(stripped)
+        if m:
+            prefix = m.group(1)
+            # Count references to the prefix (excluding the import line itself)
+            ref_count = sum(
+                1 for j, other in enumerate(lines)
+                if j != i and re.search(rf"\b{prefix}\.", _strip_comments(other))
+            )
+            if ref_count == 0:
+                results.append(_result(
+                    _RULES_BY_ID["OPT-045"], i + 1, stripped[:100],
+                    f"Imported library '{prefix}' is never used in the script. "
+                    "Remove unused imports to reduce compilation request size."
+                ))
+                break
+    return results
+
+
+def _detect_calc_on_every_tick(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-046: calc_on_every_tick=true causes execution on every realtime tick."""
+    results: list[OptimizationResult] = []
+    if re.search(r"calc_on_every_tick\s*=\s*true", code):
+        results.append(_result(
+            _RULES_BY_ID["OPT-046"], 0, "calc_on_every_tick = true",
+            "calc_on_every_tick=true causes the strategy to execute on every realtime tick. "
+            "This significantly increases execution load. Only enable if you need "
+            "intrabar signal generation."
+        ))
+    return results
+
+
+def _detect_oversized_script_file(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-047: Script approaching 5MB compilation request size limit."""
+    results: list[OptimizationResult] = []
+    size_bytes = len(code.encode("utf-8"))
+    if size_bytes > 3_000_000:  # 3MB = 60% of 5MB limit
+        results.append(_result(
+            _RULES_BY_ID["OPT-047"], 0,
+            f"Script size: {size_bytes:,} bytes",
+            f"Script is {size_bytes / 1_000_000:.1f}MB, approaching the 5MB compilation request "
+            "size limit. Reduce script size by extracting code into functions or libraries."
+        ))
+    return results
+
+
+def _detect_polyline_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-048: Polyline count approaching 100-ID limit."""
+    results: list[OptimizationResult] = []
+    count = _count_in_scope(code, re.compile(r"\bpolyline\.new\s*\("))
+    if count > 80:
+        results.append(_result(
+            _RULES_BY_ID["OPT-048"], 0,
+            f"Found {count} polyline.new() calls",
+            f"Approaching the 100-polyline-ID limit ({count} found, limit is 100). "
+            "Reuse polyline objects with setters instead of creating new ones."
+        ))
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1041,6 +1192,31 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-040", "Manual array.get() loop vs for...in", "medium", "Loop waste",
           _detect_manual_array_get_loop, "PineScript for...in array iteration optimization"),
+
+    # --- Additional Resource/Strategy Rules ---
+    _Rule("OPT-041", "request.*() missing calc_bars_count", "medium", "Request/TA waste",
+          _detect_request_missing_calc_bars, "PineScript request.security calc_bars_count optimization"),
+
+    _Rule("OPT-042", "Drawing ID count approaching 500 limit", "critical", "Resource limits",
+          _detect_drawing_id_limit, "PineScript line box label 500 ID limit optimization"),
+
+    _Rule("OPT-043", "Repeated code (extract to function)", "medium", "Resource limits",
+          _detect_code_duplication, "PineScript reduce compiled tokens function extraction"),
+
+    _Rule("OPT-044", "Strategy may exceed 9000 order limit", "high", "Strategy perf",
+          _detect_strategy_order_limit, "PineScript strategy backtesting 9000 order limit"),
+
+    _Rule("OPT-045", "Unused import", "medium", "Resource limits",
+          _detect_unused_imports, "PineScript unused library import compilation size"),
+
+    _Rule("OPT-046", "calc_on_every_tick overhead", "medium", "Strategy perf",
+          _detect_calc_on_every_tick, "PineScript calc_on_every_tick realtime execution overhead"),
+
+    _Rule("OPT-047", "Script approaching 5MB compilation limit", "high", "Resource limits",
+          _detect_oversized_script_file, "PineScript 5MB compilation request size limit"),
+
+    _Rule("OPT-048", "Polyline count approaching 100 limit", "high", "Resource limits",
+          _detect_polyline_limit, "PineScript polyline.new 100 ID limit optimization"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
