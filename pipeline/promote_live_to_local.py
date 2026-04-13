@@ -10,9 +10,10 @@ After running, re-index with: python merge_and_index.py --reset
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from loguru import logger
 import sys
+from pathlib import Path
+
+from loguru import logger
 
 logger.remove()
 logger.add(sys.stderr, format="{time:HH:mm:ss} | {level:<8} | {message}", level="INFO")

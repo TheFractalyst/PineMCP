@@ -206,7 +206,7 @@ def main(dry_run: bool = False):
         if m.get("category") == "example":
             example_ids.append(ids[i])
 
-    print(f"\n── STEP 1: Standalone example entries ──")
+    print("\n── STEP 1: Standalone example entries ──")
     print(f"Found: {len(example_ids)} example entries")
 
     # Verify: check that parent entries have examples
@@ -228,7 +228,7 @@ def main(dry_run: bool = False):
     print(f"Safe to remove: {len(example_ids) - orphans}")
 
     # ── STEP 2: Merge cross-category duplicates ──
-    print(f"\n── STEP 2: Cross-category duplicates ──")
+    print("\n── STEP 2: Cross-category duplicates ──")
 
     # Build name groups (excluding example entries)
     name_groups: dict[str, list[tuple[str, dict, str]]] = defaultdict(list)
@@ -297,7 +297,7 @@ def main(dry_run: bool = False):
         # Check if the best_id's entry needs updating
         best_idx = next(i for i, rid in enumerate(ids_list) if rid == best_id)
         old_meta = metas_list[best_idx]
-        old_doc = docs_list[best_idx]
+        docs_list[best_idx]  # kept for reference if needed later
 
         # Determine if metadata changed
         needs_update = False
@@ -329,18 +329,18 @@ def main(dry_run: bool = False):
     print(f"Reduction:             {total_remove} ({total_remove/total_before*100:.1f}%)")
 
     if dry_run:
-        print(f"\n── DRY RUN — no changes made ──")
+        print("\n── DRY RUN — no changes made ──")
         return
 
     # ── EXECUTE ──
-    print(f"\n── EXECUTING ──")
+    print("\n── EXECUTING ──")
 
     # Remove entries
     ids_to_remove_list = [rid for rid in ids_to_remove if rid in set(ids)]
     if ids_to_remove_list:
         print(f"Removing {len(ids_to_remove_list)} entries...")
         col.delete(ids=ids_to_remove_list)
-        print(f"  Done.")
+        print("  Done.")
 
     # Update merged entries
     for entry_id, meta, doc in entries_to_add:
@@ -354,7 +354,7 @@ def main(dry_run: bool = False):
 
     # Verify
     final_count = col.count()
-    print(f"\n── VERIFICATION ──")
+    print("\n── VERIFICATION ──")
     print(f"Expected final count: {total_after}")
     print(f"Actual final count:   {final_count}")
     assert final_count == total_after, f"Mismatch: {final_count} != {total_after}"

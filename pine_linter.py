@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-
 # ── Data structures ──────────────────────────────────────────────────
 
 
@@ -207,7 +206,8 @@ def _check_script_declaration(lines: list[str], result: LintResult) -> None:
             line=0, column=0,
             text="Missing script declaration. Add indicator(), strategy(), or library() after //@version=6.",
             severity="error", rule="missing_declaration",
-            fix_hint='Add: indicator("My Script") or strategy("My Strategy", overlay=true) after the version directive.',
+            fix_hint='Add: indicator("My Script") or strategy("My Strategy", overlay=true)\n'
+                    '    after the version directive.',
         ))
 
 
@@ -278,7 +278,7 @@ def _check_namespace_errors(code: str, lines: list[str], result: LintResult) -> 
 
 def _check_duplicate_declarations(lines: list[str], result: LintResult) -> None:
     """Rule: Only one script declaration allowed."""
-    clean_lines = [_strip_strings(_strip_comments(l)) for l in lines]
+    clean_lines = [_strip_strings(_strip_comments(line)) for line in lines]
 
     declarations = []
     for i, line in enumerate(clean_lines):
@@ -293,7 +293,8 @@ def _check_duplicate_declarations(lines: list[str], result: LintResult) -> None:
         for dtype, line_num in declarations[1:]:
             result.issues.append(LintIssue(
                 line=line_num, column=1,
-                text=f"Duplicate script declaration: {dtype}(). Only one indicator/strategy/library declaration is allowed.",
+                text=f"Duplicate script declaration: {dtype}(). Only one indicator/strategy/library"
+                     f" declaration is allowed.",
                 severity="error", rule="duplicate_declaration",
                 fix_hint=f"Remove the duplicate {dtype}() declaration.",
             ))
@@ -338,7 +339,7 @@ def _check_bracket_balance(code: str, result: LintResult) -> None:
                         line=line_idx, column=col,
                         text=f"Mismatched '{ch}': expected '{pairs[last_open]}' to close '{last_open}'.",
                         severity="error", rule="unbalanced_brackets",
-                        fix_hint=f"Check bracket matching near this location.",
+                        fix_hint="Check bracket matching near this location.",
                     ))
                     return
                 stack.pop()
@@ -460,7 +461,8 @@ def _check_plot_in_strategy(code: str, lines: list[str], result: LintResult) -> 
         if plot_count > 5:
             result.issues.append(LintIssue(
                 line=0, column=0,
-                text=f"Strategy script has {plot_count} plot() calls. Consider using indicator() for visual-only scripts.",
+                text=f"Strategy script has {plot_count} plot() calls."
+                     " Consider using indicator() for visual-only scripts.",
                 severity="info", rule="many_plots_in_strategy",
             ))
 
@@ -476,7 +478,8 @@ def _check_color_syntax(code: str, lines: list[str], result: LintResult) -> None
             if not re.search(r'color\.(new|rgb)\s*\(', line):
                 result.issues.append(LintIssue(
                     line=i, column=1,
-                    text="'color()' is not a valid function. Use color.new(base, transparency) or a named color like color.red.",
+                    text="'color()' is not a valid function."
+                         " Use color.new(base, transparency) or a named color like color.red.",
                     severity="error", rule="invalid_color_call",
                     fix_hint="Use color.new(color.red, 50) or just color.red.",
                 ))
@@ -491,7 +494,10 @@ def _check_input_types(code: str, lines: list[str], result: LintResult) -> None:
         stripped = line.strip()
         # Match input( but NOT input.int, input.float, input.string, etc.
         if re.search(r'(?<!\.)\binput\s*\(', stripped):
-            if not re.search(r'input\.(int|float|string|bool|source|color|session|symbol|resolution|timeframe)', stripped):
+            if not re.search(
+                r'input\.(int|float|string|bool|source|color|session|symbol|resolution|timeframe)',
+                stripped,
+            ):
                 result.issues.append(LintIssue(
                     line=i, column=1,
                     text="Using bare input() — prefer explicit type: input.int(), input.float(), input.string(), etc.",

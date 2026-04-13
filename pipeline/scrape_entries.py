@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import re
 import sys
 from collections import Counter
@@ -438,7 +437,7 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
                 // Extract type fields/methods into structured format
                 const parsedTypeFields = [];
                 for (const line of typeFields) {
-                    const fm = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(.*)/);
+                    const fm = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(([^)]*)\\)\\s*(.*)/);
                     if (fm) {
                         parsedTypeFields.push({
                             name: fm[1],
@@ -450,7 +449,7 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
 
                 const parsedTypeMethods = [];
                 for (const line of typeMethods) {
-                    const mm = line.match(/^([a-zA-Z_][a-zA-Z0-9_.]*)\s*\(/);
+                    const mm = line.match(/^([a-zA-Z_][a-zA-Z0-9_.]*)\\s*\\(/);
                     if (mm) {
                         parsedTypeMethods.push(mm[1]);
                     }
