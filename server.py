@@ -43,6 +43,9 @@ from core.embeddings import get_model, _model_executor, _embedding_model_ready  
 from core.hot_cache import build_hot_cache  # noqa: E402
 from core.pine_facade import shutdown_http_client  # noqa: E402
 
+# Transport mode: stdio (default, local Claude Code) or http/sse (Docker, Render)
+_TRANSPORT = os.getenv("TRANSPORT", "stdio").lower().strip()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Composable lifespans
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,4 +157,10 @@ mcp = FastMCP(
 
 if __name__ == "__main__":
     logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (20 tools, 100% local)")
-    mcp.run(transport="stdio")
+
+    if _TRANSPORT == "http" or _TRANSPORT == "sse":
+        _port = int(os.getenv("PORT", "8080"))
+        logger.info(f"Transport: SSE (HTTP) on 0.0.0.0:{_port}")
+        mcp.run(transport="sse", host="0.0.0.0", port=_port)
+    else:
+        mcp.run(transport="stdio")
