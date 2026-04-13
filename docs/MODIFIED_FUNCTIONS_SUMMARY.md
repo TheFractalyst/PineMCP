@@ -1,7 +1,7 @@
 # Modified Functions Summary - PineScript MCP Fixes
 
 ## Overview
-All 21 specified fixes have been successfully applied to `pinescript_mcp.py`. The verification suite shows **56/56 checks passing** with exit code 0.
+All 21 specified fixes have been successfully applied across the modular codebase (`server.py` + `core/` + `tools/` + `formatters/` + `templates/`). The verification suite shows **56/56 checks passing** with exit code 0.
 
 ## Critical Fixes (C1, C2)
 

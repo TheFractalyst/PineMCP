@@ -14,7 +14,7 @@ This guide ensures Claude Code never gets stuck when validating PineScript files
 | "Circuit breaker open" | Accept results (local linter fallback) | Already working |
 | Empty/null response | Use standalone script | Manual validation |
 | "Permission denied" | Check file permissions | Use different file |
-| MCP server crashed | Restart: `pkill -f pinescript_mcp.py` | Standalone script |
+| MCP server crashed | Restart: `pkill -f "python server.py"` | Standalone script |
 
 ## Prevention: Pre-Flight Checklist
 
@@ -27,7 +27,7 @@ import os
 if not os.path.exists(file_path):
     # Try to find it
     results = find_by_name(
-        SearchDirectory="~/Documents",
+        SearchDirectory="/path/to/",
         Pattern=os.path.basename(file_path)
     )
     if results:
@@ -97,7 +97,7 @@ def robust_validation(file_path: str) -> str:
 
 def fallback_standalone_script(file_path: str) -> str:
     """Use standalone validation script."""
-    cmd = f'cd ~/pinescript_mcp && .venv/bin/python validate_file.py "{file_path}"'
+    cmd = f'cd /path/to/pinescript-mcp && .venv/bin/python validate_file.py "{file_path}"'
     result = run_command(cmd, Blocking=True)
     return result.output
 ```
@@ -118,12 +118,12 @@ print(f"File exists: {os.path.exists(file_path)}")
 
 # 2. Use standalone script instead
 result = run_command(
-    f'cd ~/pinescript_mcp && .venv/bin/python validate_file.py "{file_path}"',
+    f'cd /path/to/pinescript-mcp && .venv/bin/python validate_file.py "{file_path}"',
     Blocking=True
 )
 
 # 3. If that fails too, MCP server may need restart
-run_command("pkill -f pinescript_mcp.py", Blocking=True)
+run_command("pkill -f "python server.py"", Blocking=True)
 time.sleep(2)  # Wait for restart
 # Retry
 ```
@@ -136,9 +136,9 @@ def find_or_ask(file_name: str) -> str:
     
     # Search common locations
     search_dirs = [
-        "~/Documents/Strategies",
-        "~/Documents",
-        "~/pinescript_mcp"
+        "/path/to/Strategies",
+        "/path/to/",
+        "/path/to/pinescript-mcp"
     ]
     
     for dir in search_dirs:
@@ -155,7 +155,7 @@ def find_or_ask(file_name: str) -> str:
     
     # List available .ps files
     all_ps = find_by_name(
-        SearchDirectory="~/Documents",
+        SearchDirectory="/path/to/",
         Pattern="*.ps"
     )
     for i, file in enumerate(all_ps[:10]):  # Show first 10
@@ -276,12 +276,12 @@ mcp5_validate_file(file_path="relative/path.ps")
 # Recovery: Convert to absolute path
 
 # Test 3: Large file
-mcp5_validate_file(file_path="~/Documents/my_strategy.ps")
+mcp5_validate_file(file_path="/path/to/my_strategy.ps")
 # Expected: Local Linter fallback (normal)
 # Recovery: None needed, display results
 
 # Test 4: MCP server down
-# pkill -f "pinescript_mcp.py"
+# pkill -f "python server.py"
 # mcp5_validate_file(file_path="/path/to/file.ps")
 # Expected: Tool call fails
 # Recovery: Use standalone script
@@ -299,17 +299,17 @@ When validation seems stuck:
 
 ```bash
 # 1. Check if MCP server is running
-ps aux | grep pinescript_mcp.py
+ps aux | grep "python server.py"
 
 # 2. Check server logs
-tail -f ~/Library/Logs/Claude/mcp*.log | grep validate
+tail -f /path/to/logs/mcp*.log | grep validate
 
 # 3. Restart MCP server
-pkill -f "pinescript_mcp.py"
+pkill -f "python server.py"
 # Wait 2 seconds for auto-restart
 
 # 4. Test standalone script
-cd ~/pinescript_mcp
+cd /path/to/pinescript-mcp
 .venv/bin/python validate_file.py "/path/to/file.ps"
 
 # 5. Check file permissions
@@ -339,12 +339,12 @@ Validation has failed ONLY when:
 
 1. **Restart MCP server:**
    ```bash
-   pkill -f "pinescript_mcp.py"
+   pkill -f "python server.py"
    ```
 
 2. **Use standalone script:**
    ```bash
-   cd ~/pinescript_mcp
+   cd /path/to/pinescript-mcp
    .venv/bin/python validate_file.py "/path/to/file.ps"
    ```
 

@@ -8,7 +8,7 @@ This guide ensures full compatibility between Claude Code and the pinescript-v6 
 ### 1. Timeout Configuration (CRITICAL FIX)
 **Problem**: Hardcoded 15-second timeout caused large files to fail validation
 **Solution**: Now uses `PINE_FACADE_TIMEOUT` environment variable (default: 20s)
-**Location**: `pinescript_mcp.py:882`
+**Location**: `core/pine_facade.py`
 ```python
 timeout=httpx.Timeout(float(PINE_FACADE_TIMEOUT), connect=5.0)
 ```
@@ -17,11 +17,11 @@ timeout=httpx.Timeout(float(PINE_FACADE_TIMEOUT), connect=5.0)
 **Problem**: Pydantic validation errors when Claude Code sent empty `{}` arguments
 **Solution**: All 5 validation tools now accept `code=""` as default
 **Affected Tools**:
-- `validate_syntax` (line 2202)
-- `validate_and_explain` (line 2292)
-- `fix_and_validate` (lines 2420-2427)
-- `lookup_and_correct` (lines 2927-2934)
-- `debug_pine_facade` (line 3123)
+- `validate_syntax` (`tools/validation.py`)
+- `validate_and_explain` (`tools/validation.py`)
+- `fix_and_validate` (`tools/validation.py`)
+- `lookup_and_correct` (`tools/codegen.py`)
+- `debug_pine_facade` (`tools/validation.py`)
 
 ## MCP Tool Usage Guide
 
@@ -130,12 +130,12 @@ PINE_FACADE_TIMEOUT=40
 **Solution**: 
 1. Check timeout setting: `cat ~/.mcp.json | grep PINE_FACADE_TIMEOUT`
 2. Increase if needed: Set `PINE_FACADE_TIMEOUT=30`
-3. Restart MCP server: `pkill -f pinescript_mcp.py`
+3. Restart MCP server: `pkill -f "python server.py"`
 
 ### Issue: "Missing required argument" Error
 **Cause**: Old version with Pydantic validation before fix
 **Solution**:
-1. Verify fix is applied: `grep "code.*=" pinescript_mcp.py:2206`
+1. Verify fix is applied: `grep "code.*=" tools/validation.py`
 2. Should see: `code: Annotated[str, Field(...)] = ""`
 3. Restart MCP server
 
@@ -227,10 +227,10 @@ python3 /tmp/test_timeout_fix.py
 {
   "mcpServers": {
     "pinescript-v6": {
-      "command": "~/pinescript_mcp/.venv/bin/python",
-      "args": ["~/pinescript_mcp/server.py"],
+      "command": "/path/to/pinescript-mcp/.venv/bin/python",
+      "args": ["/path/to/pinescript-mcp/server.py"],
       "env": {
-        "PINESCRIPT_DB_PATH": "~/pinescript_mcp/pinescript_db",
+        "PINESCRIPT_DB_PATH": "/path/to/pinescript-mcp/pinescript_db",
         "PINESCRIPT_COLLECTION": "pinescript_v6",
         "PINESCRIPT_EMBED_MODEL": "all-MiniLM-L6-v2",
         "PINESCRIPT_MAX_RESULTS": "20",

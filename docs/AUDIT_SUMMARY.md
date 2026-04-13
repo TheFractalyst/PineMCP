@@ -102,7 +102,7 @@ To verify the audit results:
 python -c "import chromadb; client=chromadb.PersistentClient('./pinescript_db'); col=client.get_collection('pinescript_v6'); print(f'Entries: {col.count()}')"
 
 # Test search functionality
-python pinescript_mcp.py  # Run the MCP server and test queries
+python server.py  # Run the MCP server and test queries
 ```
 
 ---
