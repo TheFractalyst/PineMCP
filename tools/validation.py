@@ -618,7 +618,7 @@ async def validate_file(
         return "ERROR: Only .ps and .pine files are accepted. Please provide a PineScript file with a .ps or .pine extension."
 
     # Security: path must be within an allowed base directory
-    # Use base + "/" to prevent prefix attacks (e.g. /Users/user/Documents_evil)
+    # Use base + "/" to prevent prefix attacks (e.g. /home/user/Documents_evil)
     allowed = any(
         resolved.startswith(base + "/") or resolved == base
         for base in _ALLOWED_BASE_DIRS

@@ -136,7 +136,7 @@ def find_or_ask(file_name: str) -> str:
     
     # Search common locations
     search_dirs = [
-        "~/Documents/Quantify - Deeptest/Strategies",
+        "~/Documents/Strategies",
         "~/Documents",
         "~/pinescript_mcp"
     ]
@@ -276,7 +276,7 @@ mcp5_validate_file(file_path="relative/path.ps")
 # Recovery: Convert to absolute path
 
 # Test 3: Large file
-mcp5_validate_file(file_path="~/Documents/Quantify - Deeptest/Strategies/VIX.ps")
+mcp5_validate_file(file_path="~/Documents/Strategies/VIX.ps")
 # Expected: Local Linter fallback (normal)
 # Recovery: None needed, display results
 

@@ -188,9 +188,9 @@ class TestCheckQueryError:
 
 class TestSafeError:
     def test_path_removal(self):
-        err = ValueError("file not found: /Users/test/secret/path/file.py")
+        err = ValueError("file not found: /home/test/secret/path/file.py")
         result = _safe_error(err)
-        assert "/Users/test/secret/path/file.py" not in result
+        assert "/home/test/secret/path/file.py" not in result
         assert "[path]" in result
 
     def test_length_cap(self):
