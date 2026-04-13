@@ -31,15 +31,16 @@ async def optimize_code(
 ) -> str:
     """Analyze PineScript v6 code for performance anti-patterns and optimization opportunities.
 
-    Detects 44 issues from TradingView's official profiling & optimization docs:
+    Detects 52 issues from TradingView's official profiling & optimization docs:
     - Request/TA call waste: duplicate request.security(), exceeding call limits
-    - Drawing inefficiency: delete+recreate vs setters, unprotected updates
+    - Drawing inefficiency: delete+recreate vs setters, unprotected updates, display limits
     - Loop waste: reimplemented built-ins, loop-invariant code, indexof in loops
-    - Memory/buffer: missing max_bars_back, unbounded arrays, oversized buffers
-    - Correctness traps: ta.*() in local scopes, missing var, varip repainting
+    - Memory/buffer: missing max_bars_back, unbounded arrays, oversized buffers, map limits
+    - Correctness traps: ta.*() in local scopes, missing var, varip repainting, future leak
+    - Repainting: lookahead without offset, timenow, barstate.isnew, missing isconfirmed
     - Resource limits: plot count, token count, scope variable count, timeouts
-    - Strategy perf: calc_on_order_fills overhead, date filters, order limits
-    - Code quality: unused imports, code duplication, oversized scripts
+    - Strategy perf: calc_on_order_fills overhead, date filters, order limits, non-standard charts
+    - Code quality: unused imports, code duplication, oversized scripts, lower TF requests
 
     Returns a line-by-line report with severity ratings and fix suggestions.
     This tool does NOT modify your code — it only analyzes and reports.

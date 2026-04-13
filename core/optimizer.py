@@ -5,7 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-44 detection rules (OPT-001 through OPT-048; OPT-019/024/025 are runtime-only).
+52 detection rules (OPT-001 through OPT-056; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -1077,6 +1077,184 @@ def _detect_polyline_limit(code: str, lines: list[str]) -> list[OptimizationResu
     return results
 
 
+def _detect_lookahead_future_leak(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-049: lookahead_on without [1] offset causes future data leak."""
+    results: list[OptimizationResult] = []
+    lookahead_pattern = re.compile(r"barmerge\.lookahead_on")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if lookahead_pattern.search(stripped) and "request." in stripped:
+            # Check if the expression uses [1] offset for non-repainting
+            # Look in the same line and nearby lines for the offset
+            block = "\n".join(_strip_comments(lines[j]).strip() for j in range(i, min(i + 3, len(lines))))
+            if not re.search(r"\[\s*1\s*\]", block):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-049"], i + 1, stripped[:100],
+                    "lookahead = barmerge.lookahead_on without [1] offset causes future data leak. "
+                    "Use `request.security(..., expression[1], lookahead = barmerge.lookahead_on)` "
+                    "for non-repainting HTF data. TradingView moderates scripts using this incorrectly."
+                ))
+                break
+    return results
+
+
+def _detect_timenow_repaint(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-050: timenow usage causes inconsistent historical/realtime behavior."""
+    results: list[OptimizationResult] = []
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if re.search(r"\btimenow\b", stripped) and not stripped.startswith("//"):
+            results.append(_result(
+                _RULES_BY_ID["OPT-050"], i + 1, stripped[:100],
+                "'timenow' returns the current real-world time, producing different values "
+                "on historical vs realtime bars and after chart reload. Use 'time' or "
+                "'input.time()' for consistent historical behavior."
+            ))
+            break
+    return results
+
+
+def _detect_isnew_signal_repaint(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-051: barstate.isnew for signal logic repaints."""
+    results: list[OptimizationResult] = []
+    has_isnew = False
+    has_signal_output = False
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if re.search(r"\bbarstate\.isnew\b", stripped):
+            has_isnew = True
+        if re.search(r"\b(strategy\.entry|alert|plot\(|plotshape\()", stripped):
+            has_signal_output = True
+
+    if has_isnew and has_signal_output:
+        # Check if isnew is used in a conditional block that also contains signal logic
+        for i, line in enumerate(lines):
+            stripped = _strip_comments(line).strip()
+            if re.search(r"\bbarstate\.isnew\b", stripped):
+                # Check body for signal-producing calls
+                for j in range(i + 1, min(i + 10, len(lines))):
+                    body = _strip_comments(lines[j]).strip()
+                    body_indent = len(lines[j]) - len(lines[j].lstrip())
+                    if body_indent <= len(line) - len(line.lstrip()) and body and not body.startswith(("else", "//")):
+                        break
+                    if re.search(r"\b(strategy\.entry|alert|plotshape|plot\()", body):
+                        results.append(_result(
+                            _RULES_BY_ID["OPT-051"], i + 1, stripped[:100],
+                            "barstate.isnew is true at bar close on historical data but at bar open "
+                            "in realtime — signals produced here will repaint. Use "
+                            "barstate.isconfirmed instead for consistent signal generation."
+                        ))
+                        break
+                if results:
+                    break
+    return results
+
+
+def _detect_missing_isconfirmed(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-052: Signal-producing logic without barstate.isconfirmed guard."""
+    results: list[OptimizationResult] = []
+    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
+    has_isconfirmed = "barstate.isconfirmed" in code
+
+    if not has_strategy or has_isconfirmed:
+        return results
+
+    # Look for strategy.entry/exit/alertcondition/alert at global scope (no guard)
+    signal_pattern = re.compile(r"\b(strategy\.entry|strategy\.exit|alertcondition|alert\s*\()\b")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if signal_pattern.search(stripped):
+            indent = len(line) - len(line.lstrip())
+            if indent == 0:
+                results.append(_result(
+                    _RULES_BY_ID["OPT-052"], i + 1, stripped[:100],
+                    "Signal-producing logic at global scope without barstate.isconfirmed guard "
+                    "will trigger on unconfirmed realtime ticks, producing false signals. "
+                    "Wrap in `if barstate.isconfirmed` to only execute on confirmed bar closes."
+                ))
+                break
+    return results
+
+
+def _detect_non_standard_chart_strategy(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-053: Strategy using non-standard chart types produces misleading backtests."""
+    results: list[OptimizationResult] = []
+    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
+    if not has_strategy:
+        return results
+    non_standard = re.compile(r"ticker\.(heikinashi|renko|kagi|linebreak|pointfigure|range)\s*\(")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if non_standard.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-053"], i + 1, stripped[:100],
+                "Strategy using non-standard chart data (Heikin-Ashi, Renko, etc.) produces "
+                "misleading backtest results because the chart data is reconstructed and does "
+                "not represent actual market prices. Only use standard chart types for backtesting."
+            ))
+            break
+    return results
+
+
+def _detect_lower_tf_request(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-054: request.security_lower_tf() results differ on historical vs realtime."""
+    results: list[OptimizationResult] = []
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if re.search(r"\brequest\.security_lower_tf\s*\(", stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-054"], i + 1, stripped[:100],
+                "request.security_lower_tf() returns different results on historical vs realtime "
+                "bars — realtime intrabars are not sorted and may differ from historical ones. "
+                "Test thoroughly and avoid using for signal generation."
+            ))
+            break
+    return results
+
+
+def _detect_drawing_display_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-055: Many drawings without max_*_count parameter."""
+    results: list[OptimizationResult] = []
+    drawing_count = _count_in_scope(code, re.compile(r"\b(line|box|label)\.new\s*\("))
+    has_max_count = bool(re.search(r"max_(lines|boxes|labels)_count\s*=", code))
+    if drawing_count > 50 and not has_max_count:
+        results.append(_result(
+            _RULES_BY_ID["OPT-055"], 0,
+            f"Found {drawing_count} drawing creation calls without max_*_count",
+            f"Script creates {drawing_count} drawings but only the last 50 are displayed by default. "
+            "Add max_lines_count, max_boxes_count, or max_labels_count to your indicator()/strategy() "
+            "declaration to display more."
+        ))
+    return results
+
+
+def _detect_map_size_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-056: Map approaching 50,000 key-value pair limit."""
+    results: list[OptimizationResult] = []
+    # Check for maps populated in loops (pattern: map.put inside for loop)
+    has_map_put_in_loop = False
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if re.search(r"\bfor\s+\w+\s*=", stripped):
+            for j in range(i + 1, min(i + 10, len(lines))):
+                body = _strip_comments(lines[j]).strip()
+                if re.search(r"\bmap\.put\s*\(", body):
+                    has_map_put_in_loop = True
+                    break
+        if has_map_put_in_loop:
+            break
+
+    if has_map_put_in_loop:
+        results.append(_result(
+            _RULES_BY_ID["OPT-056"], 0,
+            "Map populated inside loop",
+            "Maps are limited to 50,000 key-value pairs (100,000 elements total). "
+            "Populating a map inside a loop risks exceeding this limit. Use array.size() "
+            "checks or pre-allocate with map.new() if possible."
+        ))
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1217,6 +1395,31 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-048", "Polyline count approaching 100 limit", "high", "Resource limits",
           _detect_polyline_limit, "PineScript polyline.new 100 ID limit optimization"),
+
+    # --- Correctness / Repainting Rules ---
+    _Rule("OPT-049", "lookahead_on without [1] offset (future leak)", "critical", "Correctness",
+          _detect_lookahead_future_leak, "PineScript lookahead barmerge future data leak repainting"),
+
+    _Rule("OPT-050", "timenow causing repaint", "high", "Correctness",
+          _detect_timenow_repaint, "PineScript timenow historical realtime inconsistent behavior"),
+
+    _Rule("OPT-051", "barstate.isnew signal repaint", "high", "Correctness",
+          _detect_isnew_signal_repaint, "PineScript barstate.isnew repainting signal isconfirmed"),
+
+    _Rule("OPT-052", "Signal without isconfirmed guard", "high", "Correctness",
+          _detect_missing_isconfirmed, "PineScript barstate.isconfirmed signal false trigger realtime"),
+
+    _Rule("OPT-053", "Strategy on non-standard chart data", "critical", "Correctness",
+          _detect_non_standard_chart_strategy, "PineScript strategy Heikin-Ashi Renko misleading backtest"),
+
+    _Rule("OPT-054", "request.security_lower_tf() repainting", "high", "Correctness",
+          _detect_lower_tf_request, "PineScript request.security_lower_tf intrabar historical realtime difference"),
+
+    _Rule("OPT-055", "Drawings without max_*_count (default 50)", "medium", "Drawing waste",
+          _detect_drawing_display_limit, "PineScript max_lines_count max_boxes_count display limit 50"),
+
+    _Rule("OPT-056", "Map populated in loop (50K limit)", "medium", "Memory/buffer",
+          _detect_map_size_limit, "PineScript map size limit 50000 key-value pairs"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
