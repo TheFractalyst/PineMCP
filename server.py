@@ -84,10 +84,7 @@ async def model_lifespan(server):
 async def cache_lifespan(server):
     """Build hot cache."""
     logger.info("Building hot cache...")
-    success = await build_hot_cache()
-    if success:
-        import core.hot_cache as _hc
-        _hc._hot_cache_built = True
+    await build_hot_cache()
     logger.info("Hot cache ready")
     yield
     # Shutdown: close HTTP client and thread pool

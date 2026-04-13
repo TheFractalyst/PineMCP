@@ -49,17 +49,18 @@ def _return_type_matches(query_type: str, field_type: str) -> bool:
     """
     import re
 
+    ft = field_type.lower()
     # Exact match
-    if query_type == field_type:
+    if query_type == ft:
         return True
     # Query is a substring of field — check word boundary
     # e.g., "float" in "series float" ✓, "int" in "point" ✗
-    if query_type in field_type:
+    if query_type in ft:
         # Check that query_type appears as a complete word in field_type
         pattern = rf"(?:^|[\s<>,\[\]]){re.escape(query_type)}(?:$|[\s<>,\[\]])"
-        return bool(re.search(pattern, field_type))
+        return bool(re.search(pattern, ft))
     # Field is a substring of query — e.g., "series float" matches query "float"
-    if field_type in query_type:
+    if ft in query_type:
         return True
     return False
 
