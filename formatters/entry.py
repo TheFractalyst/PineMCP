@@ -80,11 +80,13 @@ def format_params_text(meta: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         return ""
 
-    if not params:
+    if not params or not isinstance(params, list):
         return ""
 
     lines = [section_line(f"PARAMETERS ({len(params)})")]
     for p in params:
+        if not isinstance(p, dict):
+            continue
         pname = p.get("name", "?")
         ptype = p.get("type", "")
         pdesc = p.get("description", "")
@@ -153,6 +155,8 @@ def format_type_info(meta: dict) -> str:
     if fields:
         lines.append(section_line("FIELDS"))
         for f in fields:
+            if not isinstance(f, dict):
+                continue
             fname = f.get("name", "?")
             ftype = f.get("type", "")
             fdesc = f.get("description", "")
