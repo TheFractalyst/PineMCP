@@ -23,8 +23,8 @@ cd ~/pinescript_mcp
 # Validate any file
 .venv/bin/python validate_file.py "/path/to/your/file.ps"
 
-# Example: Validate VIX.ps
-.venv/bin/python validate_file.py "~/Documents/Strategies/VIX.ps"
+# Example: Validate my_strategy.ps
+.venv/bin/python validate_file.py "~/Documents/my_strategy.ps"
 ```
 
 ### 2. Create Workflow Command
@@ -127,8 +127,8 @@ plot(close)' > /tmp/small.ps
 
 ### Test 2: Large File (Use Script)
 ```bash
-# Test VIX.ps (781 lines, 34KB)
-.venv/bin/python validate_file.py "~/Documents/Strategies/VIX.ps"
+# Test my_strategy.ps (781 lines, 34KB)
+.venv/bin/python validate_file.py "~/Documents/my_strategy.ps"
 ```
 
 ### Test 3: Verify MCP Tool Still Works
@@ -208,5 +208,5 @@ Use `validate_file.py` script for large files:
 ---
 
 **Status**: Workaround implemented ✅  
-**Next Steps**: Test validation script with VIX.ps  
+**Next Steps**: Test validation script with my_strategy.ps  
 **Updated**: April 6, 2026

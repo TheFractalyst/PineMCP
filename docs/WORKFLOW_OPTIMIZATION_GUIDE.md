@@ -204,7 +204,7 @@ PINE_FACADE_TIMEOUT=40
 1. [ ] Validate minimal code: `/tmp/test_pine_valid_code_minimal.ps`
 2. [ ] Test error detection: `/tmp/test_pine_syntax_errors_undefined_function.ps`
 3. [ ] Test empty input handling: Call `validate_syntax("")`
-4. [ ] Test large file: Validate `VIX.ps` (should complete in <20s)
+4. [ ] Test large file: Validate `my_strategy.ps` (should complete in <20s)
 5. [ ] Test workflow: Use `validate_and_explain` on error case
 6. [ ] Test special chars: `/tmp/test_pine_edge_cases_special_chars.ps`
 
@@ -267,7 +267,7 @@ PINESCRIPT_MAX_RESULTS=50
 ### 2026-04-06 - Critical Fixes
 - ✅ Fixed timeout configuration to use env var (was hardcoded 15s)
 - ✅ Fixed empty parameter handling (all tools now accept code="")
-- ✅ Verified VIX.ps (784 lines) validates successfully
+- ✅ Verified my_strategy.ps (784 lines) validates successfully
 - ✅ Created comprehensive edge case test suite (18 test scenarios)
 - ✅ Documented workflow best practices
 

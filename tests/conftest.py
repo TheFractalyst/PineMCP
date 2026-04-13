@@ -47,8 +47,8 @@ def invalid_pine_code():
 
 
 @pytest.fixture
-def dca_file_path():
-    """Path to the DCA.ps strategy file used in benchmarks.
+def example_file_path():
+    """Path to an example strategy file used in benchmarks.
     Skips tests if the file is not found locally."""
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "tests", "fixtures", "DCA.ps")
+                        "tests", "fixtures", "example_strategy.ps")

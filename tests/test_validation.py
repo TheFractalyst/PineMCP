@@ -137,10 +137,10 @@ class TestDebugPineFacade:
 
 class TestValidateFile:
     @pytest.mark.asyncio
-    async def test_valid_file(self, dca_file_path):
-        if not os.path.exists(dca_file_path):
-            pytest.skip("DCA.ps not found")
-        result = await validate_file(file_path=dca_file_path)
+    async def test_valid_file(self, example_file_path):
+        if not os.path.exists(example_file_path):
+            pytest.skip("example_strategy.ps not found")
+        result = await validate_file(file_path=example_file_path)
         assert "file" in result.lower()
         assert "compiler" in result.lower()
 
