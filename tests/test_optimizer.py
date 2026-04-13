@@ -188,7 +188,7 @@ class TestOPT015RequestLimit:
     def test_detects_many_request_calls(self):
         tfs = ["1", "5", "15", "30", "60", "120", "240", "D", "W", "M"] * 4
         calls = "\n".join(
-            f'float r{i} = request.security(syminfo.tickerid, "{tfs[i]}", close)'
+            f'float r{i} = request.security(syminfo.tickerid, "{tfs[i % len(tfs)]}", close)'
             for i in range(40)
         )
         code = f"//@version=6\nindicator('test')\n{calls}\nplot(close)"
@@ -1383,7 +1383,7 @@ class TestOPT056MapSizeLimit:
         code = (
             '//@version=6\nindicator("test")\n'
             'm = map.new<string, float>()\n'
-            'for i = 0 to 100\n'
+            'for i = 0 to 5000\n'
             '    map.put(m, str.tostring(i), close[i])\n'
             'plot(close)'
         )
@@ -1681,3 +1681,166 @@ class TestOPT059DrawingPastMaxBars:
         results = analyze_code(code)
         opt059 = [r for r in results if r.rule_id == "OPT-059"]
         assert len(opt059) == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Unit 3 edge-case tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestOPT013NaFalsePositive:
+    """OPT-013: na in variable names like 'omega', 'alpha' should not trigger."""
+
+    def test_no_false_positive_omega_alpha(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'omega = close / open\n'
+            'alpha = 0.5\n'
+            'label.new(bar_index, high, text="Buy")\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt013 = [r for r in results if r.rule_id == "OPT-013"]
+        assert len(opt013) == 0
+
+
+class TestOPT006LoopVariable:
+    """OPT-006: Should detect loop var correctly (not hardcoded 'i')."""
+
+    def test_detects_invariant_with_custom_loop_var(self):
+        code = """\
+//@version=6
+indicator("test")
+for idx = 0 to 100
+    val := math.cos(1.5) * idx
+plot(val)
+"""
+        results = analyze_code(code)
+        opt006 = [r for r in results if r.rule_id == "OPT-006"]
+        assert len(opt006) >= 1
+
+    def test_no_false_positive_loop_var_used(self):
+        code = """\
+//@version=6
+indicator("test")
+for j = 0 to 100
+    val := math.cos(j * 0.1)
+plot(val)
+"""
+        results = analyze_code(code)
+        opt006 = [r for r in results if r.rule_id == "OPT-006"]
+        assert len(opt006) == 0
+
+
+class TestOPT022LabelForward:
+    """OPT-022: Should also catch label.new with large forward bars."""
+
+    def test_detects_label_with_large_forward(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'label.new(bar_index, high, text="x", xloc=bar_index + 600)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt022 = [r for r in results if r.rule_id == "OPT-022"]
+        assert len(opt022) >= 1
+
+
+class TestOPT027ElseIf:
+    """OPT-027: ta.*() inside else if block should be detected."""
+
+    def test_detects_ta_in_else_if_block(self):
+        code = """\
+//@version=6
+indicator("test")
+if close > open
+    val := 1
+else if close < open
+    float mySma = ta.sma(close, 20)
+plot(close)
+"""
+        results = analyze_code(code)
+        opt027 = [r for r in results if r.rule_id == "OPT-027"]
+        assert len(opt027) >= 1
+
+
+class TestOPT029VaripOnly:
+    """OPT-029: Only tracks variables declared as varip, not arbitrary := assignments."""
+
+    def test_no_false_positive_non_varip_assign(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'varip float x = na\n'
+            'float y = na\n'
+            'if barstate.isrealtime\n'
+            '    y := close\n'
+            'plot(y)'
+        )
+        results = analyze_code(code)
+        opt029 = [r for r in results if r.rule_id == "OPT-029"]
+        # y is NOT declared varip, so updating it in isrealtime should not trigger OPT-029
+        assert len(opt029) == 0
+
+    def test_detects_varip_assign_in_plot(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'varip float x = na\n'
+            'if barstate.isrealtime\n'
+            '    x := close\n'
+            'plot(x)'
+        )
+        results = analyze_code(code)
+        opt029 = [r for r in results if r.rule_id == "OPT-029"]
+        assert len(opt029) >= 1
+
+    def test_detects_any_assign_when_no_varip_declared(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float x = na\n'
+            'if barstate.isrealtime\n'
+            '    x := close\n'
+            'plot(x)'
+        )
+        results = analyze_code(code)
+        opt029 = [r for r in results if r.rule_id == "OPT-029"]
+        # No varip declarations exist, so all := assignments in isrealtime are suspect
+        assert len(opt029) >= 1
+
+
+class TestOPT056LoopThreshold:
+    """OPT-056: Only triggers for large loops (>= 1000) or for...in, not trivial loops."""
+
+    def test_detects_map_in_large_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'for i = 0 to 5000\n'
+            '    map.put(m, str.tostring(i), close[i])\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) >= 1
+
+    def test_detects_map_in_for_in_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'arr = array.new<string>()\n'
+            'for item in arr\n'
+            '    map.put(m, item, close)\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) >= 1
+
+    def test_no_false_positive_small_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'for i = 0 to 10\n'
+            '    map.put(m, str.tostring(i), close[i])\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) == 0
