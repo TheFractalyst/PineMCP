@@ -229,7 +229,10 @@ def normalize_facade_response(raw: dict) -> dict:
             "type": e.get("type") or "error",
         }
 
-    all_normalized = [normalize_error(e) for e in raw_errors if isinstance(e, dict)]
+    all_normalized = [
+        normalize_error(e) if isinstance(e, dict) else {"line": 0, "column": 0, "text": str(e), "type": "error"}
+        for e in raw_errors
+    ]
     # Separate errors from warnings — warnings must NOT appear in errors list
     errors = [e for e in all_normalized if e.get("type") != "warning"]
     warnings = [e for e in all_normalized if e.get("type") == "warning"]

@@ -9,6 +9,15 @@ from __future__ import annotations
 
 import os
 
+
+def _safe_int(env_var: str, default: int) -> int:
+    """Parse env var as int, returning default on invalid values."""
+    try:
+        return int(os.getenv(env_var, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Runtime configuration (env-var overridable)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -19,14 +28,14 @@ DB_PATH = os.getenv(
 )
 COLLECTION = os.getenv("PINESCRIPT_COLLECTION", "pinescript_v6")
 EMBED_MODEL = os.getenv("PINESCRIPT_EMBED_MODEL", "all-MiniLM-L6-v2")
-MAX_RESULTS = int(os.getenv("PINESCRIPT_MAX_RESULTS", "100"))
+MAX_RESULTS = _safe_int("PINESCRIPT_MAX_RESULTS", 100)
 PINE_FACADE_URL = os.getenv(
     "PINE_FACADE_URL",
     "https://pine-facade.tradingview.com/pine-facade/translate_light?user_name=admin&v=3",
 )
-PINE_FACADE_TIMEOUT = int(os.getenv("PINE_FACADE_TIMEOUT", "20"))
-VALIDATION_CACHE_TTL = int(os.getenv("VALIDATION_CACHE_TTL", "300"))
-VALIDATION_CACHE_MAX_SIZE = int(os.getenv("VALIDATION_CACHE_SIZE", "500"))
+PINE_FACADE_TIMEOUT = _safe_int("PINE_FACADE_TIMEOUT", 20)
+VALIDATION_CACHE_TTL = _safe_int("VALIDATION_CACHE_TTL", 300)
+VALIDATION_CACHE_MAX_SIZE = _safe_int("VALIDATION_CACHE_SIZE", 500)
 MAX_TOOL_RESPONSE_CHARS = 80000
 MAX_FUZZY_SCAN_ENTRIES = 5000
 

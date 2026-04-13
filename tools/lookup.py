@@ -27,6 +27,7 @@ from core.db import (
 from core.hot_cache import cache_lookup, ensure_hot_cache
 from formatters.entry import format_entry_detail, is_function_like
 from formatters.errors import (
+    cap_response,
     check_query_error,
     circuit_breaker_msg,
     norm_name,
@@ -393,7 +394,7 @@ async def get_type(
                     except Exception as e:
                         logger.debug(f"Type method enrichment failed: {e}")
 
-                return formatted
+                return cap_response(formatted)
         except Exception as e:
             logger.debug(f"Exact type match failed: {e}")
 
@@ -444,7 +445,7 @@ async def get_type(
                 except Exception as e:
                     logger.debug(f"Type method enrichment (fallback) failed: {e}")
 
-            return formatted
+            return cap_response(formatted)
 
         return (
             f"Type '{name}' not found in docs.\n"

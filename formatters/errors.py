@@ -144,13 +144,23 @@ def cap_response(text: str, limit: int = MAX_TOOL_RESPONSE_CHARS) -> str:
     if len(text) <= limit:
         return text
     truncated = text[:limit]
-    last_fence = truncated.rfind("```")
-    if last_fence > limit * 0.8:
-        truncated = truncated[:last_fence]
-    # Close any unclosed markdown code fences
+    # Close any unclosed markdown code fences.
+    # Count opening fences (lines starting with ``` followed by optional lang tag)
+    # vs closing fences (bare ``` on their own line or at end).
+    # Simple heuristic: count all ``` occurrences — odd count means unclosed.
     fence_count = truncated.count("```")
     if fence_count % 2 != 0:
-        truncated += "\n```"
+        # Find the last opening fence (``` followed by a lang tag or at line start)
+        # and truncate there to remove the incomplete block entirely
+        last_fence_pos = truncated.rfind("```")
+        # Check if this is an opening fence (not a closing one)
+        after = truncated[last_fence_pos + 3:].lstrip()
+        if after and not after.startswith("\n") and not after == "":
+            # Opening fence with content — truncate before it
+            truncated = truncated[:last_fence_pos].rstrip()
+        else:
+            # Likely a closing fence — just add the missing one
+            truncated += "\n```"
     omitted = len(text) - len(truncated)
     return truncated + f"\n\n[...truncated — {omitted:,} chars omitted]"
 
