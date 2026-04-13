@@ -46,7 +46,7 @@ async def validate_syntax(
         min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
-    )] = "",
+    )],
 ) -> str:
     """
     Validate PineScript v6 code using TradingView's official pine-facade
@@ -171,7 +171,7 @@ async def validate_and_explain(
         min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
-    )] = "",
+    )],
 ) -> str:
     """
     Validate PineScript v6 code AND cross-reference any errors against
@@ -295,11 +295,12 @@ async def fix_and_validate(
         min_length=1,
         max_length=50000,
         description="The failing PineScript v6 code",
-    )] = "",
+    )],
     error_description: Annotated[str, Field(
+        min_length=1,
         max_length=500,
         description="The error message or what's wrong",
-    )] = "",
+    )],
 ) -> str:
     """
     Given PineScript code and a description of what's wrong (or the
@@ -502,7 +503,7 @@ async def debug_pine_facade(
             min_length=1,
             max_length=50000,
             description="Complete PineScript v6 source code to compile",
-    )] = "",
+    )],
 ) -> str:
     """
     Diagnostic tool: compile code via pine-facade and return the FULL raw
@@ -644,6 +645,10 @@ async def validate_file(
         cached = get_cached_file_validation(resolved, mtime_ns, fsize)
         if cached:
             return cached
+
+        # Reject oversized files before reading into memory
+        if fsize > 500_000:
+            return f"ERROR: File too large ({fsize:,} bytes). Maximum is 500KB."
 
         # Read file contents
         with open(resolved, "r", encoding="utf-8", errors="replace") as f:
