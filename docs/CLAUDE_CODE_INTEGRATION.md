@@ -18,13 +18,13 @@ A standalone validation script bypasses Claude Code's parameter limitations by d
 
 ```bash
 # Navigate to MCP directory
-cd ~/pinescript_mcp
+cd /path/to/pinescript-mcp
 
 # Validate any file
 .venv/bin/python validate_file.py "/path/to/your/file.ps"
 
 # Example: Validate my_strategy.ps
-.venv/bin/python validate_file.py "~/Documents/my_strategy.ps"
+.venv/bin/python validate_file.py "/path/to/my_strategy.ps"
 ```
 
 ### 2. Create Workflow Command
@@ -41,7 +41,7 @@ description: Validate PineScript file using direct MCP call
 // turbo
 1. Run validation script:
    ```bash
-   cd ~/pinescript_mcp && .venv/bin/python validate_file.py "$FILE_PATH"
+   cd /path/to/pinescript-mcp && .venv/bin/python validate_file.py "$FILE_PATH"
    ```
 
 2. Review validation results and fix any errors reported.
@@ -128,7 +128,7 @@ plot(close)' > /tmp/small.ps
 ### Test 2: Large File (Use Script)
 ```bash
 # Test my_strategy.ps (781 lines, 34KB)
-.venv/bin/python validate_file.py "~/Documents/my_strategy.ps"
+.venv/bin/python validate_file.py "/path/to/my_strategy.ps"
 ```
 
 ### Test 3: Verify MCP Tool Still Works
@@ -150,7 +150,7 @@ Check MCP server logs for parameter size issues:
 
 ```bash
 # View MCP server logs
-tail -f ~/Library/Logs/Claude/mcp*.log | grep validate_syntax
+tail -f /path/to/logs/mcp*.log | grep validate_syntax
 ```
 
 Look for:
