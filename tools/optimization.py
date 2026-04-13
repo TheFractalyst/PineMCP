@@ -31,7 +31,7 @@ async def optimize_code(
 ) -> str:
     """Analyze PineScript v6 code for performance anti-patterns and optimization opportunities.
 
-    Detects 32 issues from TradingView's official profiling & optimization docs:
+    Detects 36 issues from TradingView's official profiling & optimization docs:
     - Request/TA call waste: duplicate request.security(), exceeding call limits
     - Drawing inefficiency: delete+recreate vs setters, unprotected updates
     - Loop waste: reimplemented built-ins, loop-invariant code, indexof in loops
