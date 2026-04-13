@@ -17,7 +17,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 import core.db as _db
-from core.db import query_async, get_all_where_async
+from core.db import get_all_where_async, query_async
 from core.hot_cache import ensure_hot_cache
 from formatters.entry import (
     _DIVIDER,

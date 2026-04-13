@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Label must match the filename -->
+    <key>Label</key>
+    <string>com.pinescript.mcp</string>
+
+    <!-- Command: venv python + server.py in HTTP mode -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__VENV_PYTHON__</string>
+        <string>__SERVER_PY__</string>
+        <string>--transport</string>
+        <string>http</string>
+        <string>--port</string>
+        <string>__PORT__</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+    </array>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PINESCRIPT_DB_PATH</key>
+        <string>__DB_PATH__</string>
+        <key>PINESCRIPT_COLLECTION</key>
+        <string>pinescript_v6</string>
+        <key>PINESCRIPT_EMBED_MODEL</key>
+        <string>all-MiniLM-L6-v2</string>
+        <key>PINESCRIPT_MAX_RESULTS</key>
+        <string>20</string>
+        <key>PINE_FACADE_TIMEOUT</key>
+        <string>20</string>
+        <key>VALIDATION_CACHE_TTL</key>
+        <string>300</string>
+        <key>HOT_CACHE_NAMESPACES</key>
+        <string>ta,strategy,math,array,str,matrix,map</string>
+        <key>LAZY_MODEL</key>
+        <string>true</string>
+        <key>LOG_LEVEL</key>
+        <string>INFO</string>
+        <key>TRANSPORT</key>
+        <string>http</string>
+        <key>PORT</key>
+        <string>__PORT__</string>
+    </dict>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <!-- Auto-restart on crash -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Start on login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Throttle restarts: wait at least 5s before restarting after a crash -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <!-- Log paths -->
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/pinescript_mcp.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/pinescript_mcp_err.log</string>
+</dict>
+</plist>

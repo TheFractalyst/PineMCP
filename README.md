@@ -1,5 +1,10 @@
 # PineScript v6 Complete Reference — MCP Server
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
+[![MCP Server](https://img.shields.io/badge/MCP-20%20Tools-green.svg)](tools/)
+[![Tests](https://img.shields.io/badge/Tests-134%20passing-brightgreen.svg)](tests/)
+
 Production MCP server providing the complete PineScript v6 reference via **20 tools + 1 resource** backed by a local ChromaDB vector store, TradingView's official `pine-facade` compiler, and a memory-first hot cache.
 
 ## What It Does
@@ -94,9 +99,9 @@ chmod +x run.sh
 ./run.sh
 
 # Or step by step:
-make install          # venv + pip install -r requirements.txt
-make index            # re-index ChromaDB from existing data (skip scraping)
-make index-full       # full re-scrape + re-index
+make install          # venv + pip install (uses pyproject.toml)
+make index            # build ChromaDB index from tracked data files
+make index-full       # full re-scrape from TradingView + re-index
 make test             # run 134 tests
 make serve            # start MCP server (stdio)
 make check            # verify 20 tools + 1 resource registered
@@ -104,7 +109,15 @@ make lint             # ruff lint
 make bench            # benchmark suite
 ```
 
-**After setup, the `pinescript_db/` directory (~82MB) is generated locally.** It can be rebuilt by `make index` from the tracked data files in `data/`. For backup, the database can be committed to git (note: large file warning on GitHub).
+**After `make index`, the `pinescript_db/` directory (~82MB) is generated locally.** It is gitignored — rebuild anytime from tracked data in `data/`.
+
+### Pre-built Database (Optional)
+
+Download a pre-built database from [GitHub Releases](https://github.com/TheFractalyst/pinescript-mcp/releases) to skip indexing:
+
+```bash
+curl -L https://github.com/TheFractalyst/pinescript-mcp/releases/latest/download/pinescript_db.tar.gz | tar xz
+```
 
 ## IDE Configuration
 
@@ -254,12 +267,12 @@ xxhash>=3.0.0
 |------|------|---------|
 | Source code (183 files) | ~13 MB | Yes |
 | `data/` (source JSON for indexing) | ~12 MB | Partially |
-| `pinescript_db/` (ChromaDB index) | ~82 MB | Yes (committed for backup) |
-| `.git/` | ~422 MB | N/A |
+| `pinescript_db/` (ChromaDB index) | ~82 MB | No — rebuild with `make index` |
+| `.git/` | ~2 MB | N/A |
 | `.venv/` | ~2 GB | No (gitignored) |
 
-**Total clone from GitHub: ~95 MB (includes database). Local after setup: ~2 GB.**
+**Total clone from GitHub: ~15 MB. Local after setup + indexing: ~2 GB.**
 
 ## License
 
-MIT
+[MIT](LICENSE)

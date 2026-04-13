@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """
 mcp/tools/context.py
 ──────────────────────────────────────────────────────────────────────────────
@@ -15,9 +16,15 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 import core.db as _db
-from core.db import query_async, get_all_where_async
+from core.db import get_all_where_async, query_async
 from formatters.entry import (
-    _BOX_TL, _BOX_TR, _BOX_BL, _BOX_BR, _BOX_H, _BOX_V, _BOX_MID,
+    _BOX_BL,
+    _BOX_BR,
+    _BOX_H,
+    _BOX_MID,
+    _BOX_TL,
+    _BOX_TR,
+    _BOX_V,
 )
 from formatters.errors import (
     cap_response,

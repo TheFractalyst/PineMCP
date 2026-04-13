@@ -162,7 +162,7 @@ def cache_lookup(name: str) -> Optional[dict]:
     return None
 
 
-async def ensure_hot_cache():
+async def ensure_hot_cache() -> None:
     """Build hot cache on first call if not already built."""
     global _hot_cache_built
     if not _hot_cache_built:

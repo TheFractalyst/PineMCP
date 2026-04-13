@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """
 mcp/tools/codegen.py
 ──────────────────────────────────────────────────────────────────────────────
@@ -17,9 +18,9 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 import core.db as _db
+from core.caches import codegen_cache_key, get_codegen_cache, set_codegen_cache
 from core.db import query_async
 from core.pine_facade import call_pine_facade
-from core.caches import codegen_cache_key, get_codegen_cache, set_codegen_cache
 from formatters.errors import (
     cap_response,
     check_query_error,
@@ -424,7 +425,7 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
     except Exception as e:
         logger.error(f"[generate_indicator] {e}")
         if _db._chroma_breaker.is_open():
-            raise ToolError(circuit_breaker_msg())
+            return circuit_breaker_msg()
         raise ToolError(safe_error(e, "generate_indicator"))
 
 
@@ -564,9 +565,9 @@ if enableShort and shortCondition and barstate.isconfirmed
     strategy.entry("Short", strategy.short)
 
 // ── Exits ────────────────────────────────────────────────────
-strategy.exit("Long Exit",  from_entry="Long",  
+strategy.exit("Long Exit",  from_entry="Long",
                 profit=na, loss=na)
-strategy.exit("Short Exit", from_entry="Short", 
+strategy.exit("Short Exit", from_entry="Short",
                 profit=na, loss=na)
 
 // ── Cleanup ──────────────────────────────────────────────────
@@ -607,7 +608,7 @@ if barstate.islast
     except Exception as e:
         logger.error(f"[generate_strategy] {e}")
         if _db._chroma_breaker.is_open():
-            raise ToolError(circuit_breaker_msg())
+            return circuit_breaker_msg()
         raise ToolError(safe_error(e, "generate_strategy"))
 
 
@@ -804,5 +805,5 @@ async def lookup_and_correct(
     except Exception as e:
         logger.error(f"[lookup_and_correct] {e}")
         if _db._chroma_breaker.is_open():
-            raise ToolError(circuit_breaker_msg())
+            return circuit_breaker_msg()
         raise ToolError(safe_error(e, "lookup_and_correct"))

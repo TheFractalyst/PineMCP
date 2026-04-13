@@ -20,7 +20,7 @@ from typing import Optional
 import xxhash
 from loguru import logger
 
-from core.config import VALIDATION_CACHE_TTL, VALIDATION_CACHE_MAX_SIZE
+from core.config import VALIDATION_CACHE_MAX_SIZE, VALIDATION_CACHE_TTL
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Validation result cache — keyed on xxhash of source code

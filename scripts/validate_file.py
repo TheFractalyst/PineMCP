@@ -4,7 +4,7 @@ This bypasses Claude Code limitations with large file parameters.
 
 Usage:
     python validate_file.py <file_path>
-    python validate_file.py /Users/fractalyst/Documents/Quantify\ -\ Deeptest/Strategies/VIX.ps
+    python validate_file.py /path/to/your/script.ps
 """
 
 import sys
@@ -114,7 +114,7 @@ async def main():
     if len(sys.argv) < 2:
         print("Usage: python validate_file.py <file_path>")
         print("\nExample:")
-        print('  python validate_file.py "/Users/fractalyst/Documents/Quantify - Deeptest/Strategies/VIX.ps"')
+        print('  python validate_file.py /path/to/your/script.ps')
         sys.exit(1)
     
     file_path = sys.argv[1]
