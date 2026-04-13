@@ -583,14 +583,14 @@ if barstate.islast
                 f"  Line {e['line']}: {e['text']}" for e in validation["errors"][:5]
             )
             return (
-                f"⚠️ Template generation failed validation:\n{errors_str}\n\n"
+                f"WARNING: Template generation failed validation:\n{errors_str}\n\n"
                 f"Raw template for manual fix:\n```pine\n{template}\n```"
             )
 
         lines = []
         lines.append("GENERATED STRATEGY TEMPLATE")
         lines.append("=" * 50)
-        lines.append("Validated: ✅ 0 compilation errors")
+        lines.append("Validated: 0 compilation errors (OK)")
         lines.append("")
         lines.append("```pine")
         lines.append(template.strip())
@@ -765,7 +765,7 @@ async def lookup_and_correct(
             lines.append("")
         else:
             lines.append(
-                "AFTER FIXES: ✅ All issues resolved! Code compiles successfully."
+                "AFTER FIXES: All issues resolved. Code compiles successfully."
             )
             lines.append("")
 

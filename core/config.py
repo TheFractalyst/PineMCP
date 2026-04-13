@@ -118,7 +118,7 @@ CODEGEN TOOLS (use for scaffolding):
   lookup_and_correct(code, desc)   Validate + correct code with doc lookup
 
 OPTIMIZATION TOOLS (use for performance analysis):
-  optimize_code(code)             Detect 28 anti-patterns: request.*() waste, drawing
+  optimize_code(code)             Detect 55 anti-patterns: request.*() waste, drawing
                                    inefficiency, loop waste, memory/buffer issues, correctness
                                    traps, and resource limit violations. Returns line-by-line
                                    findings with severity ratings and fix suggestions.
