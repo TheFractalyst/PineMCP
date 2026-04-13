@@ -1,6 +1,6 @@
 # PineScript MCP Server Benchmark Results
 
-**Server**: `~/pinescript_mcp/server.py`
+**Server**: `./server.py`
 **Iterations per tool**: 3 (1 cold + 2 warm)
 **Date**: 2026-04-07 04:44:39
 **Tools tested**: 21
