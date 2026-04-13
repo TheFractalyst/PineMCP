@@ -237,6 +237,8 @@ async def get_function(
 
     Use for: ta.*, strategy.*, array.*, math.*, str.*, request.*, etc.
     Example: get_function("ta.ema"), get_function("strategy.entry")
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         name = norm_name(name)
@@ -311,6 +313,8 @@ async def get_variable(
     Get documentation for a PineScript v6 built-in variable.
     Built-in variables: close, open, high, low, volume, time,
     bar_index, barstate.*, syminfo.*, strategy.*, etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "variable")
@@ -348,6 +352,8 @@ async def get_type(
     Get documentation for a PineScript v6 type.
     Types: array, matrix, map, line, label, box, table, polyline,
     color, string, int, float, bool, and user-defined types.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         name = norm_name(name)
@@ -487,6 +493,8 @@ async def get_constant(
     Get documentation for a PineScript v6 built-in constant.
     Examples: color.red, strategy.long, order.ascending,
     shape.circle, location.top, etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "constant")
@@ -524,6 +532,8 @@ async def get_keyword(
     Get documentation for a PineScript v6 keyword.
     Keywords: if, for, while, switch, var, varip, type, method,
     import, export, and, or, not, true, false, etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "keyword")
@@ -561,6 +571,8 @@ async def get_operator(
     Get documentation for a PineScript v6 operator.
     Operators: :=, +=, -=, *=, /=, %=, ==, !=, >, <, >=, <=,
     ?, =>, +, -, *, /, %, not, and, or, [], etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "operator")
