@@ -243,15 +243,31 @@ def _detect_invariant_in_loop(code: str, lines: list[str]) -> list[OptimizationR
             loop_var = loop_m.group(1)
             in_loop = True
         elif in_loop and stripped and not stripped.startswith(("for ", "if ", "else", "//")):
-            # Check if line has invariant function calls (not using loop variable)
-            if invariant_funcs.search(stripped) and loop_var not in stripped.split("(")[0]:
-                results.append(_result(
-                    _RULES_BY_ID["OPT-006"], i + 1,
-                    stripped[:100],
-                    "Move loop-invariant calculations (math.cos, array.min, etc.) "
-                    "outside the loop. Compute once before the loop, then reference."
-                ))
-                break
+            # Check if line has invariant function calls (not using loop variable in their args)
+            if invariant_funcs.search(stripped):
+                # Extract the argument portion of the invariant call
+                inv_m = invariant_funcs.search(stripped)
+                # Get everything after the function name up to closing paren
+                after_func = stripped[inv_m.end():]
+                paren_depth = 0
+                args = ""
+                for ch in after_func:
+                    if ch == "(":
+                        paren_depth += 1
+                    elif ch == ")":
+                        paren_depth -= 1
+                        if paren_depth < 0:
+                            break
+                    args += ch
+                # Only flag if loop variable is NOT in the function arguments
+                if loop_var not in args:
+                    results.append(_result(
+                        _RULES_BY_ID["OPT-006"], i + 1,
+                        stripped[:100],
+                        "Move loop-invariant calculations (math.cos, array.min, etc.) "
+                        "outside the loop. Compute once before the loop, then reference."
+                    ))
+                    break
         elif in_loop and not stripped:
             in_loop = False
     return results
@@ -545,7 +561,7 @@ def _detect_forward_bars(code: str, lines: list[str]) -> list[OptimizationResult
         stripped = _strip_comments(line).strip()
         m = re.search(r"bar_index\s*\+\s*(\d+)", stripped)
         if m and int(m.group(1)) > 400:
-            if re.search(r"(line|box)\.(new|set_)", stripped):
+            if re.search(r"(line|box|label)\.(new|set_)", stripped):
                 results.append(_result(
                     _RULES_BY_ID["OPT-022"], i + 1,
                     stripped[:100],
@@ -582,7 +598,7 @@ def _detect_ta_in_local_scope(code: str, lines: list[str]) -> list[OptimizationR
             continue
         indent = len(line) - len(line.lstrip())
 
-        if re.match(r"^(if|for|while|switch)\b", stripped):
+        if re.match(r"^(if|for|while|switch|else\s+if)\b", stripped):
             # Check body lines (indented lines following this one)
             for j in range(i + 1, min(i + 15, len(lines))):
                 body_line = lines[j]
@@ -727,8 +743,24 @@ def _detect_history_in_local_scope(code: str, lines: list[str]) -> list[Optimiza
 def _detect_realtime_tick_repaint(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-029: barstate.isrealtime/isnew + varip feeding into plot (repainting)."""
     results: list[OptimizationResult] = []
-    # Collect varip variable names assigned inside barstate.isrealtime/isnew blocks
-    varip_vars: set[str] = set()
+    # Pre-collect varip-declared variable names
+    declared_varip: set[str] = set()
+    for line in lines:
+        stripped = _strip_comments(line).strip()
+        m_varip = re.match(r"varip\s+(?:int|float|bool|string|color)\s+(\w+)", stripped)
+        if m_varip:
+            declared_varip.add(m_varip.group(1))
+        elif re.match(r"varip\s+(\w+)", stripped):
+            # varip without type prefix (e.g., varip x = na)
+            m2 = re.match(r"varip\s+(\w+)", stripped)
+            if m2 and m2.group(1) not in ("int", "float", "bool", "string", "color",
+                                           "table", "box", "line", "label", "array",
+                                           "matrix", "map"):
+                declared_varip.add(m2.group(1))
+
+    # Collect variable names assigned inside barstate.isrealtime/isnew blocks
+    # that were declared as varip, OR any variable if no varip declarations exist
+    suspect_vars: set[str] = set()
     in_realtime_block = False
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
@@ -740,20 +772,23 @@ def _detect_realtime_tick_repaint(code: str, lines: list[str]) -> list[Optimizat
             if stripped and indent == 0 and not stripped.startswith(("else", "//")):
                 in_realtime_block = False
                 continue
-            # varip assignment: varip float x or x := close (where x was declared varip)
             m_assign = re.match(r"(\w+)\s*:=\s*", stripped)
             if m_assign:
-                varip_vars.add(m_assign.group(1))
+                var_name = m_assign.group(1)
+                # Only track if it's a known varip var, or if no varip declarations exist
+                if declared_varip and var_name not in declared_varip:
+                    continue
+                suspect_vars.add(var_name)
 
-    if not varip_vars:
+    if not suspect_vars:
         return results
 
-    # Check if any varip variable feeds into a plot call
+    # Check if any suspect variable feeds into a plot call
     plot_pattern = re.compile(r"\b(plot|plotcandle|plotchar|plotshape|plotarrow|plotbar)\s*\(")
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
         if plot_pattern.search(stripped):
-            for var in varip_vars:
+            for var in suspect_vars:
                 if re.search(rf"\b{var}\b", stripped):
                     results.append(_result(
                         _RULES_BY_ID["OPT-029"], i + 1,
@@ -1273,7 +1308,11 @@ def _detect_map_size_limit(code: str, lines: list[str]) -> list[OptimizationResu
     has_map_put_in_loop = False
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
-        if re.search(r"\bfor\s+\w+\s*=", stripped):
+        # Match for...in or bounded for with high upper bound
+        for_in_m = re.search(r"\bfor\s+\w+\s+in\s+\w+", stripped)
+        for_range_m = re.search(r"\bfor\s+\w+\s*=\s*\d+\s+to\s+(\d+)", stripped)
+        is_large_loop = bool(for_in_m) or (for_range_m and int(for_range_m.group(1)) >= 1000)
+        if is_large_loop:
             for j in range(i + 1, min(i + 10, len(lines))):
                 body = _strip_comments(lines[j]).strip()
                 if re.search(r"\bmap\.put\s*\(", body):
