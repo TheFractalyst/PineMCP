@@ -15,6 +15,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from core.optimizer import analyze_code, format_results
+from formatters.errors import cap_response
 
 
 @tool(
@@ -69,4 +70,4 @@ async def optimize_code(
                 report += f"  - \"{r.doc_query}\"\n"
                 seen_queries.add(r.doc_query)
 
-    return report
+    return cap_response(report)
