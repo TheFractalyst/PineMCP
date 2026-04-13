@@ -1,0 +1,11 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+#
+# PineScript v6 MCP Server — 20 tools for docs lookup, code validation, and code generation.
+# Complete local reference for TradingView's PineScript v6 via ChromaDB vector store.
+
+startCommand:
+  type: stdio
+  commandFunction:
+    # Starts the MCP server on stdio. Requires dependencies installed in the active venv.
+    |-
+    () => ({ command: 'python', args: ['server.py'] })
