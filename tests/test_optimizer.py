@@ -637,6 +637,492 @@ class TestOPT038TableCreationEveryBar:
         assert len(opt038) == 0
 
 
+class TestOPT033VarInLoopHeader:
+    """OPT-033: var in for-loop header causes single-iteration bug."""
+
+    def test_detects_var_in_for_header(self):
+        code = '//@version=6\nindicator("test")\nfor var i = 0 to 10\n    plot(close[i])\nplot(close)'
+        results = analyze_code(code)
+        opt033 = [r for r in results if r.rule_id == "OPT-033"]
+        assert len(opt033) >= 1
+
+    def test_no_false_positive_normal_for(self):
+        code = '//@version=6\nindicator("test")\nfor i = 0 to 10\n    plot(close[i])\nplot(close)'
+        results = analyze_code(code)
+        opt033 = [r for r in results if r.rule_id == "OPT-033"]
+        assert len(opt033) == 0
+
+
+class TestOPT034VariableShadowing:
+    """OPT-034: Variable shadowing (= instead of :=) in local scope."""
+
+    def test_detects_shadowing_in_if_block(self):
+        code = '//@version=6\nindicator("test")\nmyVal = 0\nif close > open\n    myVal = 1\nplot(myVal)'
+        results = analyze_code(code)
+        opt034 = [r for r in results if r.rule_id == "OPT-034"]
+        assert len(opt034) >= 1
+
+    def test_no_false_positive_colon_equals(self):
+        code = '//@version=6\nindicator("test")\nmyVal = 0\nif close > open\n    myVal := 1\nplot(myVal)'
+        results = analyze_code(code)
+        opt034 = [r for r in results if r.rule_id == "OPT-034"]
+        assert len(opt034) == 0
+
+
+class TestOPT035CollectionInRequest:
+    """OPT-035: Returning collections from request.*() calls."""
+
+    def test_detects_array_in_request(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'arr = request.security(syminfo.tickerid, "1D", array.new<float>())\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt035 = [r for r in results if r.rule_id == "OPT-035"]
+        assert len(opt035) >= 1
+
+    def test_no_false_positive_scalar_request(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float val = request.security(syminfo.tickerid, "1D", close)\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt035 = [r for r in results if r.rule_id == "OPT-035"]
+        assert len(opt035) == 0
+
+
+class TestOPT037StrategyNoDateFilter:
+    """OPT-037: Strategy with entries but no time/date filter."""
+
+    def test_detects_strategy_without_date_filter(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'if close > open\n    strategy.entry("Long", strategy.long)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt037 = [r for r in results if r.rule_id == "OPT-037"]
+        assert len(opt037) >= 1
+
+    def test_no_false_positive_with_time_filter(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'if time > timestamp(2020, 1, 1, 0, 0) and close > open\n'
+            '    strategy.entry("Long", strategy.long)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt037 = [r for r in results if r.rule_id == "OPT-037"]
+        assert len(opt037) == 0
+
+
+class TestOPT039UnusedRequest:
+    """OPT-039: Unused request.*() result."""
+
+    def test_detects_unused_request(self):
+        code = (
+            '//@version=6\nindicator("test")'
+            '\nfloat val = request.security(syminfo.tickerid, "1D", close)'
+            '\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt039 = [r for r in results if r.rule_id == "OPT-039"]
+        assert len(opt039) >= 1
+
+    def test_no_false_positive_used_request(self):
+        code = (
+            '//@version=6\nindicator("test")'
+            '\nfloat val = request.security(syminfo.tickerid, "1D", close)'
+            '\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt039 = [r for r in results if r.rule_id == "OPT-039"]
+        assert len(opt039) == 0
+
+
+class TestOPT040ManualArrayGetLoop:
+    """OPT-040: Manual for i=0 to size-1 with array.get() — use for...in."""
+
+    def test_detects_manual_array_get_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\narr = array.new<float>()\n'
+            'for i = 0 to array.size(arr) - 1\n'
+            '    val = array.get(arr, i)\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt040 = [r for r in results if r.rule_id == "OPT-040"]
+        assert len(opt040) >= 1
+
+    def test_no_false_positive_for_in_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\narr = array.new<float>()\n'
+            'for item in arr\n    val := item\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt040 = [r for r in results if r.rule_id == "OPT-040"]
+        assert len(opt040) == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Negative/false-positive tests for existing rules
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestOPT001Neg:
+    """OPT-001 negative: built-in used correctly."""
+
+    def test_no_false_positive_builtin_used(self):
+        code = '//@version=6\nindicator("test")\nmyVal = ta.highest(close, 20)\nplot(myVal)'
+        results = analyze_code(code)
+        opt001 = [r for r in results if r.rule_id == "OPT-001"]
+        assert len(opt001) == 0
+
+
+class TestOPT002Neg:
+    """OPT-002 negative: only 2 identical calls."""
+
+    def test_no_false_positive_two_calls(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float a = ta.sma(close, 20)\nfloat b = ta.sma(close, 20)\nplot(a)'
+        )
+        results = analyze_code(code)
+        opt002 = [r for r in results if r.rule_id == "OPT-002"]
+        assert len(opt002) == 0
+
+
+class TestOPT004Neg:
+    """OPT-004 negative: setter used instead of delete+new."""
+
+    def test_no_false_positive_setter(self):
+        code = (
+            '//@version=6\nindicator("test")\nvar box b = box.new(bar_index, high, bar_index + 1, low)\n'
+            'box.set_lefttop(b, bar_index, high)\nbox.set_rightbottom(b, bar_index + 1, low)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt004 = [r for r in results if r.rule_id == "OPT-004"]
+        assert len(opt004) == 0
+
+
+class TestOPT006Neg:
+    """OPT-006 negative: invariant computed before loop."""
+
+    def test_no_false_positive_outside_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\nfloat val = math.cos(1.5) * close\n'
+            'for i = 1 to 10\n    result := val * i\nplot(result)'
+        )
+        results = analyze_code(code)
+        opt006 = [r for r in results if r.rule_id == "OPT-006"]
+        assert len(opt006) == 0
+
+
+class TestOPT007Neg:
+    """OPT-007 negative: built-in used correctly."""
+
+    def test_no_false_positive_builtin_sum(self):
+        code = '//@version=6\nindicator("test")\nmySum = math.sum(close, 20)\nplot(mySum)'
+        results = analyze_code(code)
+        opt007 = [r for r in results if r.rule_id == "OPT-007"]
+        assert len(opt007) == 0
+
+
+class TestOPT008Neg:
+    """OPT-008 negative: for [idx, item] used correctly."""
+
+    def test_no_false_positive_correct_for_in(self):
+        code = (
+            '//@version=6\nindicator("test")\narr = array.new<float>()\n'
+            'for [idx, item] in arr\n    result := item * 2.0\nplot(result)'
+        )
+        results = analyze_code(code)
+        opt008 = [r for r in results if r.rule_id == "OPT-008"]
+        assert len(opt008) == 0
+
+
+class TestOPT010Neg:
+    """OPT-010 negative: max_bars_back already present."""
+
+    def test_no_false_positive_max_bars_present(self):
+        code = (
+            '//@version=6\nindicator("test")\nmax_bars_back(close, 500)\n'
+            'if barstate.islast\n    val = close[500]\nplot(val)'
+        )
+        results = analyze_code(code)
+        opt010 = [r for r in results if r.rule_id == "OPT-010"]
+        assert len(opt010) == 0
+
+
+class TestOPT011Neg:
+    """OPT-011 negative: buffer size under 4900."""
+
+    def test_no_false_positive_small_buffer(self):
+        code = '//@version=6\nindicator("test")\nmax_bars_back(close, 100)\nplot(close)'
+        results = analyze_code(code)
+        opt011 = [r for r in results if r.rule_id == "OPT-011"]
+        assert len(opt011) == 0
+
+
+class TestOPT012Neg:
+    """OPT-012 negative: calc_bars_count already set."""
+
+    def test_no_false_positive_calc_bars_set(self):
+        code = (
+            '//@version=6\nindicator("test", calc_bars_count=5000)'
+            '\nif barstate.islast\n    label.new(bar_index, high, "x")\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt012 = [r for r in results if r.rule_id == "OPT-012"]
+        assert len(opt012) == 0
+
+
+class TestOPT015Neg:
+    """OPT-015 negative: few request calls."""
+
+    def test_no_false_positive_few_requests(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float a = request.security(syminfo.tickerid, "1D", close)\n'
+            'float b = request.security(syminfo.tickerid, "4H", close)\nplot(a)'
+        )
+        results = analyze_code(code)
+        opt015 = [r for r in results if r.rule_id == "OPT-015"]
+        assert len(opt015) == 0
+
+
+class TestOPT023Neg:
+    """OPT-023 negative: small loop bound."""
+
+    def test_no_false_positive_small_loop(self):
+        code = '//@version=6\nindicator("test")\nfor i = 1 to 100\n    val := val + i\nplot(val)'
+        results = analyze_code(code)
+        opt023 = [r for r in results if r.rule_id == "OPT-023"]
+        assert len(opt023) == 0
+
+
+class TestOPT026Neg:
+    """OPT-026 negative: history on built-in in local scope."""
+
+    def test_no_false_positive_builtin_history(self):
+        code = '//@version=6\nindicator("test")\nif close > open\n    val = close[5]\nplot(val)'
+        results = analyze_code(code)
+        opt026 = [r for r in results if r.rule_id == "OPT-026"]
+        assert len(opt026) == 0
+
+
+class TestOPT028Neg:
+    """OPT-028 negative: varip not feeding into plot."""
+
+    def test_no_false_positive_varip_no_plot(self):
+        code = (
+            '//@version=6\nstrategy("test")\nvarip int count = 0\n'
+            'if barstate.isrealtime\n    count += 1\n'
+            'if count > 10\n    strategy.entry("Long", strategy.long)'
+        )
+        results = analyze_code(code)
+        opt028 = [r for r in results if r.rule_id == "OPT-028"]
+        assert len(opt028) == 0
+
+
+class TestOPT030Neg:
+    """OPT-030 negative: var already present."""
+
+    def test_no_false_positive_var_present(self):
+        code = '//@version=6\nindicator("test")\nvar int counter = 0\ncounter += 1\nplot(counter)'
+        results = analyze_code(code)
+        opt030 = [r for r in results if r.rule_id == "OPT-030"]
+        assert len(opt030) == 0
+
+
+class TestOPT031Neg:
+    """OPT-031 negative: no barstate.ishistory ternary."""
+
+    def test_no_false_positive_no_ishistory(self):
+        code = '//@version=6\nindicator("test")\nfloat past = close[100]\nplot(past)'
+        results = analyze_code(code)
+        opt031 = [r for r in results if r.rule_id == "OPT-031"]
+        assert len(opt031) == 0
+
+
+class TestOPT032Neg:
+    """OPT-032 negative: strategy without calc_on_order_fills."""
+
+    def test_no_false_positive_no_calc_on_order(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'if close > open\n    strategy.entry("Long", strategy.long)'
+        )
+        results = analyze_code(code)
+        opt032 = [r for r in results if r.rule_id == "OPT-032"]
+        assert len(opt032) == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# New rules (OPT-041 through OPT-048)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestOPT041RequestCalcBars:
+    """OPT-041: request.*() calls missing calc_bars_count."""
+
+    def test_detects_many_requests_no_calc_bars(self):
+        calls = "\n".join(
+            f'float r{i} = request.security(syminfo.tickerid, "{tf}", close)'
+            for i, tf in enumerate(["1D"] * 6)
+        )
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt041 = [r for r in results if r.rule_id == "OPT-041"]
+        assert len(opt041) >= 1
+
+    def test_no_false_positive_with_calc_bars(self):
+        calls = "\n".join(
+            f'float r{i} = request.security(syminfo.tickerid, "1D", close, calc_bars_count=100)'
+            for i in range(6)
+        )
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt041 = [r for r in results if r.rule_id == "OPT-041"]
+        assert len(opt041) == 0
+
+
+class TestOPT042DrawingIdLimit:
+    """OPT-042: Drawing ID count approaching 500 limit."""
+
+    def test_detects_many_drawings(self):
+        calls = "\n".join(f'line.new(bar_index[{i}], high[{i}], bar_index, close)' for i in range(420))
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt042 = [r for r in results if r.rule_id == "OPT-042"]
+        assert len(opt042) >= 1
+
+    def test_no_false_positive_few_drawings(self):
+        code = '//@version=6\nindicator("test")\nline.new(bar_index, high, bar_index + 1, close)\nplot(close)'
+        results = analyze_code(code)
+        opt042 = [r for r in results if r.rule_id == "OPT-042"]
+        assert len(opt042) == 0
+
+
+class TestOPT043CodeDuplication:
+    """OPT-043: Repeated code that should be extracted to a function."""
+
+    def test_detects_duplicated_lines(self):
+        dup = "\n".join(['float val = ta.sma(close, 20) + ta.ema(close, 50) + ta.rsi(close, 14)'] * 6)
+        code = f'//@version=6\nindicator("test")\n{dup}\nplot(val)'
+        results = analyze_code(code)
+        opt043 = [r for r in results if r.rule_id == "OPT-043"]
+        assert len(opt043) >= 1
+
+    def test_no_false_positive_unique_lines(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float a = ta.sma(close, 10)\nfloat b = ta.ema(close, 20)\n'
+            'float c = ta.rsi(close, 14)\nplot(a + b + c)'
+        )
+        results = analyze_code(code)
+        opt043 = [r for r in results if r.rule_id == "OPT-043"]
+        assert len(opt043) == 0
+
+
+class TestOPT044StrategyOrderLimit:
+    """OPT-044: Strategy with unconditional entry may exceed order limit."""
+
+    def test_detects_unconditional_entry(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'strategy.entry("Long", strategy.long)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt044 = [r for r in results if r.rule_id == "OPT-044"]
+        assert len(opt044) >= 1
+
+    def test_no_false_positive_conditional_entry(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            'if ta.crossover(ta.ema(close, 10), ta.ema(close, 20))\n'
+            '    strategy.entry("Long", strategy.long)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt044 = [r for r in results if r.rule_id == "OPT-044"]
+        assert len(opt044) == 0
+
+
+class TestOPT045UnusedImport:
+    """OPT-045: Import statement never used."""
+
+    def test_detects_unused_import(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'import mylib/library as myLib\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt045 = [r for r in results if r.rule_id == "OPT-045"]
+        assert len(opt045) >= 1
+
+    def test_no_false_positive_used_import(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'import mylib/library as myLib\nplot(myLib.myFunc(close))'
+        )
+        results = analyze_code(code)
+        opt045 = [r for r in results if r.rule_id == "OPT-045"]
+        assert len(opt045) == 0
+
+
+class TestOPT046CalcOnEveryTick:
+    """OPT-046: calc_on_every_tick=true overhead."""
+
+    def test_detects_calc_on_every_tick(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true, calc_on_every_tick=true)\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt046 = [r for r in results if r.rule_id == "OPT-046"]
+        assert len(opt046) >= 1
+
+    def test_no_false_positive_default(self):
+        code = '//@version=6\nstrategy("test", overlay=true)\nplot(close)'
+        results = analyze_code(code)
+        opt046 = [r for r in results if r.rule_id == "OPT-046"]
+        assert len(opt046) == 0
+
+
+class TestOPT047OversizedScript:
+    """OPT-047: Script approaching 5MB compilation limit."""
+
+    def test_detects_oversized_script(self):
+        lines = ["//@version=6", 'indicator("test")']
+        for i in range(150_000):
+            lines.append(f"float var{i} = {i}.0")
+        lines.append("plot(close)")
+        code = "\n".join(lines)
+        results = analyze_code(code)
+        opt047 = [r for r in results if r.rule_id == "OPT-047"]
+        assert len(opt047) >= 1
+
+    def test_no_false_positive_small_script(self):
+        code = '//@version=6\nindicator("test")\nplot(close)'
+        results = analyze_code(code)
+        opt047 = [r for r in results if r.rule_id == "OPT-047"]
+        assert len(opt047) == 0
+
+
+class TestOPT048PolylineLimit:
+    """OPT-048: Polyline count approaching 100 limit."""
+
+    def test_detects_many_polylines(self):
+        calls = "\n".join(f'var polyline p{i} = polyline.new(array.new<point>(0))' for i in range(90))
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt048 = [r for r in results if r.rule_id == "OPT-048"]
+        assert len(opt048) >= 1
+
+    def test_no_false_positive_few_polylines(self):
+        code = '//@version=6\nindicator("test")\nvar polyline p = polyline.new(array.new<point>(0))\nplot(close)'
+        results = analyze_code(code)
+        opt048 = [r for r in results if r.rule_id == "OPT-048"]
+        assert len(opt048) == 0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Clean code tests — no false positives
 # ─────────────────────────────────────────────────────────────────────────────
