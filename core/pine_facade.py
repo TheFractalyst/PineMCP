@@ -17,13 +17,16 @@ import random
 import re
 import threading
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from pine_linter import LintResult
 
 import httpx
 from loguru import logger
 
-from core.config import PINE_FACADE_URL, PINE_FACADE_TIMEOUT
 from core.caches import get_cached_validation, set_cached_validation
+from core.config import PINE_FACADE_TIMEOUT, PINE_FACADE_URL
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Pine-facade circuit breaker
@@ -150,7 +153,7 @@ def get_facade_client() -> httpx.AsyncClient:
     return _facade_http_client
 
 
-def shutdown_http_client():
+def shutdown_http_client() -> None:
     global _facade_http_client
     if _facade_http_client and not _facade_http_client.is_closed:
         try:
@@ -319,8 +322,8 @@ async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
             "raw_response": dict
         }
     """
-    from pine_linter import lint as _pine_lint
     from formatters.errors import sanitize_text
+    from pine_linter import lint as _pine_lint
 
     # Guard: reject empty/whitespace-only code before any work
     if not code or not code.strip():
@@ -341,7 +344,7 @@ async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
     local_result = _pine_lint(code) if not skip_lint else None
 
     # Lazy linter: ensures local_result is populated when needed for fallback paths.
-    def _ensure_lint():
+    def _ensure_lint() -> LintResult:
         nonlocal local_result
         if local_result is None:
             local_result = _pine_lint(code)

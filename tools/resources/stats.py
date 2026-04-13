@@ -13,10 +13,10 @@ from fastmcp.resources import resource
 from loguru import logger
 
 import core.caches as _caches_module
-from core.db import get_collection, _chroma_breaker
+from core.db import _chroma_breaker, get_collection
+from core.embeddings import _embedding_model_ready
 from core.hot_cache import HOT_CACHE
 from core.pine_facade import pine_cb
-from core.embeddings import _embedding_model_ready
 
 
 @resource("pinescript://stats")

@@ -13,22 +13,25 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import xxhash
 from loguru import logger
 
-from core.config import (
-    DB_PATH,
-    COLLECTION,
-    MAX_RESULTS,
-    MAX_FUZZY_SCAN_ENTRIES,
-)
+if TYPE_CHECKING:
+    import chromadb
+
 from core.caches import (
-    _QUERY_RESULT_CACHE,
     _QUERY_CACHE_LOCK,
-    _QUERY_CACHE_TTL,
     _QUERY_CACHE_MAX,
+    _QUERY_CACHE_TTL,
+    _QUERY_RESULT_CACHE,
+)
+from core.config import (
+    COLLECTION,
+    DB_PATH,
+    MAX_FUZZY_SCAN_ENTRIES,
+    MAX_RESULTS,
 )
 from core.embeddings import get_model
 
@@ -125,7 +128,7 @@ _COMMON_PARAM_NAMES = frozenset(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def get_collection():
+def get_collection() -> chromadb.Collection:
     """Return the ChromaDB collection, initializing lazily. Circuit-breaker aware.
 
     Thread-safe: uses _db_init_lock to prevent concurrent initialization.

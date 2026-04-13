@@ -4,9 +4,10 @@ import asyncio
 import json
 import time
 import sys
+import os
 from datetime import datetime, timezone
 
-sys.path.insert(0, "/Users/fractalyst/Downloads/pinescript_mcp")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastmcp import Client
 from pinescript_mcp import mcp
 

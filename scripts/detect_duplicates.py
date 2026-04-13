@@ -10,10 +10,11 @@ Thoroughly inspects the database for:
 
 import chromadb
 import hashlib
+import os
 from collections import defaultdict
 from difflib import SequenceMatcher
 
-DB_PATH = "/Users/fractalyst/Downloads/pinescript_mcp/pinescript_db"
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pinescript_db")
 COLLECTION_NAME = "pinescript_v6"
 
 

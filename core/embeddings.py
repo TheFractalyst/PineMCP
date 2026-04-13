@@ -12,8 +12,12 @@ from __future__ import annotations
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 from core.config import EMBED_MODEL
 
@@ -27,7 +31,7 @@ _embed_model = None
 _model_init_lock = threading.Lock()
 
 
-def get_model():
+def get_model() -> SentenceTransformer:
     """Return the SentenceTransformer, initializing lazily.
 
     Thread-safe: uses _model_init_lock to prevent concurrent initialization.
@@ -45,8 +49,8 @@ def get_model():
         if _embed_model is not None:
             return _embed_model
         try:
-            from sentence_transformers import SentenceTransformer
             import torch
+            from sentence_transformers import SentenceTransformer
 
             # Apple Silicon: MPS is faster than ONNX for this model size
             # CPU-only systems: ONNX can be 1.4-3x faster than PyTorch-CPU

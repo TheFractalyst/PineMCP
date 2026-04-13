@@ -164,7 +164,7 @@ class TestValidateFile:
 
     @pytest.mark.asyncio
     async def test_non_ps_extension(self):
-        result = await validate_file(file_path="/Users/fractalyst/Documents/test.txt")
+        result = await validate_file(file_path="/tmp/test.txt")
         assert "error" in result.lower()
         assert ".ps" in result or ".pine" in result
 

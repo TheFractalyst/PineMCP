@@ -1,5 +1,5 @@
-import sys, asyncio, re
-sys.path.insert(0, '/Users/fractalyst/pinescript_mcp')
+import sys, asyncio, re, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.db import get_collection as _get_collection, build_name_index as _build_name_index
 from core.embeddings import get_model as _get_model, _embedding_model_ready
 from core.hot_cache import build_hot_cache

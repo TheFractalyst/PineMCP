@@ -48,5 +48,7 @@ def invalid_pine_code():
 
 @pytest.fixture
 def dca_file_path():
-    """Path to the DCA.ps strategy file used in benchmarks."""
-    return "/Users/fractalyst/Documents/Quantify - Deeptest/Strategies/DCA.ps"
+    """Path to the DCA.ps strategy file used in benchmarks.
+    Skips tests if the file is not found locally."""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "tests", "fixtures", "DCA.ps")

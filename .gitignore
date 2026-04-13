@@ -22,12 +22,17 @@ Thumbs.db
 # Logs
 *.log
 
-# Database files (ChromaDB — keep sqlite3 for one-step restore, ignore temp dirs)
+# Database files (ChromaDB — rebuild with `make index`)
 pinescript_db/
 pinescript_v6/
 
-# Playwright MCP snapshots
-.playwright-mcp/
+# Environment files
+.env
+.env.*
+.envrc
+
+# Release artifacts
+pinescript_db.tar.gz
 
 # Scraped data (may be at root or data/)
 tv_entry_index.json
@@ -38,6 +43,17 @@ duplication_report.json
 data/tv_entry_index.json
 data/tv_scraped_entries.json
 data/scrape_report.json
+
+# Tool caches
+.ruff_cache/
+.playwright-mcp/
+
+# Claude Code project config (user-specific)
+.claude/settings.json
+
+# Misc
+*.bin
+failed_entries.txt
 
 # Temporary files
 *.tmp

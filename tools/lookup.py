@@ -17,19 +17,19 @@ from pydantic import Field
 
 import core.db as _db
 from core.db import (
-    query_async,
-    search_by_name_async,
     get_all_where_async,
     get_by_names_async,
     get_type_by_name_async,
+    query_async,
+    search_by_name_async,
 )
 from core.hot_cache import cache_lookup, ensure_hot_cache
 from formatters.entry import format_entry_detail, is_function_like
 from formatters.errors import (
-    safe_error,
-    circuit_breaker_msg,
     check_query_error,
+    circuit_breaker_msg,
     norm_name,
+    safe_error,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -202,9 +202,7 @@ async def _lookup_entry(name: str, category: str) -> str:
         logger.error(f"[_lookup_entry] {e}")
         if _db._chroma_breaker.is_open():
             return circuit_breaker_msg()
-        from formatters.errors import error
-
-        return error(category, safe_error(e, category))
+        raise ToolError(safe_error(e, category))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

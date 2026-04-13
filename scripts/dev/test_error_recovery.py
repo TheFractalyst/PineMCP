@@ -165,8 +165,11 @@ async def main():
     
     # Test 7: Absolute path check
     def test_absolute_path():
-        path = "/Users/fractalyst/test.ps"
-        if path.startswith("/"):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".ps")
+        os.close(fd)
+        os.unlink(path)
+        if os.path.isabs(path):
             return "Path is absolute"
         return "ERROR: Path validation failed"
     

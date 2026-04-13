@@ -16,10 +16,10 @@ index-full:      ## Full re-scrape + re-index from TradingView
 	./run.sh --rescrape --reset-db
 
 lint:            ## Lint source packages
-	.venv/bin/ruff check core/ formatters/ templates/ tools/ --fix
+	.venv/bin/ruff check core/ formatters/ templates/ tools/ server.py --fix
 
 install:         ## Setup venv + install all dependencies
-	python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+	python3 -m venv .venv && .venv/bin/pip install -e ".[dev,pipeline]"
 
 check:           ## Verify server: 20 tools + 1 resource
 	@.venv/bin/python -c "from server import mcp; import asyncio; t=asyncio.run(mcp.list_tools()); r=asyncio.run(mcp.list_resources()); print(f'{len(t)} tools, {len(r)} resource(s)')"

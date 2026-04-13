@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """
 mcp/tools/validation.py
 ──────────────────────────────────────────────────────────────────────────────
@@ -20,16 +21,15 @@ from pydantic import Field
 
 import core.caches as _caches_module
 import core.db as _db
-from core.pine_facade import call_pine_facade, enrich_error_with_code, pine_cb
 from core.caches import get_cached_file_validation, set_cached_file_validation
 from core.config import _ALLOWED_BASE_DIRS
 from core.db import _COMMON_PARAM_NAMES
 from core.hot_cache import cache_lookup
+from core.pine_facade import call_pine_facade, enrich_error_with_code, pine_cb
 from formatters.errors import (
     cap_response,
-    error,
-    lookup_fix_hint,
     extract_name_from_error,
+    lookup_fix_hint,
     safe_error,
 )
 from tools.lookup import _lookup_entry
@@ -156,7 +156,7 @@ async def validate_syntax(
 
     except Exception as e:
         logger.error(f"[validate_syntax] {e}")
-        return error("validate_syntax", safe_error(e, "validate_syntax"))
+        raise ToolError(safe_error(e, "validate_syntax"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -280,10 +280,7 @@ async def validate_and_explain(
 
     except Exception as e:
         logger.error(f"[validate_and_explain] {e}")
-        return (
-            f"VALIDATION FAILED: {safe_error(e, 'validate_and_explain')}\n"
-            f"Check your code for syntax errors."
-        )
+        raise ToolError(safe_error(e, "validate_and_explain"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -291,7 +288,7 @@ async def validate_and_explain(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@tool(annotations=ToolAnnotations(title="Fix and Validate Code", readOnlyHint=True, openWorldHint=True, destructiveHint=True, idempotentHint=False))
+@tool(annotations=ToolAnnotations(title="Fix and Validate Code", readOnlyHint=True, openWorldHint=True, destructiveHint=False, idempotentHint=False))
 async def fix_and_validate(
     code: Annotated[str, Field(
         min_length=1,
@@ -573,14 +570,7 @@ async def debug_pine_facade(
 
     except Exception as e:
         logger.error(f"[debug_pine_facade] {e}")
-        # Return full diagnostic on error
-        cb_stats = pine_cb.stats()
-        return (
-            f"DEBUG PINE-FACADE ERROR\n"
-            f"Exception: {safe_error(e, 'debug_pine_facade')}\n"
-            f"Circuit breaker: {json.dumps(cb_stats)}\n"
-            f"Cache entries: {len(_caches_module._VALIDATION_CACHE)}"
-        )
+        raise ToolError(safe_error(e, "debug_pine_facade"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -591,6 +581,7 @@ async def debug_pine_facade(
 @tool(annotations=ToolAnnotations(title="Validate PineScript File", readOnlyHint=True, openWorldHint=True, idempotentHint=True))
 async def validate_file(
     file_path: Annotated[str, Field(
+        min_length=1,
         description="Absolute path to PineScript v6 file to validate"
     )]
 ) -> str:
@@ -768,4 +759,4 @@ async def validate_file(
 
     except Exception as e:
         logger.exception("Unexpected error in validate_file")
-        return f"ERROR: Validation failed -- {safe_error(e, 'validate_file')}"
+        raise ToolError(safe_error(e, "validate_file"))

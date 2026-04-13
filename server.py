@@ -30,18 +30,18 @@ logger.add(
     level=os.getenv("LOG_LEVEL", "INFO"),
 )
 
-from fastmcp import FastMCP
-from fastmcp.server.lifespan import lifespan
-from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-from fastmcp.server.middleware.timing import DetailedTimingMiddleware
-from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
-from fastmcp.server.providers.filesystem import FileSystemProvider
+from fastmcp import FastMCP  # noqa: E402, I001
+from fastmcp.server.lifespan import lifespan  # noqa: E402
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware  # noqa: E402
+from fastmcp.server.middleware.timing import DetailedTimingMiddleware  # noqa: E402
+from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware  # noqa: E402
+from fastmcp.server.providers.filesystem import FileSystemProvider  # noqa: E402
 
-from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS
-from core.db import get_collection, build_name_index
-from core.embeddings import get_model, _model_executor, _embedding_model_ready
-from core.hot_cache import build_hot_cache, _hot_cache_built
-from core.pine_facade import shutdown_http_client
+from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS  # noqa: E402
+from core.db import get_collection, build_name_index  # noqa: E402
+from core.embeddings import get_model, _model_executor, _embedding_model_ready  # noqa: E402
+from core.hot_cache import build_hot_cache  # noqa: E402
+from core.pine_facade import shutdown_http_client  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Composable lifespans
