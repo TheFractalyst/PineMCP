@@ -7,7 +7,7 @@ Architecture:
   - FastMCP 3.0 with FileSystemProvider for auto-discovery of @tool/@resource
   - Composable lifespans: db | model | cache
   - Dual-tier validation: local linter → remote pine-facade
-  - 20 tools + 1 resource, 100% local ChromaDB vector store
+  - 21 tools + 1 resource, 100% local ChromaDB vector store
 
 Usage:
   python server.py                 # Start the MCP server (stdio transport)
@@ -35,6 +35,7 @@ from fastmcp.server.lifespan import lifespan  # noqa: E402
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware  # noqa: E402
 from fastmcp.server.middleware.timing import DetailedTimingMiddleware  # noqa: E402
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware  # noqa: E402
+from fastmcp.server.middleware.middleware import Middleware  # noqa: E402
 from fastmcp.server.providers.filesystem import FileSystemProvider  # noqa: E402
 
 from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS  # noqa: E402
@@ -133,6 +134,100 @@ _search_cache_mw = ResponseCachingMiddleware(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Branding middleware — adds header/footer to all tool responses
+# Disable with: BRANDING=0 python server.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+_BRANDING_HEADER = (
+    "\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2510\n"
+    "\u2502  PineScript v6 MCP \u00b7 @Fractalyst \u00b7 deeptest.io \u2502\n"
+    "\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    "\u2500\u2500\u2518\n"
+)
+
+_BRANDING_FOOTERS = [
+    (
+        "\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\n"
+        " Need a custom PineScript strategy? \u2192 deeptest.io\n"
+        " Portfolio-level backtesting \u2192 deeptest.pro\n"
+        " @Fractalyst \u00b7 github.com/TheFractalyst\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    ),
+    (
+        "\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\n"
+        " Quant consulting & algo development \u2192 deeptest.io\n"
+        " DeepTest Pro \u2014 Portfolio backtesting SaaS \u2192 deeptest.pro\n"
+        " @Fractalyst \u00b7 x.com/Fractalyst \u00b7 tradingview.com/u/Fractalyst\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    ),
+    (
+        "\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\n"
+        " Built by @Fractalyst \u00b7 deeptest.io\n"
+        " Custom PineScript \u00b7 Quant Consulting \u00b7 DeepTest Pro\n"
+        " contact@deeptest.io \u00b7 github.com/TheFractalyst\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    ),
+]
+
+_branding_counter = 0
+
+
+class BrandingMiddleware(Middleware):
+    """Adds branded header/footer to all MCP tool responses."""
+
+    async def on_call_tool(self, context, call_next):
+        result = await call_next(context)
+
+        if os.getenv("BRANDING", "1") == "0":
+            return result
+
+        global _branding_counter
+        footer = _BRANDING_FOOTERS[_branding_counter % len(_BRANDING_FOOTERS)]
+        _branding_counter += 1
+
+        for content in result.content:
+            if hasattr(content, "text") and content.text:
+                content.text = _BRANDING_HEADER + content.text + footer
+
+        return result
+
+# ─────────────────────────────────────────────────────────────────────────────
 # FastMCP server instance with FileSystemProvider auto-discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -147,6 +242,7 @@ mcp = FastMCP(
     middleware=[
         _lookup_cache_mw,
         _search_cache_mw,
+        BrandingMiddleware(),
         ResponseLimitingMiddleware(max_size=MAX_TOOL_RESPONSE_CHARS + 10_000),
     ] + ([DetailedTimingMiddleware()] if os.getenv("LOG_LEVEL", "INFO") == "DEBUG" else []),
 )
@@ -156,7 +252,7 @@ mcp = FastMCP(
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (20 tools, 100% local)")
+    logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (21 tools, 100% local)")
 
     if _TRANSPORT == "http" or _TRANSPORT == "sse":
         _port = int(os.getenv("PORT", "8080"))

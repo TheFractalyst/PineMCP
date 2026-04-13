@@ -107,6 +107,15 @@ CODEGEN TOOLS (use for scaffolding):
   generate_strategy(name, ...)     Scaffold a validated strategy
   lookup_and_correct(code, desc)   Validate + correct code with doc lookup
 
+OPTIMIZATION TOOLS (use for performance analysis):
+  optimize_code(code)             Detect 28 anti-patterns: request.*() waste, drawing
+                                   inefficiency, loop waste, memory/buffer issues, correctness
+                                   traps, and resource limit violations. Returns line-by-line
+                                   findings with severity ratings and fix suggestions.
+
+This tool is OPT-IN ONLY. It does NOT run automatically on validation or codegen calls.
+Call it explicitly when you want to check PineScript code for performance issues.
+
 IMPORTANT NOTES
 ───────────────
 - All code examples returned are real, working PineScript from the official
