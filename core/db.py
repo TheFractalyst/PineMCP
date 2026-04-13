@@ -339,7 +339,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                         )
                     ]
             except Exception as e:
-                logger.debug(f"Qualified lookup failed: {e}")
+                logger.warning(f"Qualified lookup failed, falling through: {e}")
             # Try with type=function specifically
             try:
                 if where:
@@ -368,7 +368,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                         )
                     ]
             except Exception as e:
-                logger.debug(f"Typed lookup failed: {e}")
+                logger.warning(f"Typed lookup failed, returning empty: {e}")
             # No result — return empty (do NOT fall through to namespace match)
             return []
 
