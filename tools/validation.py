@@ -564,8 +564,11 @@ async def debug_pine_facade(
 
         # Raw response
         raw = result.get("raw_response", {})
+        raw_str = json.dumps(raw, indent=2, default=str)
+        if len(raw_str) > 2000:
+            raw_str = raw_str[:2000] + "\n  [...truncated — use debug_pine_facade for full output]"
         lines.append("RAW RESPONSE:")
-        lines.append(json.dumps(raw, indent=2, default=str)[:2000])
+        lines.append(raw_str)
         lines.append("")
 
         # Validation cache
@@ -587,6 +590,7 @@ async def debug_pine_facade(
 async def validate_file(
     file_path: Annotated[str, Field(
         min_length=1,
+        max_length=4096,
         description="Absolute path to PineScript v6 file to validate"
     )]
 ) -> str:
@@ -631,7 +635,7 @@ async def validate_file(
     if not allowed:
         return (
             "ERROR: Access denied. File must be in an allowed directory.\n"
-            "Allowed directories: ~/Documents, ~/Desktop, ~/Projects, ~/repos"
+            f"Allowed directories: {', '.join(str(d) for d in _ALLOWED_BASE_DIRS)}"
         )
 
     # Check file existence

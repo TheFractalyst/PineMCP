@@ -37,6 +37,24 @@ from templates.indicators import (
 from templates.v5_migration import V5_TO_V6
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PINE_IDENT = re.compile(r"[^a-zA-Z0-9_]")
+
+
+def _sanitize_pine_ident(name: str) -> str:
+    """Sanitize a string to be a valid PineScript identifier."""
+    clean = _PINE_IDENT.sub("_", name).strip("_")
+    if not clean:
+        return "param"
+    # Ensure starts with letter or underscore
+    if clean[0].isdigit():
+        clean = f"_{clean}"
+    return clean
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TOOL 14: generate_indicator
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -134,7 +152,7 @@ async def generate_indicator(
                     key, val = raw_inp.split("=", 1)
                     key = key.strip()
                     val = val.strip()
-                    var_name = key.replace(" ", "_").replace("-", "_")
+                    var_name = _sanitize_pine_ident(key)
                     display_name = key
                     inp_lower = key.lower()
 
@@ -168,8 +186,11 @@ async def generate_indicator(
                             default_val = val
                 else:
                     inp_lower = raw_inp.lower()
-                    var_name = raw_inp.replace(" ", "_").replace("-", "_")
-                    if any(k in inp_lower for k in ("length", "period", "len")):
+                    var_name = _sanitize_pine_ident(raw_inp)
+                    if inp_lower in ("close", "open", "high", "low", "hl2", "hlc3", "ohlc4"):
+                        pine_type = "source"
+                        default_val = inp_lower
+                    elif any(k in inp_lower for k in ("length", "period", "len")):
                         pine_type = "int"
                         default_val = "20"
                     elif any(k in inp_lower for k in ("source", "src")):

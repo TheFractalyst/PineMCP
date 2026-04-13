@@ -99,6 +99,7 @@ class PineFacadeCircuitBreaker:
     def stats(self) -> dict:
         return {
             "circuit_open": self.is_open(),
+            "open_until": self.open_until,
             "network_failures": self.network_failures,
             "total_calls": self.total_calls,
             "total_network_errors": self.total_network_errors,
