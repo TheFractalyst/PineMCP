@@ -230,6 +230,24 @@ def error(tool: str, msg: str) -> str:
 # Name normalization helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def strip_string_literals(code: str) -> str:
+    """Replace string literal contents with spaces (preserving length for offsets).
+
+    Handles both "..." and '...' strings with backslash escapes.
+    Used to gate regex transformations so they don't match inside strings.
+    """
+    def _replacer(m: re.Match) -> str:
+        s = m.group(0)
+        # Preserve quotes, replace inner chars with spaces
+        return s[0] + " " * (len(s) - 2) + s[-1] if len(s) >= 2 else s
+
+    # Match double-quoted strings (with escaped chars)
+    result = re.sub(r'"(?:[^"\\]|\\.)*"', _replacer, code)
+    # Match single-quoted strings (with escaped chars)
+    result = re.sub(r"'(?:[^'\\]|\\.)*'", _replacer, result)
+    return result
+
+
 def norm_name(name: str) -> str:
     """Normalize entry name: strip whitespace and trailing parens."""
     return name.strip().rstrip("()")

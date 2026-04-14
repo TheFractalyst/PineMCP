@@ -32,6 +32,7 @@ from formatters.errors import (
     extract_name_from_error,
     lookup_fix_hint,
     safe_error,
+    strip_string_literals,
 )
 from tools.lookup import _lookup_entry
 
@@ -396,6 +397,7 @@ async def fix_and_validate(
 
         # Step 4: Attempt auto-fix for common patterns
         fixed_code = code
+        code_stripped = strip_string_literals(code)  # for safe search gating
         fix_applied = "No automatic fix available"
         fixes_list = []
 
@@ -405,13 +407,13 @@ async def fix_and_validate(
             r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
             r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
         )
-        if bare_fn_pattern.search(fixed_code):
+        if bare_fn_pattern.search(code_stripped):
             fixed_code = bare_fn_pattern.sub(r'ta.\1(', fixed_code)
             fixes_list.append("Added ta. namespace prefix to unqualified TA functions")
 
         # Pattern 2: v6 breaking change — transp= parameter removed
         transp_pattern = re.compile(r',\s*transp\s*=\s*\d+')
-        if transp_pattern.search(fixed_code):
+        if transp_pattern.search(code_stripped):
             fixed_code = transp_pattern.sub('', fixed_code)
             fixes_list.append("Removed transp= parameter (v6: use color.new() instead)")
 
@@ -504,13 +506,13 @@ async def fix_and_validate(
 
         # Pattern 5: Implicit bool — if volume, if close (v6 needs explicit comparison)
         implicit_bool_pattern = re.compile(r'\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])')
-        if implicit_bool_pattern.search(fixed_code):
+        if implicit_bool_pattern.search(code_stripped):
             fixed_code = implicit_bool_pattern.sub(r'if \1 > 0', fixed_code)
             fixes_list.append("Added explicit > 0 comparison (v6: implicit bool casting removed)")
 
         # Pattern 6: bool x = na (v6: bools can't be na)
         bool_na_pattern = re.compile(r'\bbool\s+(\w+)\s*=\s*na\b')
-        if bool_na_pattern.search(fixed_code):
+        if bool_na_pattern.search(code_stripped):
             fixed_code = bool_na_pattern.sub(r'var bool \1 = false', fixed_code)
             fixes_list.append("Changed 'bool x = na' to 'var bool x = false' (v6: bool can't be na)")
 

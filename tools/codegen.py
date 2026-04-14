@@ -28,6 +28,7 @@ from formatters.errors import (
     circuit_breaker_msg,
     safe_error,
     sanitize_pine_string,
+    strip_string_literals,
 )
 from templates.indicators import (
     _INDICATOR_TEMPLATES,
@@ -703,28 +704,29 @@ async def lookup_and_correct(
 
         # Step 2: Apply ALL v5→v6 namespace fixes
         fixed_code = code
+        code_stripped = strip_string_literals(code)  # for safe search gating
         changes_made = []
 
         # v6 breaking changes
         transp_pattern = re.compile(r",\s*transp\s*=\s*\d+")
-        if transp_pattern.search(fixed_code):
+        if transp_pattern.search(code_stripped):
             fixed_code = transp_pattern.sub("", fixed_code)
             changes_made.append("Removed transp= parameter (v6: use color.new())")
 
         bool_na = re.compile(r"\bbool\s+(\w+)\s*=\s*na\b")
-        if bool_na.search(fixed_code):
+        if bool_na.search(code_stripped):
             fixed_code = bool_na.sub(r"var bool \1 = false", fixed_code)
             changes_made.append("Changed 'bool x = na' to 'var bool x = false' (v6)")
 
         implicit_bool = re.compile(
             r"\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])"
         )
-        if implicit_bool.search(fixed_code):
+        if implicit_bool.search(code_stripped):
             fixed_code = implicit_bool.sub(r"if \1 > 0", fixed_code)
             changes_made.append("Added explicit > 0 (v6: implicit bool removed)")
 
         study_pattern = re.compile(r"\bstudy\s*\(")
-        if study_pattern.search(fixed_code):
+        if study_pattern.search(code_stripped):
             fixed_code = study_pattern.sub("indicator(", fixed_code)
             changes_made.append("Replaced study() → indicator() (v6)")
 
@@ -734,13 +736,13 @@ async def lookup_and_correct(
             r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
             r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
         )
-        if bare_fn_pattern.search(fixed_code):
+        if bare_fn_pattern.search(code_stripped):
             fixed_code = bare_fn_pattern.sub(r'ta.\1(', fixed_code)
             changes_made.append("Added ta. namespace prefix to unqualified TA functions")
 
         # Apply ALL V5→V6 namespace replacements
         for pattern, replacement in V5_TO_V6.items():
-            if re.search(pattern, fixed_code):
+            if re.search(pattern, code_stripped):
                 fixed_code = re.sub(pattern, replacement, fixed_code)
                 changes_made.append(f"Replaced: {pattern} → {replacement}")
 
