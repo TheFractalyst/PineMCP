@@ -152,7 +152,7 @@ def format_type_info(meta: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         return ""
 
-    if not isinstance(fields, list) or not fields:
+    if isinstance(fields, list) and fields:
         lines.append(section_line("FIELDS"))
         for f in fields:
             if not isinstance(f, dict):

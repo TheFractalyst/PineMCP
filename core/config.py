@@ -10,10 +10,11 @@ from __future__ import annotations
 import os
 
 
-def _safe_int(env_var: str, default: int) -> int:
-    """Parse env var as int, returning default on invalid values."""
+def _safe_int(env_var: str, default: int, min_val: int = 0) -> int:
+    """Parse env var as int, returning default on invalid or negative values."""
     try:
-        return int(os.getenv(env_var, str(default)))
+        val = int(os.getenv(env_var, str(default)))
+        return val if val >= min_val else default
     except (ValueError, TypeError):
         return default
 

@@ -639,9 +639,10 @@ async def validate_file(
         for base in _ALLOWED_BASE_DIRS
     )
     if not allowed:
+        safe_dirs = ", ".join(os.path.basename(str(d)) for d in _ALLOWED_BASE_DIRS)
         return (
             "ERROR: Access denied. File must be in an allowed directory.\n"
-            f"Allowed directories: {', '.join(str(d) for d in _ALLOWED_BASE_DIRS)}"
+            f"Allowed directories: {safe_dirs}"
         )
 
     # Check file existence
