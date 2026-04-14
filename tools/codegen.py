@@ -448,6 +448,8 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
         set_codegen_cache(cache_key, result)
         return result
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[generate_indicator] {e}")
         if _db._chroma_breaker.is_open():
@@ -544,7 +546,8 @@ async def generate_strategy(
             return cached_result
 
         # Search docs for strategy-related functions
-        relevant = await query_async(description, 5, where={"namespace": "strategy"})
+        search_desc = (description or "").strip() or name
+        relevant = await query_async(search_desc, 5, where={"namespace": "strategy"})
         db_err = check_query_error(relevant)
         if db_err:
             return db_err
@@ -632,6 +635,8 @@ if barstate.islast
         set_codegen_cache(cache_key, result)
         return result
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[generate_strategy] {e}")
         if _db._chroma_breaker.is_open():
@@ -841,6 +846,8 @@ async def lookup_and_correct(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[lookup_and_correct] {e}")
         if _db._chroma_breaker.is_open():

@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from typing import Annotated
 
+from fastmcp.exceptions import ToolError
 from fastmcp.tools import tool
+from loguru import logger
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from core.optimizer import analyze_code, format_results
-from formatters.errors import cap_response
+from formatters.errors import cap_response, safe_error
 
 
 @tool(
@@ -57,21 +59,26 @@ async def optimize_code(
     validate_syntax() or validate_and_explain() instead. This tool only
     detects performance anti-patterns in code that already compiles.
     """
-    # Run static analysis
-    results = analyze_code(code)
+    try:
+        # Run static analysis
+        results = analyze_code(code)
 
-    # Format the report
-    report = format_results(results)
+        # Format the report
+        report = format_results(results)
 
-    # Add doc lookup suggestions for each finding (lightweight — just query hints)
-    if results:
-        report += "\n\n"
-        report += "DOCUMENTATION LOOKUP QUERIES:\n"
-        report += "Use search_docs() or get_examples() with these queries for detailed fix guidance:\n"
-        seen_queries: set[str] = set()
-        for r in results:
-            if r.doc_query not in seen_queries:
-                report += f"  - \"{r.doc_query}\"\n"
-                seen_queries.add(r.doc_query)
+        # Add doc lookup suggestions for each finding (lightweight — just query hints)
+        if results:
+            report += "\n\n"
+            report += "DOCUMENTATION LOOKUP QUERIES:\n"
+            report += "Use search_docs() or get_examples() with these queries for detailed fix guidance:\n"
+            seen_queries: set[str] = set()
+            for r in results:
+                if r.doc_query not in seen_queries:
+                    report += f"  - \"{r.doc_query}\"\n"
+                    seen_queries.add(r.doc_query)
 
-    return cap_response(report)
+        return cap_response(report)
+
+    except Exception as e:
+        logger.error(f"[optimize_code] {e}")
+        raise ToolError(safe_error(e, "optimize_code"))

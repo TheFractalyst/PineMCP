@@ -91,7 +91,7 @@ def format_params_text(meta: dict) -> str:
         ptype = p.get("type", "")
         pdesc = p.get("description", "")
         opt = " [optional]" if p.get("optional") else ""
-        default = f" = {p['default']}" if p.get("default") else ""
+        default = f" = {p['default']}" if p.get("default") is not None else ""
         ptype_str = f" ({ptype})" if ptype else ""
         lines.append(f"  {pname}{ptype_str}{opt}{default}")
         if pdesc:

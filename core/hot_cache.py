@@ -106,7 +106,7 @@ async def build_hot_cache() -> bool:
                     for rid, doc, meta in zip(
                         result["ids"], result["documents"], result["metadatas"]
                     ):
-                        key = meta.get("name", "").lower().strip()
+                        key = (meta.get("name") or "").lower().strip()
                         if key:
                             if key in HOT_CACHE:
                                 # Keep the entry with richer documentation

@@ -255,7 +255,7 @@ async def get_function(
                     cached["metadata"],
                     cached["document"],
                 )
-                return result
+                return cap_response(result)
 
         name_preserved = name.strip()  # preserve case (e.g. "currency.USD")
         name_lower = name.lower().strip()
@@ -369,7 +369,7 @@ async def get_type(
                 cached["metadata"],
                 cached["document"],
             )
-            return result
+            return cap_response(result)
 
         # Filter by category="type" — never return function entries
         name_lower = name.lower().strip()
