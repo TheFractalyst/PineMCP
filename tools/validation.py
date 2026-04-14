@@ -418,28 +418,85 @@ async def fix_and_validate(
         # Pattern 3: v6 breaking change — when= parameter removed from strategy.*
         # Use function-based replacement to handle arbitrarily nested parens.
         def _remove_when_param(code: str) -> str:
-            """Remove when= parameter from strategy.entry/exit calls."""
-            when_start = re.search(r',\s*when\s*=', code)
-            if not when_start:
+            """Remove when= parameter from strategy.entry/exit/close calls.
+
+            Handles multiple calls and avoids matching when= inside nested
+            function arguments (e.g., calcQty(when=true) inside a strategy call).
+            """
+            # Find all strategy.entry/exit/close( call boundaries
+            removals: list[tuple[int, int]] = []  # (start, end) in code coords
+            call_re = re.compile(r'strategy\.(entry|exit|close)\s*\(')
+            for call_match in call_re.finditer(code):
+                # Walk forward from opening ( to find matching )
+                open_end = call_match.end()  # position after (
+                depth = 1
+                pos = open_end
+                while pos < len(code) and depth > 0:
+                    if code[pos] == '(':
+                        depth += 1
+                    elif code[pos] == ')':
+                        depth -= 1
+                    pos += 1
+                if depth != 0:
+                    continue  # unbalanced — skip
+
+                # Scan the call body for a top-level , when= parameter
+                body = code[open_end:pos - 1]
+                when_info = _find_toplevel_when(body)
+                if when_info is None:
+                    continue
+                arg_off_start, arg_off_end = when_info
+                removals.append((open_end + arg_off_start, open_end + arg_off_end))
+
+            if not removals:
                 return code
-            # Walk forward from when= value start, counting balanced parens
-            pos = when_start.end()
+
+            # Remove from end to start to preserve offsets
+            result = code
+            for start, end in sorted(removals, reverse=True):
+                result = result[:start] + result[end:]
+            return result
+
+        def _find_toplevel_when(body: str) -> tuple[int, int] | None:
+            """Find ', when=' at top level (depth 0) in a call body."""
             depth = 0
-            while pos < len(code):
-                ch = code[pos]
+            i = 0
+            while i < len(body):
+                ch = body[i]
                 if ch == '(':
                     depth += 1
+                    i += 1
                 elif ch == ')':
-                    if depth == 0:
-                        # This closing paren belongs to the strategy.entry() call
-                        return code[:when_start.start()] + ')' + code[pos + 1:]
                     depth -= 1
-                pos += 1
-            return code  # unbalanced — return unchanged
+                    i += 1
+                elif depth == 0 and ch == ',':
+                    m = re.match(r',\s*when\s*=', body[i:])
+                    if m:
+                        # Found top-level , when=. Find end of argument value.
+                        val_pos = i + m.end()
+                        val_depth = 0
+                        while val_pos < len(body):
+                            c = body[val_pos]
+                            if c == '(':
+                                val_depth += 1
+                            elif c == ')':
+                                if val_depth == 0:
+                                    break
+                                val_depth -= 1
+                            elif c == ',' and val_depth == 0:
+                                break
+                            val_pos += 1
+                        return (i, val_pos)
+                    i += 1
+                else:
+                    i += 1
+            return None
 
-        if re.search(r',\s*when\s*=', fixed_code):
+        if re.search(r'strategy\.(entry|exit|close)\s*\(', fixed_code) and re.search(r',\s*when\s*=', fixed_code):
+            prev = fixed_code
             fixed_code = _remove_when_param(fixed_code)
-            fixes_list.append("Removed when= parameter (v6: wrap in if block instead)")
+            if fixed_code != prev:
+                fixes_list.append("Removed when= parameter (v6: wrap in if block instead)")
 
         # Pattern 4: strategy.* called in indicator context
         if "strategy.entry" in fixed_code and "strategy(" not in fixed_code:
