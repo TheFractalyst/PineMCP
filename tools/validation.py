@@ -494,7 +494,7 @@ async def fix_and_validate(
                     i += 1
             return None
 
-        if re.search(r'strategy\.(entry|exit|close)\s*\(', fixed_code) and re.search(r',\s*when\s*=', fixed_code):
+        if re.search(r'strategy\.(entry|exit|close)\s*\(', code_stripped) and re.search(r',\s*when\s*=', code_stripped):
             prev = fixed_code
             fixed_code = _remove_when_param(fixed_code)
             if fixed_code != prev:
