@@ -150,7 +150,7 @@ async def build_hot_cache() -> bool:
 
 
 def cache_lookup(name: str) -> Optional[dict]:
-    """Check hot cache first. Returns entry dict or None."""
+    """Check hot cache for exact key match. Returns entry dict or None."""
     global _cache_hits, _cache_misses
     key = name.lower().strip()
     entry = HOT_CACHE.get(key)
@@ -158,14 +158,6 @@ def cache_lookup(name: str) -> Optional[dict]:
         with _cache_counter_lock:
             _cache_hits += 1
         return entry
-    # Try just the last part after a dot
-    if "." in key:
-        short = key.split(".")[-1]
-        entry = HOT_CACHE.get(short)
-        if entry:
-            with _cache_counter_lock:
-                _cache_hits += 1
-            return entry
     with _cache_counter_lock:
         _cache_misses += 1
     return None
