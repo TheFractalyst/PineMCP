@@ -180,6 +180,8 @@ def sanitize_pine_string(s: str) -> str:
     s = s.replace("\\", "/")
     s = re.sub(r"[\x00-\x1f]", "", s)
     s = s.strip()
+    if not s:
+        return "Script"
     return s[:100]
 
 
