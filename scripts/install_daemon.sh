@@ -105,7 +105,7 @@ echo "--> Daemon loaded and started"
 echo "--> Waiting for server to come up (port $PORT)..."
 MAX_WAIT=30
 ELAPSED=0
-while ! curl -sf "http://127.0.0.1:$PORT/health" &>/dev/null; do
+while ! curl -sf "http://127.0.0.1:$PORT/sse" &>/dev/null; do
     sleep 1
     ELAPSED=$((ELAPSED + 1))
     if [[ $ELAPSED -ge $MAX_WAIT ]]; then
@@ -119,8 +119,8 @@ done
 echo ""
 
 # ── Health check ─────────────────────────────────────────────────────────────
-HEALTH=$(curl -sf "http://127.0.0.1:$PORT/health" 2>/dev/null || echo '{"status":"unreachable"}')
-echo "--> Health: $HEALTH"
+HEALTH=$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/sse" 2>/dev/null || echo "unreachable")
+echo "--> SSE endpoint: HTTP $HEALTH"
 
 # ── Print next steps ─────────────────────────────────────────────────────────
 echo ""
@@ -129,7 +129,7 @@ echo "║  PineScript MCP daemon installed!                           ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 echo "  Server URL:  http://127.0.0.1:$PORT/mcp"
-echo "  Health URL:  http://127.0.0.1:$PORT/health"
+echo "  SSE URL:     http://127.0.0.1:$PORT/sse"
 echo "  Logs:        ~/Library/Logs/pinescript_mcp.log"
 echo "  Error log:   ~/Library/Logs/pinescript_mcp_err.log"
 echo ""

@@ -7,17 +7,11 @@
     <key>Label</key>
     <string>com.pinescript.mcp</string>
 
-    <!-- Command: venv python + server.py in HTTP mode -->
+    <!-- Command: venv python + server.py (config via EnvironmentVariables below) -->
     <key>ProgramArguments</key>
     <array>
         <string>__VENV_PYTHON__</string>
         <string>__SERVER_PY__</string>
-        <string>--transport</string>
-        <string>http</string>
-        <string>--port</string>
-        <string>__PORT__</string>
-        <string>--host</string>
-        <string>127.0.0.1</string>
     </array>
 
     <!-- Environment variables -->
