@@ -113,9 +113,9 @@ async def _lookup_entry(name: str, category: str) -> str:
                 # If no exact category match, pick the best version
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
-                    return format_entry_detail(
+                    return cap_response(format_entry_detail(
                         best_meta.get("name", name), best_meta, best_doc
-                    )
+                    ))
         except Exception as e:
             logger.debug(f"Cross-category lookup failed: {e}")
 

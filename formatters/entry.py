@@ -180,8 +180,8 @@ def format_entry_detail(
     if not meta:
         meta = {}
 
-    # Check for hollow results
-    if not doc or len(doc) < 10:
+    # Check for hollow results (including whitespace-only docs)
+    if not doc or not doc.strip() or len(doc.strip()) < 10:
         return (
             f"'{name}' was found but has no local documentation.\n"
             f"This is likely a newer v6 feature not yet indexed."
