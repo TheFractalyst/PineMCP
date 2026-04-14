@@ -55,6 +55,10 @@ async def validate_syntax(
     Returns real compilation errors with line numbers and column positions.
     Use BEFORE suggesting code to the user to catch errors proactively.
 
+    Note: When the remote compiler is unreachable, falls back to a local
+    linter (Tier 1) that catches ~50% of common errors. The response
+    indicates which compiler was used.
+
     Args:
         code: Complete PineScript v6 source code to validate
     """
@@ -178,9 +182,11 @@ async def validate_and_explain(
     the documentation database to provide precise fix instructions.
 
     Combines pine-facade compilation + semantic doc lookup into one call.
-    This is the most powerful debugging tool for PineScript AI assistance.
+    For each error, extracts the relevant identifier and looks up the
+    correct syntax from the PineScript v6 docs.
 
-    Use when helping user debug failing PineScript code.
+    Use when helping user debug failing PineScript code. For pure
+    validation without doc lookups, use validate_syntax() instead.
     """
     try:
         code = code.strip()
