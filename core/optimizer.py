@@ -5,7 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-74 detection rules (OPT-001 through OPT-074; OPT-019/024/025 are runtime-only).
+80 detection rules (OPT-001 through OPT-083; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Callable
+
+from loguru import logger
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data structures
@@ -1871,6 +1873,256 @@ def _detect_unused_variables(code: str, lines: list[str]) -> list[OptimizationRe
     return results
 
 
+def _detect_manual_cum(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-077: Manual cumulative sum instead of ta.cum()."""
+    results: list[OptimizationResult] = []
+    # Pattern: var float cumX = 0 ... cumX := cumX + val  OR  cumX += val
+    # at global scope, which is exactly what ta.cum() does.
+    cum_var_pattern = re.compile(r"\bvar\s+(float|int)\s+(\w+)\s*=\s*0")
+    cum_vars = {}
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent > 0:
+            continue
+        m = cum_var_pattern.match(stripped)
+        if m:
+            cum_vars[m.group(2)] = i
+
+    for var_name, decl_line in cum_vars.items():
+        # Check if the var is updated with += or := var + something
+        has_cumulative_update = False
+        for j, line in enumerate(lines):
+            stripped = _strip_comments(line).strip()
+            if j == decl_line:
+                continue
+            # cumX += expr  or  cumX := cumX + expr
+            if re.search(rf"\b{var_name}\b\s*\+=", stripped):
+                has_cumulative_update = True
+                break
+            if re.search(rf"\b{var_name}\b\s*:=\s*{var_name}\b\s*\+", stripped):
+                has_cumulative_update = True
+                break
+        if has_cumulative_update:
+            results.append(_result(
+                _RULES_BY_ID["OPT-077"], decl_line + 1,
+                _strip_comments(lines[decl_line]).strip()[:100],
+                f"Variable '{var_name}' accumulates values with `+=` or `:= var + expr`. "
+                "Use `ta.cum(source)` instead — it's a built-in that handles this efficiently "
+                "without a `var` declaration. Example: `ta.cum(close > open ? 1 : 0)`."
+            ))
+            break
+    return results
+
+
+def _detect_push_loop_to_array_from(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-078: Multiple array.push() calls that could use array.from()."""
+    results: list[OptimizationResult] = []
+    # Look for 3+ consecutive array.push() calls to the same array at same scope
+    push_pattern = re.compile(r"array\.push\s*\(\s*(\w+)\s*,")
+    consecutive: list[tuple[str, int, int]] = []  # (var_name, line_idx, indent)
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        m = push_pattern.search(stripped)
+        if m:
+            var_name = m.group(1)
+            if consecutive and consecutive[-1][0] == var_name and consecutive[-1][2] == indent:
+                consecutive.append((var_name, i, indent))
+            else:
+                consecutive = [(var_name, i, indent)]
+        else:
+            if len(consecutive) >= 3:
+                arr_name = consecutive[0][0]
+                first_line = consecutive[0][1]
+                results.append(_result(
+                    _RULES_BY_ID["OPT-078"], first_line + 1,
+                    _strip_comments(lines[first_line]).strip()[:100],
+                    f"Array '{arr_name}' has {len(consecutive)} consecutive push() calls. "
+                    "Use `array.from(val1, val2, val3, ...)` to create and populate the array "
+                    "in a single statement. This reduces code size and compilation tokens."
+                ))
+                break
+            consecutive = []
+    # Check final batch
+    if not results and len(consecutive) >= 3:
+        arr_name = consecutive[0][0]
+        first_line = consecutive[0][1]
+        results.append(_result(
+            _RULES_BY_ID["OPT-078"], first_line + 1,
+            _strip_comments(lines[first_line]).strip()[:100],
+            f"Array '{arr_name}' has {len(consecutive)} consecutive push() calls. "
+            "Use `array.from(val1, val2, val3, ...)` to create and populate the array "
+            "in a single statement. This reduces code size and compilation tokens."
+        ))
+    return results
+
+
+def _detect_manual_midpoint(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-079: Manual midpoint (a + b) / 2 instead of math.avg(a, b)."""
+    results: list[OptimizationResult] = []
+    # Pattern: (expr + expr) / 2  or  expr + (expr - expr) / 2 (weighted midpoint)
+    midpoint_pattern = re.compile(r"\([\s\w.\[\]]+\s*\+\s*[\s\w.\[\]]+\s*\)\s*/\s*2\b")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if midpoint_pattern.search(stripped):
+            # More specific: (a + b) / 2
+            if re.search(r"\(\s*\w[\w.]*\s*\+\s*\w[\w.]*\s*\)\s*/\s*2\b", stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-079"], i + 1, stripped[:100],
+                    "Midpoint calculated as `(a + b) / 2`. Use `math.avg(a, b)` instead — "
+                    "it's a built-in that's more readable and handles edge cases."
+                ))
+                break
+    return results
+
+
+def _detect_missing_runtime_validation(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-080: Division or operation without runtime.error() guard for zero/invalid inputs."""
+    results: list[OptimizationResult] = []
+    # Check for input.int/float used in division without runtime.error() guard
+    has_runtime_error = _code_has_keyword(code, "runtime.error(")
+    if has_runtime_error:
+        return results
+
+    # Find input variables used as divisors
+    input_var_pattern = re.compile(r"(?:int|float)\s+(\w+)\s*=\s*input\.(int|float)\s*\(")
+    input_vars = set()
+    for line in lines:
+        stripped = _strip_comments(line).strip()
+        m = input_var_pattern.search(stripped)
+        if m:
+            input_vars.add(m.group(1))
+
+    if not input_vars:
+        return results
+
+    # Check if any input var is used as a divisor (denominator)
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        for var in input_vars:
+            # / var or / (var * ...) or / (var + ...)
+            if re.search(rf"/\s*{re.escape(var)}\b", stripped) or \
+               re.search(rf"/\s*\(\s*{re.escape(var)}\b", stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-080"], i + 1, stripped[:100],
+                    f"Input '{var}' is used as a divisor without validation. "
+                    "Add `if var == 0` check with `runtime.error(\"message\")` to prevent "
+                    "division-by-zero at runtime. Example: "
+                    "`if length == 0\n    runtime.error(\"Length must be > 0\")`."
+                ))
+                break
+        if results:
+            break
+    return results
+
+
+def _detect_plot_display_optimization(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-081: plot() used only for data but rendered visually (missing display.data_window)."""
+    results: list[OptimizationResult] = []
+    # Look for plot() with conditional values (na on condition) that suggests
+    # the plot is used as a data source, not visual display
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        # plot(cond ? val : na, ...) — conditional plot used for data passing
+        if re.search(r"\bplot\s*\(.+\?.+:.*na\b", stripped):
+            # Check if display= parameter is already present
+            if "display" not in stripped:
+                results.append(_result(
+                    _RULES_BY_ID["OPT-081"], i + 1, stripped[:100],
+                    "Conditional plot() without `display` parameter. If this plot is only "
+                    "used as a data source for other scripts (indicator-on-indicator), add "
+                    "`display = display.data_window` to avoid visual rendering overhead. "
+                    "Use `display = display.status_line + display.data_window` if you want "
+                    "values visible without chart clutter."
+                ))
+                break
+    return results
+
+
+def _detect_request_security_repainting(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-082: request.security() without anti-repainting safeguards (no lookahead + no offset)."""
+    results: list[OptimizationResult] = []
+    req_pattern = re.compile(r"\brequest\.security\s*\(")
+
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if not req_pattern.search(stripped):
+            continue
+
+        # Skip calls inside user-defined functions (wrappers may handle repainting)
+        indent = len(line) - len(line.lstrip())
+        if indent > 0:
+            continue
+
+        # Collect full call text (may span multiple lines)
+        call_text = stripped
+        for j in range(i + 1, min(i + 8, len(lines))):
+            next_line = _strip_comments(lines[j]).strip()
+            call_text += " " + next_line
+            if ")" in next_line:
+                break
+
+        # Check for lookahead parameter (explicit awareness = user made a choice)
+        has_lookahead = "lookahead" in call_text
+
+        # Check for any numeric history offset [N] on the expression (e.g. close[1])
+        has_offset = bool(re.search(r"\[\s*\d+\s*\]", call_text))
+
+        # No lookahead AND no offset = naive repainting call
+        if not has_lookahead and not has_offset:
+            results.append(_result(
+                _RULES_BY_ID["OPT-082"], i + 1, stripped[:100],
+                "request.security() without lookahead control or expression offset may repaint "
+                "on realtime bars — values differ from historical data after reload. Use "
+                "`request.security(sym, tf, expr[1], lookahead = barmerge.lookahead_on)` "
+                "for non-repainting HTF data. This pattern returns the previous HTF bar's "
+                "confirmed value immediately when a new HTF bar starts. "
+                "PineCoders pattern: wrap in a validated helper function."
+            ))
+            break  # Report once
+
+    return results
+
+
+def _detect_request_no_tf_validation(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-083: request.security() without timeframe validation (TF may not be higher)."""
+    results: list[OptimizationResult] = []
+    req_pattern = re.compile(r"\brequest\.security\s*\(")
+    has_tf_check = _code_has_keyword(code, "timeframe.in_seconds(")
+
+    if has_tf_check:
+        return results
+
+    # Only flag if there are request.security calls at global scope
+    has_global_req = False
+    for line in lines:
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent == 0 and req_pattern.search(stripped):
+            has_global_req = True
+            break
+
+    if not has_global_req:
+        return results
+
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if req_pattern.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-083"], i + 1, stripped[:100],
+                "request.security() without timeframe validation. Requesting a TF "
+                "that's not higher than the chart's TF gives incorrect or redundant data. "
+                "Add: `if timeframe.in_seconds(requestedTf) <= timeframe.in_seconds()` "
+                "then `runtime.error(\"Requested TF must be higher than chart TF\")`. "
+                "PineCoders pattern: validate TF in a wrapper function before calling "
+                "request.security()."
+            ))
+            break
+
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2100,6 +2352,29 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-076", "Unused variable (compilation token waste)", "medium", "Code quality",
           _detect_unused_variables, "PineScript unused variable compilation token limit removal"),
+
+    # --- PineCoders v6 patterns (OPT-077 to OPT-081) ---
+    _Rule("OPT-077", "Manual cumulative sum instead of ta.cum()", "low", "Code quality",
+          _detect_manual_cum, "PineScript ta.cum built-in cumulative sum replacement manual loop"),
+
+    _Rule("OPT-078", "Multiple array.push() instead of array.from()", "low", "Code quality",
+          _detect_push_loop_to_array_from, "PineScript array.from bulk initialization push optimization"),
+
+    _Rule("OPT-079", "Manual midpoint (a+b)/2 instead of math.avg()", "low", "Code quality",
+          _detect_manual_midpoint, "PineScript math.avg built-in midpoint calculation optimization"),
+
+    _Rule("OPT-080", "Division by input without runtime.error() guard", "medium", "Correctness",
+          _detect_missing_runtime_validation, "PineScript runtime.error input validation division by zero"),
+
+    _Rule("OPT-081", "Conditional plot() without display parameter", "low", "Code quality",
+          _detect_plot_display_optimization, "PineScript display.data_window hidden plot performance optimization"),
+
+    # --- request.security() Anti-Repainting (from PineCoders HTF patterns) ---
+    _Rule("OPT-082", "request.security() may repaint (no lookahead + no offset)", "high", "Correctness",
+          _detect_request_security_repainting, "PineScript request.security repainting lookahead offset anti-repainting"),
+
+    _Rule("OPT-083", "request.security() without timeframe validation", "medium", "Correctness",
+          _detect_request_no_tf_validation, "PineScript request.security timeframe.in_seconds validation higher timeframe"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
@@ -2132,8 +2407,9 @@ def analyze_code(code: str) -> list[OptimizationResult]:
         try:
             results = rule.detect(code, lines)
             all_results.extend(results)
-        except Exception:
+        except Exception as e:
             # Never let a single rule crash the analysis
+            logger.debug(f"Rule {rule.rule_id} failed: {e}")
             continue
 
     # Sort by severity, then by line number
