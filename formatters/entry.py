@@ -192,7 +192,7 @@ def format_entry_detail(
     category = meta.get("category", "?").upper()
     namespace = meta.get("namespace") or ""
     syntax = meta.get("syntax") or ""
-    description = meta.get("raw_description", "")
+    description = meta.get("raw_description", "") or doc.strip()
     returns = meta.get("returns") or ""
     remarks = meta.get("remarks") or ""
     see_also_raw = meta.get("raw_see_also", "")

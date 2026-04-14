@@ -519,6 +519,10 @@ async def debug_pine_facade(
     response alongside the normalized interpretation. Use for debugging
     when validate_syntax or validate_and_explain produce unexpected results.
 
+    Do not use for normal validation or debugging user code — use
+    validate_syntax() or validate_and_explain() instead. This tool is
+    for diagnosing unexpected compiler behavior only.
+
     Args:
         code: Complete PineScript v6 source code to compile
     """

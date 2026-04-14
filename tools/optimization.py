@@ -52,6 +52,10 @@ async def optimize_code(
 
     Use this AFTER validate_syntax confirms your code compiles, to check for
     performance issues that don't cause compilation errors.
+
+    Do not use for syntax errors or compilation failures — use
+    validate_syntax() or validate_and_explain() instead. This tool only
+    detects performance anti-patterns in code that already compiles.
     """
     # Run static analysis
     results = analyze_code(code)
