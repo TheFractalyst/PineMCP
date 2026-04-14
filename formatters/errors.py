@@ -94,7 +94,7 @@ _FIX_HINTS: dict[str, str] = {
     "Series is not allowed": "This context requires simple/const type, not series. Use ta.valuewhen() or barstate lookups.",
     "memory limit": "Exceeded Pine's memory limits. Reduce drawing count, use smaller arrays (max 100,000 elements), or reduce request.*() data volume.",
     "cannot add string and": "PineScript does not auto-convert numbers to strings. Use str.tostring(value): 'Price: ' + str.tostring(close).",
-    "lookahead": "request.security() with lookahead=barmerge.lookahead_on peeks into future (repainting). Use barmerge.lookahead_off (v6 default) for honest backtests.",
+    "lookahead": "request.security() with lookahead=barmerge.lookahead_on without [1] offset peeks into future (repainting). With [1] offset it IS the correct non-repainting HTF pattern (PineCoders). Use lookahead_off only when no expression offset is needed.",
     "repainting": "Signal uses future data or unconfirmed bar values. Guard with barstate.isconfirmed. Avoid lookahead=barmerge.lookahead_on.",
     # ── v5→v6 parameter removals (short but specific context) ───────────────
     "transp": "v6 removed the 'transp' parameter from plot(), fill(), bgcolor(), etc. Use color.new(color, transparency) instead, where transparency is 0 (opaque) to 100 (invisible).",
@@ -119,7 +119,7 @@ _FIX_HINTS: dict[str, str] = {
     "array.from": "v6 array.from() creates and populates an array in one statement. Use `array.from(val1, val2, val3)` instead of multiple `array.push()` calls.",
     "color.from_gradient": "v6 color.from_gradient() interpolates between two colors based on a value. Use it instead of manual transparency calculations with color.new().",
     "str.format_time": "v6 str.format_time() formats UNIX timestamps. Use `str.format_time(time, \"dd/MM/yy '@' HH:mm:ss\")` instead of manual time formatting.",
-    "barstate.isnew": "v6 barstate.isnew is true at bar close on historical data but at bar open in realtime. Use barstate.isconfirmed for consistent signal generation. Use barstate.isnew to reset varip variables at bar boundaries.",
+    "barstate.isnew": "v6 barstate.isnew is true at bar close on historical data but at bar open in realtime. Use barstate.isconfirmed for consistent signal generation. Use barstate.isnew ONLY to reset varip variables at bar boundaries — NOT for signals (repaints).",
 }
 
 

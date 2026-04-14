@@ -38,7 +38,7 @@ async def optimize_code(
 ) -> str:
     """Analyze PineScript v6 code for performance anti-patterns and optimization opportunities.
 
-    Runs 82 static-analysis rules (OPT-001 through OPT-085; gaps 019/024/025 are runtime-only) covering ALL
+    Runs 87 static-analysis rules (OPT-001 through OPT-090; gaps 019/024/025 are runtime-only) covering ALL
     optimization techniques from TradingView's Pine Profiler documentation,
     plus the Limitations page, Repainting Prevention guide, Style Guide,
     Other Timeframes page, and patterns from PineCoders' published v6 scripts.
@@ -101,16 +101,21 @@ async def optimize_code(
                                 OPT-011 (oversized buffer),
                                 OPT-012 (missing calc_bars_count),
                                 OPT-020 (unbounded array growth),
-                                OPT-021 (deep history >5000 bars)
+                                OPT-021 (deep history >5000 bars),
+                                OPT-088 (dynamic-length functions need mbb)
 
     ADDITIONAL CORRECTNESS RULES (from PineCoders v6 published scripts):
     ─────────────────────────────────────────────────────────────────────────
     OPT-080 (division by input without runtime.error() guard),
     OPT-071 (input bounds validation), OPT-072 (ticker vs tickerid),
-    OPT-060 (missing barstate.isconfirmed for signals),
+    OPT-052 (missing barstate.isconfirmed for signals),
     OPT-074 (lower-TF request.security misuse),
     OPT-082 (request.security may repaint without lookahead+offset),
-    OPT-083 (request.security without timeframe validation)
+    OPT-083 (request.security without timeframe validation),
+    OPT-086 (visible chart heavy calculations),
+    OPT-087 (varip without barstate.isnew reset),
+    OPT-089 (string ops at global scope — Pine runtime not optimized for strings),
+    OPT-090 (forward drawings missing xloc.bar_time)
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     PLATFORM LIMITS (all enforced by specific rules)
