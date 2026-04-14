@@ -131,6 +131,8 @@ async def suggest_functions(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[suggest_functions] {e}")
         if _db._chroma_breaker.is_open():
@@ -241,6 +243,8 @@ async def get_namespace_cheatsheet(
         lines.append(f"Total: {total} entries in namespace '{ns}'")
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_namespace_cheatsheet] {e}")
         if _db._chroma_breaker.is_open():
