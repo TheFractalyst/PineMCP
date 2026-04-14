@@ -152,6 +152,7 @@ async def search_docs(
         str | None,
         Field(
             default=None,
+            max_length=50,
             description="'function','variable','type',etc.",
         ),
     ] = None,
@@ -159,6 +160,7 @@ async def search_docs(
         str | None,
         Field(
             default=None,
+            max_length=50,
             description="Namespace e.g. 'ta', 'strategy'",
         ),
     ] = None,
@@ -436,6 +438,7 @@ async def list_namespace(
         str | None,
         Field(
             default=None,
+            max_length=50,
             description="Optional category filter",
         ),
     ] = None,
