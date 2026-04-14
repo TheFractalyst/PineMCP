@@ -73,9 +73,18 @@ def _strip_comments(line: str) -> str:
 
 
 def _code_has_keyword(code: str, keyword: str) -> bool:
-    """Check if keyword appears in code, ignoring comments."""
+    """Check if keyword appears in code as a whole word, ignoring comments.
+
+    Uses word-boundary matching to avoid false positives:
+    ``var`` won't match ``varip``, ``plot`` won't match ``my_plot``.
+    Only applies ``\\b`` where the keyword starts/ends with word chars,
+    so keywords like ``strategy(`` still match correctly.
+    """
+    prefix = r"\b" if keyword[0].isalnum() or keyword[0] == "_" else ""
+    suffix = r"\b" if keyword[-1].isalnum() or keyword[-1] == "_" else ""
+    pattern = re.compile(rf"{prefix}{re.escape(keyword)}{suffix}")
     for line in code.splitlines():
-        if keyword in _strip_comments(line):
+        if pattern.search(_strip_comments(line)):
             return True
     return False
 
@@ -1791,6 +1800,77 @@ def _detect_lower_tf_request_security(code: str, lines: list[str]) -> list[Optim
     return results
 
 
+def _detect_missing_const(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-075: Variables assigned literal values without const keyword."""
+    results: list[OptimizationResult] = []
+    const_candidates = re.compile(
+        r"^(color|string|int|float|bool)\s+(\w+)\s*=\s*"
+        r'(color\.\w+|"[^"]*"|\'[^\']*\'|\d+\.?\d*|true|false)\s*$'
+    )
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent > 0:
+            continue
+        m = const_candidates.match(stripped)
+        if m and not stripped.startswith(("var ", "const ", "varip ")):
+            type_prefix = m.group(1)
+            var_name = m.group(2)
+            value = m.group(3)
+            results.append(_result(
+                _RULES_BY_ID["OPT-075"], i + 1, stripped[:100],
+                f"Variable '{var_name}' holds a constant value but lacks the `const` keyword. "
+                f"Use `const {type_prefix} {var_name} = {value}` to compute once at "
+                "compilation time instead of on every bar."
+            ))
+            break
+    return results
+
+
+def _detect_unused_variables(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-076: Declared but unreferenced variables (compilation token waste)."""
+    results: list[OptimizationResult] = []
+    decl_pattern = re.compile(
+        r"^(?:(?:int|float|bool|string|color|table|box|line|label|array|matrix|map)<[^>]+>\s+|"
+        r"(?:int|float|bool|string|color|table|box|line|label|array|matrix|map)\s+|"
+        r"var\s+(?:int|float|bool|string|color)\s+|var\s+)"
+        r"(\w+)\s*="
+    )
+    skip_names = {
+        "close", "open", "high", "low", "volume", "time", "bar_index",
+        "hl2", "hlc3", "ohlc4", "hlcc4", "true", "false", "na",
+        "strategy", "indicator", "library", "import", "export",
+    }
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent > 0:
+            continue
+        m = decl_pattern.match(stripped)
+        if not m:
+            continue
+        var_name = m.group(1)
+        if var_name in skip_names:
+            continue
+        # Skip if the variable is used in plot/strategy/label/etc. output expressions
+        # — these are "used" even if not referenced elsewhere
+        if re.match(r"^\w+\s*=\s*(plot|plotshape|plotchar|plotarrow|plotbar|plotcandle|bgcolor|barcolor)\s*\(", stripped):
+            continue
+        # Count references (excluding declaration line)
+        ref_count = sum(
+            1 for j, other in enumerate(lines)
+            if j != i and re.search(rf"\b{var_name}\b", _strip_comments(other))
+        )
+        if ref_count == 0:
+            results.append(_result(
+                _RULES_BY_ID["OPT-076"], i + 1, stripped[:100],
+                f"Variable '{var_name}' is declared but never used. Remove it to save "
+                "compilation tokens (limit: 100K per script)."
+            ))
+            break
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2013,6 +2093,13 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-074", "request.security() for lower timeframe data", "high", "Correctness",
           _detect_lower_tf_request_security, "PineScript request.security_lower_tf lower timeframe data"),
+
+    # --- Pine Profiler: Store calculated values / Code quality ---
+    _Rule("OPT-075", "Missing const for literal values", "low", "Code quality",
+          _detect_missing_const, "PineScript const keyword compilation time optimization literal values"),
+
+    _Rule("OPT-076", "Unused variable (compilation token waste)", "medium", "Code quality",
+          _detect_unused_variables, "PineScript unused variable compilation token limit removal"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}

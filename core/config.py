@@ -121,10 +121,13 @@ CODEGEN TOOLS (use for scaffolding):
                                    the code should do but don't have an error msg.
 
 OPTIMIZATION TOOLS (use for performance analysis):
-  optimize_code(code)             Detect 55 anti-patterns: request.*() waste, drawing
-                                   inefficiency, loop waste, memory/buffer issues, correctness
-                                   traps, and resource limit violations. Returns line-by-line
-                                   findings with severity ratings and fix suggestions.
+  optimize_code(code)             Detect 73 static-analysis rules (OPT-001 to OPT-076)
+                                   covering all Pine Profiler optimization techniques:
+                                   built-in usage, repetition reduction, request consolidation,
+                                   drawing lifecycle, value storage, loop elimination,
+                                   buffer management, platform limits, repainting prevention,
+                                   and code quality. Returns severity-rated findings with
+                                   fix suggestions and doc lookup queries.
 
 This tool is OPT-IN ONLY. It does NOT run automatically on validation or codegen calls.
 Call it explicitly when you want to check PineScript code for performance issues.
