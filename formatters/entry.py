@@ -43,6 +43,12 @@ def section_line(text: str = "") -> str:
 
 
 def source_tag(meta: dict) -> str:
+    """Return a source tag based on entry metadata."""
+    source = meta.get("sources", "")
+    if "tradingview_live" in source and "local_docs" in source:
+        return "[Merged]"
+    if "tradingview_live" in source:
+        return "[Live]"
     return "[Local]"
 
 

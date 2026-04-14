@@ -172,28 +172,34 @@ def safe_error(exc: Exception, context: str = "") -> str:
     return f"{prefix}{type(exc).__name__}: {msg}"
 
 
+def _has_unclosed_fence(text: str) -> bool:
+    """Track code fence open/close state line-by-line.
+
+    Correctly handles ``` appearing inside code blocks (e.g. markdown
+    examples) by tracking whether we're inside a fence or not.
+    """
+    in_fence = False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if in_fence:
+                # Closing fence: bare ``` or ``` followed by whitespace
+                if stripped == "```" or (len(stripped) > 3 and stripped[3:4] == " "):
+                    in_fence = False
+            else:
+                # Opening fence: ```lang or bare ```
+                in_fence = True
+    return in_fence
+
+
 def cap_response(text: str, limit: int = MAX_TOOL_RESPONSE_CHARS) -> str:
     """Cap tool response size to avoid overwhelming AI context windows."""
     if len(text) <= limit:
         return text
     truncated = text[:limit]
-    # Close any unclosed markdown code fences.
-    # Count opening fences (lines starting with ``` followed by optional lang tag)
-    # vs closing fences (bare ``` on their own line or at end).
-    # Simple heuristic: count all ``` occurrences — odd count means unclosed.
-    fence_count = truncated.count("```")
-    if fence_count % 2 != 0:
-        # Find the last opening fence (``` followed by a lang tag or at line start)
-        # and truncate there to remove the incomplete block entirely
-        last_fence_pos = truncated.rfind("```")
-        # Check if this is an opening fence (not a closing one)
-        after = truncated[last_fence_pos + 3:].lstrip()
-        if after and not after.startswith("\n") and not after == "":
-            # Opening fence with content — truncate before it
-            truncated = truncated[:last_fence_pos].rstrip()
-        else:
-            # Likely a closing fence — just add the missing one
-            truncated += "\n```"
+    # Close any unclosed markdown code fences using line-by-line tracking.
+    if _has_unclosed_fence(truncated):
+        truncated += "\n```"
     omitted = len(text) - len(truncated)
     return truncated + f"\n\n[...truncated — {omitted:,} chars omitted]"
 

@@ -302,36 +302,22 @@ def discover_markdown_files(src_dir: Path) -> list[Path]:
     (<10 bytes) and aggregate/duplicate files like pinescriptv6_complete_reference.md.
     """
     # Explicit file list relative to src_dir (pinescriptv6/)
+    # Only includes files NOT covered by scraped_v6_docs/ (which auto-discovers below).
+    # Duplicated entries removed: visuals/backgrounds, bar_coloring, bar_plotting,
+    # colors, fills, levels, lines_and_boxes, overview, plots, tables,
+    # writing_scripts/debugging, limitations, profiling_and_optimization,
+    # publishing_scripts, style_guide, release_notes, visuals/texts_and_shapes.
     allowed_files: list[str] = [
-        # concepts/
+        # concepts/ — not covered by scraped_v6_docs/concepts/
         "concepts/colors_and_display.md",
         "concepts/common_errors.md",
         "concepts/execution_model.md",
         "concepts/methods.md",
         "concepts/objects.md",
         "concepts/timeframes.md",
-        # visuals/
-        "visuals/backgrounds.md",
-        "visuals/bar_coloring.md",
-        "visuals/bar_plotting.md",
-        "visuals/colors.md",
-        "visuals/fills.md",
-        "visuals/levels.md",
-        "visuals/lines_and_boxes.md",
-        "visuals/overview.md",
-        "visuals/plots.md",
-        "visuals/tables.md",
-        "visuals/texts_and_shapes.md",
-        # writing_scripts/
-        "writing_scripts/debugging.md",
-        "writing_scripts/limitations.md",
-        "writing_scripts/profiling_and_optimization.md",
-        "writing_scripts/publishing_scripts.md",
-        "writing_scripts/style_guide.md",
-        # Top-level
-        "release_notes.md",
+        # Top-level — unique content
         "pine_script_execution_model.md",
-        # reference/
+        # reference/ — parsed reference docs (not available as scraped pages)
         "reference/annotations.md",
         "reference/constants.md",
         "reference/keywords.md",
@@ -363,13 +349,10 @@ def discover_markdown_files(src_dir: Path) -> list[Path]:
 
 
 # Additional optimization-relevant docs from data/user_docs/ (.txt format)
+# Removed duplicates: other_timeframes_and_data, variable_declarations,
+# bar_states, loops — all covered by scraped_v6_docs/ now.
 EXTRA_USER_DOCS_DIR = ROOT / "data" / "user_docs"
-EXTRA_DOCS_FILES: list[str] = [
-    "other_timeframes_and_data.txt",    # request.*() patterns, tuple consolidation
-    "variable_declarations.txt",        # var vs varip, shadowing anti-pattern
-    "bar_states.txt",                   # barstate optimization guards
-    "loops.txt",                        # loop patterns, var/varip bounds trap
-]
+EXTRA_DOCS_FILES: list[str] = []
 
 
 def discover_extra_docs() -> list[Path]:

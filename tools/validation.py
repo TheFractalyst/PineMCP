@@ -95,7 +95,7 @@ async def validate_syntax(
             imports = [line.strip() for line in code_lines if line.strip().startswith("import ")]
             var_count = sum(1 for line in code_lines if line.strip().startswith("var ") or line.strip().startswith("varip "))
             has_methods = any("method " in line for line in code_lines)
-            has_types = any("type " in line and "//" not in line.split("type ")[0][-3:] for line in code_lines if not line.strip().startswith("//"))
+            has_types = any(re.search(r'(?<!\w\.)type\s+\w+', line.split("//")[0]) for line in code_lines if not line.strip().startswith("//"))
 
             code_analysis.append(f"Script type: {script_type}")
             code_analysis.append(f"Lines: {len(code_lines)}")
