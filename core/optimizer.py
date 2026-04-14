@@ -5,7 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-82 detection rules (OPT-001 through OPT-085; OPT-019/024/025 are runtime-only).
+87 detection rules (OPT-001 through OPT-090; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -1210,16 +1210,35 @@ def _detect_lookahead_future_leak(code: str, lines: list[str]) -> list[Optimizat
 
 
 def _detect_timenow_repaint(code: str, lines: list[str]) -> list[OptimizationResult]:
-    """OPT-050: timenow usage causes inconsistent historical/realtime behavior."""
+    """OPT-050: timenow usage causes inconsistent historical/realtime behavior.
+
+    Excludes legitimate profiling patterns where a var stores timenow on the
+    first bar and subsequent bars compute elapsed = timenow - var (PineCoders
+    LibraryStopwatch pattern). Detects this via a varip/var declaration with
+    timenow assignment elsewhere in the script.
+    """
     results: list[OptimizationResult] = []
+    # Check for profiling pattern: varip/var startTime = timenow (capture on first bar)
+    has_profiling_capture = False
+    for line in lines:
+        stripped = _strip_comments(line).strip()
+        if re.match(r"^(var|varip)\s+\w+\s*=\s*timenow\b", stripped):
+            has_profiling_capture = True
+            break
+
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
         if re.search(r"\btimenow\b", stripped) and not stripped.startswith("//"):
+            # If script uses the profiling capture pattern, skip all timenow warnings
+            # (the profiling pattern uses timenow intentionally for elapsed measurement)
+            if has_profiling_capture:
+                continue
             results.append(_result(
                 _RULES_BY_ID["OPT-050"], i + 1, stripped[:100],
                 "'timenow' returns the current real-world time, producing different values "
                 "on historical vs realtime bars and after chart reload. Use 'time' or "
-                "'input.time()' for consistent historical behavior."
+                "'input.time()' for consistent historical behavior. "
+                "Note: timenow is legitimate for profiling (LibraryStopwatch pattern)."
             ))
             break
     return results
@@ -2305,6 +2324,126 @@ def _detect_varip_no_reset(code: str, lines: list[str]) -> list[OptimizationResu
     return results
 
 
+def _detect_dynamic_length_needs_mbb(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-088: Dynamic-length functions needing max_bars_back().
+
+    Functions like ta.barssince(), ta.valuewhen(), ta.lowestsince(),
+    ta.highestsince() have variable lookback lengths. When the triggering
+    condition is rare, Pine cannot determine the referencing length, causing
+    runtime errors. Explicit max_bars_back() is needed.
+    """
+    results: list[OptimizationResult] = []
+    dynamic_funcs = re.compile(
+        r"\bta\.(barssince|valuewhen|lowestsince|highestsince)\s*\("
+    )
+    has_mbb = _code_has_keyword(code, "max_bars_back(")
+
+    if has_mbb:
+        return results
+
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if dynamic_funcs.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-088"], i + 1, stripped[:100],
+                "Dynamic-length function used without max_bars_back(). These functions "
+                "have variable lookback — when the triggering condition is rare, Pine "
+                "cannot determine the referencing length. Add max_bars_back=5000 to your "
+                "indicator()/strategy() declaration, or use max_bars_back(varName, N) "
+                "for specific variables. PineCoders: common source of runtime errors."
+            ))
+            break
+    return results
+
+
+def _detect_string_ops_global_scope(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-089: String operations at global scope without islast/var optimization.
+
+    Pine's runtime is optimized for number crunching. String operations
+    (str.tostring, str.format, str.replace, concatenation) are expensive
+    and should be minimized. When the result is only used in tables/labels
+    (visible on last bar), wrap in barstate.islast or use var for static
+    strings. PineCoders Strings library pattern.
+    """
+    results: list[OptimizationResult] = []
+    str_func_pattern = re.compile(r"\bstr\.(tostring|format|replace|replace_all|trim|split)\s*\(")
+
+    # Check if script uses tables or labels (the main consumers of formatted strings)
+    has_table_or_label = _code_has_keyword(code, "table.cell(") or \
+                         _code_has_keyword(code, "label.new(") or \
+                         _code_has_keyword(code, "table.cell_set_text(")
+    has_islast = _code_has_keyword(code, "barstate.islast")
+
+    if not has_table_or_label or has_islast:
+        return results
+
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if not _is_global_scope(line):
+            continue
+        if stripped.startswith(("var ", "const ", "varip ")):
+            continue
+        if str_func_pattern.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-089"], i + 1, stripped[:100],
+                "String operation at global scope runs on every bar. Pine's runtime is "
+                "optimized for number crunching — string ops are slow. Wrap in "
+                "`if barstate.islast` when the result is only used in tables/labels, "
+                "or use `var` for strings that don't change across bars. "
+                "PineCoders pattern: limit string operations, use var for static strings."
+            ))
+            break
+    return results
+
+
+def _detect_forward_drawing_missing_xloc(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-090: Forward drawings missing xloc.bar_time.
+
+    When line.new() or box.new() draws into the future (x2 > bar_index)
+    using the default xloc.bar_index, positioning is incorrect when bars
+    are missing (holidays, weekends, no-trade periods). Must use
+    xloc = xloc.bar_time for accurate future positioning.
+    """
+    results: list[OptimizationResult] = []
+    # Match line.new/box.new with forward x-coordinate (bar_index + N)
+    forward_drawing = re.compile(
+        r"\b(line|box)\.new\s*\("
+    )
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+
+        # Collect the full call (may span lines)
+        call_text = stripped
+        for j in range(i + 1, min(i + 5, len(lines))):
+            next_line = _strip_comments(lines[j]).strip()
+            call_text += " " + next_line
+            if ")" in next_line:
+                break
+
+        if not forward_drawing.search(call_text):
+            continue
+
+        # Check for forward offset: bar_index + N or x2 = bar_index + N
+        has_forward = bool(re.search(r"bar_index\s*\+\s*[1-9]\d*", call_text))
+        if not has_forward:
+            continue
+
+        # Check if xloc.bar_time is explicitly set
+        has_xloc_time = bool(re.search(r"xloc\.bar_time", call_text))
+
+        if not has_xloc_time:
+            results.append(_result(
+                _RULES_BY_ID["OPT-090"], i + 1, stripped[:100],
+                "Drawing extends into the future without xloc = xloc.bar_time. "
+                "The default xloc.bar_index produces incorrect positioning when bars "
+                "are missing (holidays, weekends, no-trade periods). Add "
+                "`xloc = xloc.bar_time` to the drawing call. "
+                "PineCoders Time Offset Framework pattern."
+            ))
+            break
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2571,6 +2710,16 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-087", "varip without barstate.isnew reset", "high", "Correctness",
           _detect_varip_no_reset, "PineScript varip barstate.isnew reset intrabar persistent variable cleanup"),
+
+    # --- PineCoders Dynamic-length / String / Drawing patterns (OPT-088 to OPT-090) ---
+    _Rule("OPT-088", "Dynamic-length function needs max_bars_back", "high", "Memory/buffer",
+          _detect_dynamic_length_needs_mbb, "PineScript ta.barssince ta.valuewhen max_bars_back dynamic length buffer"),
+
+    _Rule("OPT-089", "String ops at global scope (slow in Pine runtime)", "medium", "Code quality",
+          _detect_string_ops_global_scope, "PineScript string optimization var barstate.islast str.tostring str.format performance"),
+
+    _Rule("OPT-090", "Forward drawing missing xloc.bar_time", "high", "Correctness",
+          _detect_forward_drawing_missing_xloc, "PineScript xloc.bar_time future drawing line.new box.new missing bars accuracy"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
