@@ -65,6 +65,9 @@ async def suggest_functions(
 
     Use when user asks 'how do I...' or 'what function does...'.
 
+    Do not use for looking up a specific known function's full documentation
+    -- use get_function() instead.
+
     Args:
         context: What you're trying to accomplish
         current_line: The current line being written (optional)

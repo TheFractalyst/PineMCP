@@ -169,6 +169,9 @@ async def search_docs(
     Semantic search across the complete PineScript v6 knowledge base.
     Searches functions, variables, types, constants, keywords, and operators.
 
+    Do not use when you know the exact function name -- use get_function() instead.
+    Do not use for 'how do I accomplish X' queries -- use suggest_functions() instead.
+
     Args:
         query: Natural language or code query about PineScript v6
         n_results: Number of results (1-30, default 5)
