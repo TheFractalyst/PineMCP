@@ -96,7 +96,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                     cached["metadata"],
                     cached["document"],
                 )
-                return result
+                return cap_response(result)
 
         # Step 0.5: Exact name match across all categories — pick best version
         # (handles entries stored with wrong category, e.g. constant stored as function)
@@ -109,7 +109,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                     all_versions["metadatas"], all_versions["documents"]
                 ):
                     if not category or meta.get("category") == category:
-                        return format_entry_detail(meta.get("name", name), meta, doc)
+                        return cap_response(format_entry_detail(meta.get("name", name), meta, doc))
                 # If no exact category match, pick the best version
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
@@ -126,11 +126,11 @@ async def _lookup_entry(name: str, category: str) -> str:
 
         if candidates and candidates[0][0] >= 85:
             best_sim, best_entry = candidates[0]
-            return format_entry_detail(
+            return cap_response(format_entry_detail(
                 best_entry["metadata"].get("name", name),
                 best_entry["metadata"],
                 best_entry["document"],
-            )
+            ))
 
         # Step 2: Semantic search within category
         results = await query_async(
@@ -149,12 +149,12 @@ async def _lookup_entry(name: str, category: str) -> str:
                 len(search_name) >= 3 and search_name in top_name
             )
             if name_match or top_dist < 0.35:
-                return format_entry_detail(
+                return cap_response(format_entry_detail(
                     top_meta.get("name", name),
                     top_meta,
                     results["documents"][0][0],
                     top_dist,
-                )
+                ))
 
         # Step 3: Broaden to all categories (only if highly relevant)
         results = await query_async(name, 5)
@@ -169,12 +169,12 @@ async def _lookup_entry(name: str, category: str) -> str:
             if name_match_broad or (
                 top_dist < 0.35 and top_meta.get("category") == category
             ):
-                return format_entry_detail(
+                return cap_response(format_entry_detail(
                     top_meta.get("name", name),
                     top_meta,
                     results["documents"][0][0],
                     top_dist,
-                )
+                ))
 
         # Step 4: Fuzzy suggestions
         suggestions: list[str] = []
@@ -270,9 +270,9 @@ async def get_function(
             if all_versions["ids"]:
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
-                    return format_entry_detail(
+                    return cap_response(format_entry_detail(
                         best_meta.get("name", name), best_meta, best_doc
-                    )
+                    ))
         except Exception as e:
             logger.debug(f"Exact name match failed: {e}")
 
