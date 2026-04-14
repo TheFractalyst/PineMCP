@@ -53,17 +53,20 @@ def _find_lines(lines: list[str], pattern: re.Pattern[str]) -> list[int]:
 
 
 def _strip_comments(line: str) -> str:
-    """Remove // comments from a line, preserving // inside double-quoted strings."""
-    in_string = False
+    """Remove // comments from a line, preserving // inside quoted strings."""
+    in_dquote = False
+    in_squote = False
     i = 0
     while i < len(line):
         ch = line[i]
-        if ch == '\\' and in_string and i + 1 < len(line):
+        if ch == '\\' and (in_dquote or in_squote) and i + 1 < len(line):
             i += 2  # skip escaped char inside string
             continue
-        if ch == '"':
-            in_string = not in_string
-        elif ch == '/' and not in_string and i + 1 < len(line) and line[i + 1] == '/':
+        if ch == '"' and not in_squote:
+            in_dquote = not in_dquote
+        elif ch == "'" and not in_dquote:
+            in_squote = not in_squote
+        elif ch == '/' and not in_dquote and not in_squote and i + 1 < len(line) and line[i + 1] == '/':
             return line[:i]
         i += 1
     return line
