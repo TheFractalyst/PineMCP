@@ -214,7 +214,7 @@ def _detect_unprotected_drawings(code: str, lines: list[str]) -> list[Optimizati
 
     # Check for var-declared table/box/line/label with setters outside islast guard
     var_draw_pattern = re.compile(r"var\s+(table|box|line|label)\s+\w+")
-    has_var_drawing = var_draw_pattern.search(code) is not None
+    has_var_drawing = any(var_draw_pattern.search(_strip_comments(ln)) for ln in lines)
 
     if has_var_drawing and not has_islast_guard:
         for i, line in enumerate(lines):
