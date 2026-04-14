@@ -704,7 +704,7 @@ async def validate_file(
 
                 # Do NOT cache linter-only failures — remote compiler may find
                 # different/additional errors. Only cache confirmed remote failures.
-                return response
+                return cap_response(response)
 
         except Exception as e:
             logger.warning(f"Local linter failed for {display_name}: {e}")
@@ -733,7 +733,7 @@ async def validate_file(
             if is_fallback and meta.get("note"):
                 response += f"\nNote: {meta['note']}\n"
             set_cached_file_validation(resolved, mtime_ns, fsize, response)
-            return response
+            return cap_response(response)
 
         # Has errors or warnings
         total_issues = len(errors) + len(warnings)
@@ -768,7 +768,7 @@ async def validate_file(
             response += f"    {text}\n\n"
 
         set_cached_file_validation(resolved, mtime_ns, fsize, response)
-        return response
+        return cap_response(response)
 
     except Exception as e:
         logger.exception("Unexpected error in validate_file")
