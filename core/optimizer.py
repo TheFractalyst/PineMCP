@@ -5,7 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-55 detection rules (OPT-001 through OPT-059; OPT-019/024/025 are runtime-only).
+74 detection rules (OPT-001 through OPT-074; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -1402,6 +1402,387 @@ def _detect_drawing_past_max_bars(code: str, lines: list[str]) -> list[Optimizat
     return results
 
 
+def _detect_long_if_else_chain(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-060: Long if/else if chain replaceable with switch."""
+    results: list[OptimizationResult] = []
+    # Count consecutive else-if blocks comparing the same variable against literals
+    chain_var = ""
+    chain_count = 0
+    chain_start = 0
+    comparison_pattern = re.compile(r"else\s+if\s+(\w+)\s*==\s*(?:\d+|\"[^\"]*\"|'[^']*'|true|false)")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = comparison_pattern.match(stripped)
+        if m:
+            var = m.group(1)
+            if chain_count == 0:
+                chain_var = var
+                chain_start = i
+                chain_count = 1
+            elif var == chain_var:
+                chain_count += 1
+            else:
+                # Different variable — reset
+                chain_var = var
+                chain_start = i
+                chain_count = 1
+        elif stripped.startswith("else if") or stripped.startswith("elif"):
+            # Non-comparison else-if, count toward chain
+            chain_count += 1
+        elif chain_count >= 5:
+            break  # Already enough to report
+        else:
+            chain_count = 0
+            chain_var = ""
+
+    if chain_count >= 5:
+        snippet = _strip_comments(lines[chain_start]).strip()[:100]
+        results.append(_result(
+            _RULES_BY_ID["OPT-060"], chain_start + 1, snippet,
+            f"Long if/else chain ({chain_count}+ branches) comparing '{chain_var}' against values. "
+            f"Use `switch {chain_var}` for cleaner code and potentially better compiled performance."
+        ))
+    return results
+
+
+def _detect_dead_function(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-061: User-defined function declared but never called."""
+    results: list[OptimizationResult] = []
+    # Match single-line: name(params) => expr  or  name(params) =>
+    func_pattern = re.compile(r"^(\w+)\s*\([^)]*\)\s*=>")
+    # Also match multi-line: name(params) =>  on its own line or name(params) followed by indented body
+    multiline_func = re.compile(r"^(\w+)\s*\([^)]*\)\s*=>?\s*$")
+
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = func_pattern.match(stripped) or multiline_func.match(stripped)
+        if not m:
+            continue
+        fname = m.group(1)
+        # Skip PineScript keywords that look like function defs
+        if fname in ("if", "for", "while", "switch", "else", "var", "varip",
+                     "import", "export", "indicator", "strategy", "library", "method"):
+            continue
+        # Count references in non-comment code (excluding the declaration line itself)
+        ref_count = 0
+        for j, other in enumerate(lines):
+            if j == i:
+                continue
+            other_stripped = _strip_comments(other).strip()
+            # Look for function call: fname( or method call: prefix.fname(
+            if re.search(rf"(?<!\w){re.escape(fname)}\s*\(", other_stripped):
+                ref_count += 1
+                if ref_count >= 1:
+                    break
+        if ref_count == 0:
+            results.append(_result(
+                _RULES_BY_ID["OPT-061"], i + 1, stripped[:100],
+                f"Function '{fname}' is declared but never called. "
+                "The PineScript compiler may remove unused code, but it still consumes "
+                "compilation tokens and adds clutter. Remove dead functions."
+            ))
+            break  # Report once
+    return results
+
+
+def _detect_string_concat_in_loop(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-062: String concatenation (+=) inside loop."""
+    results: list[OptimizationResult] = []
+    in_loop = False
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if re.match(r"^\s*for\s+\w+", stripped) or re.match(r"^\s*while\s+", stripped):
+            in_loop = True
+            continue
+        if in_loop and stripped:
+            indent = len(line) - len(line.lstrip())
+            # Check for string concatenation: varName += "..." or varName += '...'
+            if re.search(r"\w+\s*\+=\s*(?:\"[^\"]*\"|'[^']*')", stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-062"], i + 1, stripped[:100],
+                    "String concatenation with += inside a loop creates new string objects each iteration. "
+                    "Collect parts in an array<string>, then use str.join() after the loop for O(n) instead of O(n²)."
+                ))
+                break
+            # Exit loop body
+            if indent == 0 and not stripped.startswith(("else", "//")):
+                in_loop = False
+    return results
+
+
+def _detect_formatting_in_loop(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-063: str.tostring()/str.format() inside loop body."""
+    results: list[OptimizationResult] = []
+    in_loop = False
+    loop_indent = 0
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if re.match(r"^\s*for\s+\w+", stripped) or re.match(r"^\s*while\s+", stripped):
+            in_loop = True
+            loop_indent = len(line) - len(line.lstrip())
+            continue
+        if in_loop:
+            indent = len(line) - len(line.lstrip())
+            if stripped and indent <= loop_indent and not stripped.startswith(("else", "//")):
+                in_loop = False
+                continue
+            if re.search(r"\bstr\.(tostring|format)\s*\(", stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-063"], i + 1, stripped[:100],
+                    "str.tostring()/str.format() inside a loop is expensive. "
+                    "If the format result doesn't change per iteration, compute it before the loop. "
+                    "If it does, minimize format string complexity."
+                ))
+                break
+    return results
+
+
+def _detect_array_prepend(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-064: array.insert(arr, 0, val) — O(n) prepend operation."""
+    results: list[OptimizationResult] = []
+    prepend_pattern = re.compile(r"array\.insert\s*\(\s*(\w+)\s*,\s*0\s*,")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if prepend_pattern.search(stripped):
+            arr_match = prepend_pattern.search(stripped)
+            arr_name = arr_match.group(1) if arr_match else "array"
+            results.append(_result(
+                _RULES_BY_ID["OPT-064"], i + 1, stripped[:100],
+                f"array.insert({arr_name}, 0, val) shifts all elements — O(n) per call. "
+                "Use array.push() to append, then iterate in reverse, or use array.unshift() if available."
+            ))
+            break
+    return results
+
+
+def _detect_dead_plot(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-065: plot() with display=display.none wastes a plot count slot."""
+    results: list[OptimizationResult] = []
+    dead_plot = re.compile(r"\bplot\s*\([^)]*display\s*=\s*display\.none")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if dead_plot.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-065"], i + 1, stripped[:100],
+                "plot() with display=display.none still consumes one of the 64 plot count slots "
+                "and executes its computation every bar. Remove the plot entirely or comment it out."
+            ))
+            break
+    return results
+
+
+def _detect_color_new_every_bar(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-066: color.new() recomputed every bar instead of pre-computed."""
+    results: list[OptimizationResult] = []
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        # color.new() at global scope (indent 0) without var — recomputed every bar
+        if indent == 0 and re.search(r"\bcolor\.new\s*\(", stripped):
+            # Check it's NOT a var declaration
+            if not stripped.startswith("var "):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-066"], i + 1, stripped[:100],
+                    "color.new() at global scope is recomputed on every bar. "
+                    "If the color doesn't change, declare it with `var` to compute once: "
+                    "`var myColor = color.new(color.red, 80)`."
+                ))
+                break
+    return results
+
+
+def _detect_fixed_size_push(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-067: array.push() inside loop with fixed/known bounds."""
+    results: list[OptimizationResult] = []
+    fixed_loop = re.compile(r"\bfor\s+\w+\s*=\s*(\d+)\s+to\s+(\d+)\b")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = fixed_loop.search(stripped)
+        if m:
+            lower = int(m.group(1))
+            upper = int(m.group(2))
+            iterations = upper - lower + 1
+            if iterations > 3 and iterations <= 10000:
+                # Check body for array.push
+                for j in range(i + 1, min(i + 10, len(lines))):
+                    body = _strip_comments(lines[j]).strip()
+                    if re.search(r"\barray\.push\s*\(", body):
+                        results.append(_result(
+                            _RULES_BY_ID["OPT-067"], i + 1, stripped[:100],
+                            f"Loop runs {iterations} times with array.push() inside. "
+                            f"Pre-allocate the array with array.new<type>({iterations}) and use "
+                            "array.set() for index-based assignment — avoids repeated memory reallocations."
+                        ))
+                        break
+                if results:
+                    break
+    return results
+
+
+def _detect_unnecessary_var(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-068: var declared but unconditionally overwritten every bar."""
+    results: list[OptimizationResult] = []
+    var_pattern = re.compile(r"^var\s+(?:int|float|bool|string|color)\s+(\w+)\s*=")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent > 0:
+            continue
+        m = var_pattern.match(stripped)
+        if not m:
+            continue
+        var_name = m.group(1)
+        # Check if var_name is unconditionally reassigned (:=) at global scope
+        unconditional_reassign = False
+        for j, other in enumerate(lines):
+            if j == i:
+                continue
+            other_stripped = _strip_comments(other).strip()
+            other_indent = len(lines[j]) - len(lines[j].lstrip())
+            if other_indent == 0 and re.match(rf"^{re.escape(var_name)}\s*:=", other_stripped):
+                unconditional_reassign = True
+                break
+        if unconditional_reassign:
+            results.append(_result(
+                _RULES_BY_ID["OPT-068"], i + 1, stripped[:100],
+                f"Variable '{var_name}' is declared with `var` but unconditionally reassigned every bar. "
+                "`var` adds persistence overhead. Use a normal declaration without `var` "
+                "since the value is always overwritten."
+            ))
+            break
+    return results
+
+
+def _detect_matrix_in_loops(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-069: Matrix operations inside per-bar loops."""
+    results: list[OptimizationResult] = []
+    matrix_pattern = re.compile(r"\bmatrix\.(add|sub|mul|set|get|row|col)\s*\(")
+    in_loop = False
+    loop_indent = 0
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if re.match(r"^\s*for\s+\w+", stripped) or re.match(r"^\s*while\s+", stripped):
+            in_loop = True
+            loop_indent = len(line) - len(line.lstrip())
+            continue
+        if in_loop:
+            indent = len(line) - len(line.lstrip())
+            if stripped and indent <= loop_indent and not stripped.startswith(("else", "//")):
+                in_loop = False
+                continue
+            if matrix_pattern.search(stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-069"], i + 1, stripped[:100],
+                    "Matrix operation inside a loop body. Matrix operations can be expensive — "
+                    "consider using matrix.mult() for batch operations or hoisting invariant "
+                    "matrix calculations outside the loop."
+                ))
+                break
+    return results
+
+
+def _detect_input_in_local_scope(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-070: input.*() calls inside local scopes (if/for/function)."""
+    results: list[OptimizationResult] = []
+    input_pattern = re.compile(r"\binput\.(int|float|bool|string|source|color)\s*\(")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent > 0 and input_pattern.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-070"], i + 1, stripped[:100],
+                "input.*() called inside a local scope. PineScript evaluates inputs at global scope. "
+                "Move input declarations to the top of the script (global scope) for clarity "
+                "and to avoid potential issues with conditional input evaluation."
+            ))
+            break
+    return results
+
+
+def _detect_missing_input_bounds(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-071: input.int() without minval/maxval bounds."""
+    results: list[OptimizationResult] = []
+    input_int_pattern = re.compile(r"\binput\.int\s*\(")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if input_int_pattern.search(stripped):
+            has_minval = "minval" in stripped
+            has_maxval = "maxval" in stripped
+            if not has_minval and not has_maxval:
+                results.append(_result(
+                    _RULES_BY_ID["OPT-071"], i + 1, stripped[:100],
+                    "input.int() without minval or maxval bounds. Unbounded integer inputs can "
+                    "cause loop overflows, buffer overruns, or excessive memory allocation. "
+                    "Add minval= and maxval= to constrain valid values."
+                ))
+                break  # Report once
+    return results
+
+
+def _detect_ticker_vs_tickerid(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-072: syminfo.ticker in request.security() instead of syminfo.tickerid."""
+    results: list[OptimizationResult] = []
+    pattern = re.compile(r"request\.security\s*\(\s*syminfo\.ticker\b")
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if pattern.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-072"], i + 1, stripped[:100],
+                "request.security() uses syminfo.ticker which lacks the exchange prefix. "
+                "This can cause incorrect data on multi-exchange symbols. "
+                "Use syminfo.tickerid instead for exchange-aware symbol resolution."
+            ))
+            break
+    return results
+
+
+def _detect_redundant_cancel(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-073: Multiple strategy.cancel_all() or strategy.close_all() calls."""
+    results: list[OptimizationResult] = []
+    cancel_pattern = re.compile(r"\bstrategy\.(cancel_all|close_all)\s*\(")
+    call_counts: dict[str, list[int]] = {}
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = cancel_pattern.search(stripped)
+        if m:
+            func = m.group(1)
+            call_counts.setdefault(func, []).append(i + 1)
+
+    for func, line_nums in call_counts.items():
+        if len(line_nums) >= 2:
+            results.append(_result(
+                _RULES_BY_ID["OPT-073"], line_nums[0],
+                f"strategy.{func}() called {len(line_nums)} times",
+                f"strategy.{func}() called {len(line_nums)} times. The first call already "
+                f"{'cancels all orders' if 'cancel' in func else 'closes all positions'}. "
+                "Remove redundant calls to reduce execution overhead."
+            ))
+            break
+    return results
+
+
+def _detect_lower_tf_request_security(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-074: request.security() for lower timeframe data (should use request.security_lower_tf)."""
+    results: list[OptimizationResult] = []
+    # Detect request.security with very low timeframe strings like "1", "5", "15", "1S", etc.
+    low_tf_pattern = re.compile(
+        r"request\.security\s*\([^,]+,\s*\"(?:1|5|15|30|1[SMH]|5[SMH]|15[SMH])\""
+    )
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if low_tf_pattern.search(stripped):
+            results.append(_result(
+                _RULES_BY_ID["OPT-074"], i + 1, stripped[:100],
+                "request.security() with a lower timeframe may return only the last intrabar "
+                "and produce different results on historical vs realtime bars. "
+                "Use request.security_lower_tf() for lower timeframe data access."
+            ))
+            break
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1576,6 +1957,54 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-059", "Drawing x-coordinate >10,000 bars", "high", "Drawing waste",
           _detect_drawing_past_max_bars, "PineScript drawing bar_index coordinate limit 10000"),
+
+    # --- Code Quality ---
+    _Rule("OPT-060", "Long if/else chain replaceable with switch", "medium", "Code quality",
+          _detect_long_if_else_chain, "PineScript switch statement optimization if else chain"),
+
+    _Rule("OPT-061", "Dead user-defined function", "medium", "Code quality",
+          _detect_dead_function, "PineScript unused function dead code removal"),
+
+    _Rule("OPT-062", "String concatenation in loop", "medium", "Code quality",
+          _detect_string_concat_in_loop, "PineScript string concatenation loop str.join array optimization"),
+
+    _Rule("OPT-063", "str.tostring()/str.format() in loop body", "medium", "Code quality",
+          _detect_formatting_in_loop, "PineScript str.tostring str.format loop performance optimization"),
+
+    _Rule("OPT-064", "array.insert(arr, 0, val) O(n) prepend", "medium", "Loop waste",
+          _detect_array_prepend, "PineScript array.insert prepend O(n) push reverse optimization"),
+
+    # --- Resource/Memory ---
+    _Rule("OPT-065", "plot() with display=display.none (dead plot)", "medium", "Resource limits",
+          _detect_dead_plot, "PineScript plot display.none dead plot count slot waste"),
+
+    _Rule("OPT-066", "color.new() recomputed every bar", "low", "Loop waste",
+          _detect_color_new_every_bar, "PineScript color.new var pre-compute optimization"),
+
+    _Rule("OPT-067", "Array push in fixed-bounds loop (pre-allocate)", "medium", "Memory/buffer",
+          _detect_fixed_size_push, "PineScript array pre-allocation fixed loop push optimization"),
+
+    _Rule("OPT-068", "Unnecessary var for always-overwritten variable", "low", "Memory/buffer",
+          _detect_unnecessary_var, "PineScript var keyword unnecessary persistence overhead removal"),
+
+    _Rule("OPT-069", "Matrix operations in per-bar loop", "medium", "Loop waste",
+          _detect_matrix_in_loops, "PineScript matrix operations loop batch optimization"),
+
+    # --- Correctness/Strategy ---
+    _Rule("OPT-070", "input.*() in local scope", "medium", "Correctness",
+          _detect_input_in_local_scope, "PineScript input local scope global scope requirement"),
+
+    _Rule("OPT-071", "input.int() missing minval/maxval bounds", "medium", "Correctness",
+          _detect_missing_input_bounds, "PineScript input.int minval maxval bounds validation"),
+
+    _Rule("OPT-072", "syminfo.ticker in request.security (use tickerid)", "high", "Correctness",
+          _detect_ticker_vs_tickerid, "PineScript syminfo.ticker vs tickerid request.security exchange prefix"),
+
+    _Rule("OPT-073", "Redundant strategy.cancel_all/close_all calls", "medium", "Strategy perf",
+          _detect_redundant_cancel, "PineScript strategy.cancel_all strategy.close_all redundant calls"),
+
+    _Rule("OPT-074", "request.security() for lower timeframe data", "high", "Correctness",
+          _detect_lower_tf_request_security, "PineScript request.security_lower_tf lower timeframe data"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
