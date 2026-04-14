@@ -102,8 +102,11 @@ async def generate_indicator(
     ] = False,
 ) -> str:
     """
-    Generate a syntactically correct PineScript v6 indicator template.
-    Validates the output with pine-facade before returning.
+    Generate a PineScript v6 indicator template with correct boilerplate.
+    Searches docs for relevant functions and validates the output.
+
+    Returns a complete indicator() script with inputs, calculation stub,
+    and plot(). The template may need manual edits for complex logic.
 
     Args:
         name: Indicator display name
