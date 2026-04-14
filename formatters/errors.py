@@ -111,7 +111,7 @@ _FIX_HINTS: dict[str, str] = {
     "Library script must have": "v6 library scripts require //@version=6 and library() declaration at the top. The library() call replaces indicator()/strategy(). Use export to expose functions.",
     "order of elements in tuple": "v6 enforces strict tuple element ordering. Elements in the assignment must match the expression order exactly. Check that [a, b, c] = matches the order of [expr1, expr2, expr3].",
     "runtime.error": "v6 runtime.error() raises a visible error on the chart. Use it to validate inputs: `if val == 0\n    runtime.error(\"msg\")`. This prevents silent failures.",
-    "chart.left_visible_bar_time": "v6 chart.left_visible_bar_time and chart.right_visible_bar_time return the time boundaries of the visible chart area. Use them to restrict heavy calculations to visible bars only.",
+    "chart.left_visible_bar_time": "v6 chart.left/right_visible_bar_time triggers full recalculation on every scroll/zoom. Keep calculations lightweight. Create drawings with `var` and update with setters on `barstate.islast`. Use visibility guards to restrict heavy calculations. PineCoders VisibleChart pattern.",
     "timeframe.from_seconds": "v6 timeframe.from_seconds() converts a seconds count to a timeframe string. Use with timeframe.in_seconds() for dynamic TF construction: `timeframe.from_seconds(timeframe.in_seconds() * mult)`.",
     "force_overlay": "v6 force_overlay=true parameter on label.new()/bgcolor() allows pane indicators to draw on the main chart. Without it, drawings stay in the indicator pane when overlay=false.",
     "display.data_window": "v6 display parameter controls plot visibility. Use `display = display.data_window` to keep values accessible without chart rendering. Combine with `display.status_line` for status line + data window.",
@@ -119,6 +119,7 @@ _FIX_HINTS: dict[str, str] = {
     "array.from": "v6 array.from() creates and populates an array in one statement. Use `array.from(val1, val2, val3)` instead of multiple `array.push()` calls.",
     "color.from_gradient": "v6 color.from_gradient() interpolates between two colors based on a value. Use it instead of manual transparency calculations with color.new().",
     "str.format_time": "v6 str.format_time() formats UNIX timestamps. Use `str.format_time(time, \"dd/MM/yy '@' HH:mm:ss\")` instead of manual time formatting.",
+    "barstate.isnew": "v6 barstate.isnew is true at bar close on historical data but at bar open in realtime. Use barstate.isconfirmed for consistent signal generation. Use barstate.isnew to reset varip variables at bar boundaries.",
 }
 
 

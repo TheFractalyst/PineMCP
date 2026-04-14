@@ -681,8 +681,11 @@ def _detect_varip_repaint(code: str, lines: list[str]) -> list[OptimizationResul
                         results.append(_result(
                             _RULES_BY_ID["OPT-028"], i + 1,
                             stripped[:100],
-                            f"varip variable '{var}' feeds into plot() — values will repaint "
-                            "on realtime bars and differ after reload. Use var for non-repainting output."
+                            f"varip variable '{var}' feeds into plot() — values will differ "
+                            "on historical vs realtime bars and after reload. Use `var` for non-repainting output, "
+                            "or use varip to calculate values saved at bar close, then reference confirmed "
+                            "values from the previous bar. PineCoders: varip does not inherently repaint — "
+                            "it depends on how values are used."
                         ))
                         break
     return results
@@ -1151,7 +1154,8 @@ def _detect_calc_on_every_tick(code: str, lines: list[str]) -> list[Optimization
             _RULES_BY_ID["OPT-046"], 0, "calc_on_every_tick = true",
             "calc_on_every_tick=true causes the strategy to execute on every realtime tick. "
             "This significantly increases execution load. Only enable if you need "
-            "intrabar signal generation."
+            "intrabar signal generation. Note: calc_on_every_tick=true is REQUIRED "
+            "when using varip variables in strategies (PineCoders)."
         ))
     return results
 
@@ -2203,6 +2207,104 @@ def _detect_table_cell_every_bar(code: str, lines: list[str]) -> list[Optimizati
     return results
 
 
+def _detect_visible_chart_heavy_calc(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-086: Using chart.visible_bar_time without lightweight calculation design.
+
+    PineCoders VisibleChart library: scripts using chart.left_visible_bar_time or
+    chart.right_visible_bar_time recalculate on EVERY scroll/zoom. Heavy calculations
+    (loops, request.*(), array operations) in such scripts cause visible lag.
+    """
+    results: list[OptimizationResult] = []
+    has_visible_bar = _code_has_keyword(code, "chart.left_visible_bar_time") or \
+                     _code_has_keyword(code, "chart.right_visible_bar_time")
+    if not has_visible_bar:
+        return results
+
+    # Check for heavy operations at global scope (not guarded by islast/isfirst)
+    has_heavy_global = False
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        if not _is_global_scope(line):
+            continue
+        if re.search(r"\bfor\s+\w+", stripped) and not stripped.startswith(("if ", "var ")):
+            has_heavy_global = True
+            break
+        if re.search(r"\brequest\.\w+\s*\(", stripped):
+            has_heavy_global = True
+            break
+        if re.search(r"\barray\.(push|pop|insert|sort)\s*\(", stripped):
+            has_heavy_global = True
+            break
+
+    if has_heavy_global:
+        results.append(_result(
+            _RULES_BY_ID["OPT-086"], 0,
+            "Script uses chart.visible_bar_time with heavy global-scope calculations",
+            "Scripts using chart.left/right_visible_bar_time recalculate on every "
+            "scroll/zoom. Keep calculations lightweight. Create drawings/tables with "
+            "`var` once, then update with setters only on `barstate.islast`. "
+            "Restrict heavy logic to visible bars using a visibility guard. "
+            "PineCoders VisibleChart pattern."
+        ))
+    return results
+
+
+def _detect_varip_no_reset(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-087: varip variables without barstate.isnew reset.
+
+    PineCoders varip guide: varip variables preserve values across realtime updates.
+    Without a barstate.isnew reset, values leak across bars in unexpected ways.
+    PineCoders recommends always planning reset conditions for varip variables.
+    """
+    results: list[OptimizationResult] = []
+    varip_vars: set[str] = set()
+    for line in lines:
+        stripped = _strip_comments(line).strip()
+        # Match: varip type name = ... or varip name = ...
+        m = re.match(r"varip\s+(?:int|float|bool|string|color)\s+(\w+)", stripped)
+        if m:
+            varip_vars.add(m.group(1))
+            continue
+        m2 = re.match(r"varip\s+(\w+)", stripped)
+        if m2 and m2.group(1) not in ("int", "float", "bool", "string", "color",
+                                       "table", "box", "line", "label", "array",
+                                       "matrix", "map"):
+            varip_vars.add(m2.group(1))
+
+    if not varip_vars:
+        return results
+
+    # Check if barstate.isnew is used anywhere to reset varip variables
+    has_isnew_reset = _code_has_keyword(code, "barstate.isnew")
+    if has_isnew_reset:
+        # Verify at least one varip var is reset inside an isnew block
+        in_isnew_block = False
+        for i, line in enumerate(lines):
+            stripped = _strip_comments(line).strip()
+            if re.search(r"\bbarstate\.isnew\b", stripped):
+                in_isnew_block = True
+                continue
+            if in_isnew_block:
+                for var in varip_vars:
+                    if re.search(rf"\b{var}\b\s*:=\s*(0|na|false|\"\")", stripped):
+                        return results  # Found reset, all good
+                if stripped and _is_global_scope(line) and not stripped.startswith(("else", "//")):
+                    in_isnew_block = False
+        # isnew exists but doesn't reset varip vars — still flag
+
+    # No isnew reset found for varip variables
+    if not has_isnew_reset:
+        results.append(_result(
+            _RULES_BY_ID["OPT-087"], 0,
+            f"varip variables ({', '.join(list(varip_vars)[:3])}) without barstate.isnew reset",
+            "varip variables preserve values across realtime updates and across bars. "
+            "Without a `barstate.isnew` reset, values accumulate unexpectedly across bars. "
+            "Add: `if barstate.isnew\n    varipVar := 0` (or na/false as appropriate). "
+            "PineCoders pattern: always plan reset conditions for varip variables."
+        ))
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2462,6 +2564,13 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-085", "table.cell() content updates on every bar (use islast)", "medium", "Drawing waste",
           _detect_table_cell_every_bar, "PineScript table.cell barstate.islast update optimization PineCoders pattern"),
+
+    # --- PineCoders VisibleChart/varip patterns (OPT-086, OPT-087) ---
+    _Rule("OPT-086", "chart.visible_bar_time with heavy calculations", "high", "Code quality",
+          _detect_visible_chart_heavy_calc, "PineScript chart.left_visible_bar_time chart.right_visible_bar_time scroll zoom recalculation optimization"),
+
+    _Rule("OPT-087", "varip without barstate.isnew reset", "high", "Correctness",
+          _detect_varip_no_reset, "PineScript varip barstate.isnew reset intrabar persistent variable cleanup"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
