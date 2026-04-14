@@ -70,6 +70,27 @@ def classify_file(file_path: Path, src_dir: Path) -> tuple[str, str]:
             if len(parts) >= 3 and parts[1] == "functions":
                 return "reference", "reference/functions"
             return "reference", "reference"
+        elif top == "scraped_v6_docs":
+            # Scraped TradingView docs — classify by subdirectory
+            if len(parts) >= 3:
+                sub = parts[1]
+                if sub == "writing":
+                    return "guide", "writing_scripts"
+                elif sub == "visuals":
+                    return "visual", "visuals"
+                elif sub == "concepts":
+                    return "concept", "concepts"
+                elif sub == "language":
+                    return "guide", "language"
+                elif sub == "errors":
+                    return "guide", "errors"
+                elif sub == "faq":
+                    return "guide", "faq"
+                elif sub == "migration-guides":
+                    return "guide", "migration"
+                elif sub == "primer":
+                    return "guide", "primer"
+            return "concept", "concepts"
 
     return "concept", "concepts"
 
@@ -275,7 +296,7 @@ def _is_valid(entry: dict[str, Any], seen_names: set[str]) -> bool:
 
 
 def discover_markdown_files(src_dir: Path) -> list[Path]:
-    """Find markdown files to index from an explicit allow-list.
+    """Find markdown files to index from an explicit allow-list + scraped docs.
 
     Only includes files specified in the source spec. Skips empty stubs
     (<10 bytes) and aggregate/duplicate files like pinescriptv6_complete_reference.md.
@@ -330,6 +351,13 @@ def discover_markdown_files(src_dir: Path) -> list[Path]:
             logger.info(f"Skipping empty stub: {rel} ({f.stat().st_size} bytes)")
         else:
             logger.warning(f"File not found: {rel}")
+
+    # Auto-discover scraped docs (scraped_v6_docs/ subdirectory)
+    scraped_dir = src_dir / "scraped_v6_docs"
+    if scraped_dir.is_dir():
+        for md_file in sorted(scraped_dir.rglob("*.md")):
+            if md_file.stat().st_size > SKIP_THRESHOLD:
+                files.append(md_file)
 
     return files
 
