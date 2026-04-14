@@ -38,7 +38,7 @@ async def optimize_code(
 ) -> str:
     """Analyze PineScript v6 code for performance anti-patterns and optimization opportunities.
 
-    Runs 80 static-analysis rules (OPT-001 through OPT-083) covering ALL
+    Runs 82 static-analysis rules (OPT-001 through OPT-085) covering ALL
     optimization techniques from TradingView's Pine Profiler documentation,
     plus the Limitations page, Repainting Prevention guide, Style Guide,
     Other Timeframes page, and patterns from PineCoders' published v6 scripts.

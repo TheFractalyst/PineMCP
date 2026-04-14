@@ -5,7 +5,7 @@ core/optimizer.py
 ──────────────────────────────────────────────────────────────────────────────
 Static analysis engine for PineScript v6 performance optimization.
 
-80 detection rules (OPT-001 through OPT-083; OPT-019/024/025 are runtime-only).
+82 detection rules (OPT-001 through OPT-085; OPT-019/024/025 are runtime-only).
 All rules use regex-based detection (fast, deterministic, <50ms per analysis).
 """
 
@@ -2123,6 +2123,73 @@ def _detect_request_no_tf_validation(code: str, lines: list[str]) -> list[Optimi
     return results
 
 
+def _detect_input_only_calculation(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-084: Input-dependent function result recalculated every bar (use var)."""
+    results: list[OptimizationResult] = []
+    # PineCoders pattern: when a function's args are all input-dependent (simple type),
+    # the result never changes across bars. Wrap in var to evaluate once.
+    excluded_prefixes = (
+        "ta.", "request.", "plot", "strategy.", "math.", "str.",
+        "array.", "color.", "label.", "line.", "box.", "table.",
+        "chart.", "barstate.", "input.",
+    )
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        if indent > 0:
+            continue
+        if stripped.startswith(("var ", "varip ", "const ")):
+            continue
+        # Match: type varName = funcCall(... or varName = funcCall(...
+        m = re.match(r"^(?:\w+\s+)?(\w+)\s*=\s*([\w.]+)\s*\(", stripped)
+        if not m:
+            continue
+        var_name = m.group(1)
+        func_name = m.group(2)
+        if var_name in ("if", "for", "while", "switch", "else", "import", "export"):
+            continue
+        if any(func_name.startswith(p) for p in excluded_prefixes):
+            continue
+        # Get arguments portion
+        rest = stripped[m.end():]
+        # Only flag if arguments contain input.* references but no series-dependent refs
+        has_input = "input." in rest
+        has_series = bool(re.search(r"\b(close|open|high|low|volume|time|bar_index|hl2|hlc3|ohlc4)\b", rest))
+        if has_input and not has_series:
+            results.append(_result(
+                _RULES_BY_ID["OPT-084"], i + 1, stripped[:100],
+                f"Variable '{var_name}' is assigned from '{func_name}()' which depends only on "
+                "input values that don't change across bars. Use `var type name = funcCall(...)` "
+                "to evaluate once instead of on every bar. PineCoders pattern."
+            ))
+            break
+    return results
+
+
+def _detect_table_cell_every_bar(code: str, lines: list[str]) -> list[OptimizationResult]:
+    """OPT-085: table.cell() content updates running on every bar (use islast)."""
+    results: list[OptimizationResult] = []
+    has_islast = _code_has_keyword(code, "barstate.islast")
+    if has_islast:
+        return results  # Script already guards with islast
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        indent = len(line) - len(line.lstrip())
+        # table.cell() at global scope that updates content (has text argument with formatting)
+        if indent == 0 and re.search(r"\btable\.cell\s*\(", stripped):
+            # Check if this is a content update (has str.format or str.tostring or a variable)
+            if re.search(r"(str\.(format|tostring)|format\.mintick)", stripped):
+                results.append(_result(
+                    _RULES_BY_ID["OPT-085"], i + 1, stripped[:100],
+                    "table.cell() with formatted text at global scope runs on every bar. "
+                    "Use `if barstate.isfirst` for cell initialization and `if barstate.islast` "
+                    "for content updates with table.cell_set_text(). PineCoders pattern: "
+                    "init cells once on first bar, update text only on the last bar."
+                ))
+                break
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Rule registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2375,6 +2442,13 @@ _RULES: list[_Rule] = [
 
     _Rule("OPT-083", "request.security() without timeframe validation", "medium", "Correctness",
           _detect_request_no_tf_validation, "PineScript request.security timeframe.in_seconds validation higher timeframe"),
+
+    # --- PineCoders v6 Published Script Patterns (OPT-084, OPT-085) ---
+    _Rule("OPT-084", "Input-dependent function result recalculated every bar", "low", "Code quality",
+          _detect_input_only_calculation, "PineScript var keyword input-dependent static value evaluate once optimization"),
+
+    _Rule("OPT-085", "table.cell() content updates on every bar (use islast)", "medium", "Drawing waste",
+          _detect_table_cell_every_bar, "PineScript table.cell barstate.islast update optimization PineCoders pattern"),
 ]
 
 _RULES_BY_ID: dict[str, _Rule] = {r.rule_id: r for r in _RULES}
