@@ -219,13 +219,14 @@ def normalize_facade_response(raw: dict) -> dict:
                 placeholder = f"{{{key}}}"
                 if placeholder in text:
                     text = text.replace(placeholder, str(val))
+        start = e.get("start") or {}
         return {
             "line": e.get("line")
             or e.get("lineNumber")
-            or e.get("start", {}).get("line", 0),
+            or (start.get("line", 0) if isinstance(start, dict) else 0),
             "column": e.get("column")
             or e.get("col")
-            or e.get("start", {}).get("column", 0),
+            or (start.get("column", 0) if isinstance(start, dict) else 0),
             "text": text,
             "type": e.get("type") or "error",
         }

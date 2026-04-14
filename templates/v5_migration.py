@@ -54,11 +54,8 @@ V5_TO_V6: dict[str, str] = {
     r'(?<!\.)\bsqrt\s*\(':         'math.sqrt(',
     r'(?<!\.)\blog\s*\(':          'math.log(',
     r'(?<!\.)\bexp\s*\(':          'math.exp(',
-    r'(?<!\.)\bsign\s*\(':         'math.sign(',
     r'(?<!\.)\bsin\s*\(':          'math.sin(',
     r'(?<!\.)\bcos\s*\(':          'math.cos(',
-    r'(?<!\.)\bmax\s*\(':          'math.max(',
-    r'(?<!\.)\bmin\s*\(':          'math.min(',
     # str.* functions
     r'(?<!\.)\btostring\s*\(':     'str.tostring(',
     r'(?<!\.)\btonumber\s*\(':     'str.tonumber(',

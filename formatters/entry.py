@@ -176,6 +176,10 @@ def format_entry_detail(
 ) -> str:
     """Format a complete detailed entry for get_* tools."""
 
+    # Guard against missing metadata
+    if not meta:
+        meta = {}
+
     # Check for hollow results
     if not doc or len(doc) < 10:
         return (
