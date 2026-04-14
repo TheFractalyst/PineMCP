@@ -158,6 +158,10 @@ async def get_namespace_cheatsheet(
 
     Namespaces: ta, strategy, math, array, matrix, map, str, color,
     chart, line, label, box, table, request, ticker, timeframe, syminfo
+
+    Do not use for getting full documentation for specific entries —
+    use get_function() or get_type() instead. For full one-line
+    descriptions per member, use list_namespace().
     """
     try:
         ns = norm_ns(namespace)
