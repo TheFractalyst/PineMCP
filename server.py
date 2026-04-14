@@ -253,7 +253,7 @@ mcp = FastMCP(
     name="PineScript v6 Complete Reference",
     instructions=INSTRUCTIONS,
     lifespan=db_lifespan | model_lifespan | cache_lifespan,
-    mask_error_details=False,
+    mask_error_details=True,
     providers=[FileSystemProvider(_mcp_dir, reload=False)],
     middleware=[
         _lookup_cache_mw,

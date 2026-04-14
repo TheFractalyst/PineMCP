@@ -118,7 +118,7 @@ def dedup_examples(examples: list[str]) -> list[str]:
 def format_examples_text(meta: dict) -> str:
     """Format examples from raw_examples metadata."""
     raw_ex = meta.get("raw_examples", "")
-    if not raw_ex:
+    if not raw_ex or not isinstance(raw_ex, str):
         ex_count = meta.get("example_count", 0)
         if ex_count:
             return section_line(f"({ex_count} examples — see raw_examples)")
@@ -152,7 +152,7 @@ def format_type_info(meta: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         return ""
 
-    if fields:
+    if not isinstance(fields, list) or not fields:
         lines.append(section_line("FIELDS"))
         for f in fields:
             if not isinstance(f, dict):
