@@ -38,7 +38,7 @@ async def optimize_code(
 ) -> str:
     """Analyze PineScript v6 code for performance anti-patterns and optimization opportunities.
 
-    Runs 82 static-analysis rules (OPT-001 through OPT-085) covering ALL
+    Runs 82 static-analysis rules (OPT-001 through OPT-085; gaps 019/024/025 are runtime-only) covering ALL
     optimization techniques from TradingView's Pine Profiler documentation,
     plus the Limitations page, Repainting Prevention guide, Style Guide,
     Other Timeframes page, and patterns from PineCoders' published v6 scripts.
@@ -117,7 +117,7 @@ async def optimize_code(
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     plots=64 | drawings=500/type | polylines=100 | tables=9
-    request.*()=40 unique | tuples=127 elements | collections=100K
+    request.*()=40 unique | request.footprint()=1/script | tuples=127 elements | collections=100K
     map=50K pairs | history=5000 bars | orders=9K backtest
     loop=500ms/bar | execution=20s basic/40s pro | compile=2min
     tokens=100K | vars=1000/scope | request_size=5MB
@@ -139,6 +139,7 @@ async def optimize_code(
     3. DELETE+RECREATE → SETTER:
        BAD:  label.delete(lbl) / lbl := label.new(x, y, text)
        GOOD: label.set_xy(lbl, x, y) / label.set_text(lbl, text)
+       NOTE: Polylines have no setters — delete+recreate is the only update method.
 
     4. GLOBAL DRAWING → ISLAST GUARD:
        BAD:  table.cell(tbl, 0, 0, str.tostring(close)) // runs every bar

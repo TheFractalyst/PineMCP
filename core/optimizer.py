@@ -124,7 +124,7 @@ def _detect_reimplemented_builtins(code: str, lines: list[str]) -> list[Optimiza
     # Look for functions that iterate source[i] in a for loop and accumulate
     # This catches patterns like: for i = 1 to length - 1 / result := math.max(result, source[i])
     func_pattern = re.compile(r"for\s+\w+\s*=\s*\d+\s+to\s+\w+")
-    accum_pattern = re.compile(r"(math\.(max|min)|\+=).*(?:source|close|open|high|low)\[")
+    accum_pattern = re.compile(r"(math\.(max|min)|\+=).*(?:source|close|open|high|low)\[|(?:source|close|open|high|low)\s*-\s*(?:source|close|open|high|low)\[")
     in_func = False
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
@@ -139,7 +139,8 @@ def _detect_reimplemented_builtins(code: str, lines: list[str]) -> list[Optimiza
                     _RULES_BY_ID["OPT-001"], i + 1,
                     stripped,
                     "Use built-in ta.highest(), ta.lowest(), ta.sma(), etc. instead of manual loops. "
-                    "Built-ins have internal optimizations (O(1) vs O(n))."
+                    "Built-ins have internal optimizations (O(1) vs O(n)). "
+                    "For difference sums: (source * length - math.sum(source, length)[1]) / length."
                 ))
                 break
             in_func = False
@@ -248,7 +249,7 @@ def _detect_invariant_in_loop(code: str, lines: list[str]) -> list[OptimizationR
     """OPT-006: Recalculating invariant values inside a per-bar loop."""
     results: list[OptimizationResult] = []
     loop_pattern = re.compile(r"^\s*for\s+(\w+)\s*=")
-    invariant_funcs = re.compile(r"(math\.(cos|sin|sqrt|log|exp|pow)|array\.(min|max|range|size))\s*\(")
+    invariant_funcs = re.compile(r"(math\.(cos|sin|sqrt|log|exp|pow)|array\.(min|max|range|size)|ta\.(sma|ema|stdev|mean|variance|cum|change))\s*\(")
     loop_var = ""
     in_loop = False
     for i, line in enumerate(lines):

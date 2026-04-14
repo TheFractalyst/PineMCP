@@ -27,6 +27,10 @@ _FIX_HINTS: dict[str, str] = {
     # must appear before "Cannot call" or the generic hint wins incorrectly.
     #
     # ── Most-specific patterns first (namespace-qualified, multi-word) ──────
+    "CE10101": "Condition of if/switch statement must evaluate to 'bool'. Use comparison operators (==, !=, >, <, >=, <=) or boolean expressions (and, or, not). v6 removed implicit bool casting.",
+    "CW10003": "History-dependent function called inside conditional/loop. Move the call to global scope, store in a variable, then use that variable conditionally. The function relies on past bar data and produces incorrect results when called sporadically.",
+    "RE10139": "Memory limits exceeded. Common causes: request.*() returning large collections, unbounded array growth, or excessive drawing objects. Reduce request.*() data volume, use array.shift() for fixed queues, or add max_bars_back() for large buffers.",
+    "RE10143": "Historical offset exceeds the buffer limit. Add max_bars_back(varName, N) where N is the maximum history offset needed. The default buffer is determined from the first 244 bars — if first reference is later, add explicit max_bars_back().",
     "Cannot call 'na()' with": "v6 booleans cannot be na. na()/nz()/fixnan() no longer accept bool arguments. Use int (-1/0/1) or an enum for three-state logic.",
     "Cannot call 'request.security' from": "v6 with dynamic_requests=false blocks request.*() in local scopes. Remove dynamic_requests=false (defaults to true) or move request.*() to global scope.",
     "Cannot call method": "Method call on wrong type. Check the variable type with get_type(). Example: array methods require an array<type> variable.",
