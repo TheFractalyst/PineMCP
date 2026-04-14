@@ -390,7 +390,7 @@ def _detect_oversized_buffer(code: str, lines: list[str]) -> list[OptimizationRe
 def _detect_missing_calc_bars_count(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-012: Missing calc_bars_count for last-bar-only logic."""
     results: list[OptimizationResult] = []
-    has_islast_heavy = code.count("barstate.islast") >= 1
+    has_islast_heavy = _code_has_keyword(code, "barstate.islast")
     has_calc_bars_count = _code_has_keyword(code, "calc_bars_count")
 
     if has_islast_heavy and not has_calc_bars_count:
