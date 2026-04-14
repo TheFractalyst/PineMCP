@@ -204,6 +204,12 @@ async def search_docs(
         # entries stored under other categories (e.g. strategy.closedtrades.profit
         # is stored as 'variable' but has function syntax with parameters)
         if category_filter == "function" and results["ids"] and results["ids"][0]:
+            # Shallow-copy lists to avoid mutating cached ChromaDB result objects
+            results["ids"][0] = list(results["ids"][0])
+            results["metadatas"][0] = list(results["metadatas"][0])
+            results["documents"][0] = list(results["documents"][0])
+            results["distances"][0] = list(results["distances"][0])
+
             supp_where = {"namespace": namespace_filter} if namespace_filter else None
             supp = await query_async(query, n_results, where=supp_where)
             if supp["ids"] and supp["ids"][0]:

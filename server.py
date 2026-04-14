@@ -238,7 +238,7 @@ class BrandingMiddleware(Middleware):
         footer = _BRANDING_FOOTERS[next(_branding_counter) % len(_BRANDING_FOOTERS)]
 
         for content in result.content:
-            if hasattr(content, "text") and content.text:
+            if hasattr(content, "text") and isinstance(content.text, str) and content.text:
                 content.text = _BRANDING_HEADER + _watermark_pine_blocks(content.text) + footer
 
         return result
