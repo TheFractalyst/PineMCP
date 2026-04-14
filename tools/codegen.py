@@ -719,10 +719,10 @@ async def lookup_and_correct(
             changes_made.append("Changed 'bool x = na' to 'var bool x = false' (v6)")
 
         implicit_bool = re.compile(
-            r"\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])"
+            r"\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])"
         )
         if implicit_bool.search(code_stripped):
-            fixed_code = implicit_bool.sub(r"if \1 > 0", fixed_code)
+            fixed_code = implicit_bool.sub(r"if \1\2 > 0", fixed_code)
             changes_made.append("Added explicit > 0 (v6: implicit bool removed)")
 
         study_pattern = re.compile(r"\bstudy\s*\(")

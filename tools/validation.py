@@ -505,9 +505,9 @@ async def fix_and_validate(
             fixes_list.append("strategy.entry() requires strategy() declaration, not indicator()")
 
         # Pattern 5: Implicit bool — if volume, if close (v6 needs explicit comparison)
-        implicit_bool_pattern = re.compile(r'\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])')
+        implicit_bool_pattern = re.compile(r'\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])')
         if implicit_bool_pattern.search(code_stripped):
-            fixed_code = implicit_bool_pattern.sub(r'if \1 > 0', fixed_code)
+            fixed_code = implicit_bool_pattern.sub(r'if \1\2 > 0', fixed_code)
             fixes_list.append("Added explicit > 0 comparison (v6: implicit bool casting removed)")
 
         # Pattern 6: bool x = na (v6: bools can't be na)
