@@ -62,7 +62,7 @@ def _sanitize_pine_ident(name: str) -> str:
 @tool(
     annotations=ToolAnnotations(
         title="Generate Indicator Template",
-        readOnlyHint=True,
+        readOnlyHint=False,
         openWorldHint=True,
         destructiveHint=False,
         idempotentHint=False,
@@ -463,7 +463,7 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 @tool(
     annotations=ToolAnnotations(
         title="Generate Strategy Template",
-        readOnlyHint=True,
+        readOnlyHint=False,
         openWorldHint=True,
         destructiveHint=False,
         idempotentHint=False,
@@ -647,7 +647,7 @@ if barstate.islast
 @tool(
     annotations=ToolAnnotations(
         title="Lookup and Correct Code",
-        readOnlyHint=True,
+        readOnlyHint=False,
         openWorldHint=True,
         destructiveHint=False,
         idempotentHint=False,
