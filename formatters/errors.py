@@ -197,11 +197,16 @@ def circuit_breaker_msg() -> str:
 def check_query_error(results: dict) -> str | None:
     """Check if a query result indicates a database failure."""
     if "_error" in results:
+        raw = str(results["_error"])
+        # Sanitize: strip paths and cap length to avoid leaking hostnames/ports
+        sanitized = _PATH_PATTERN.sub("[path]", raw)
+        if len(sanitized) > 150:
+            sanitized = sanitized[:150] + "..."
         return (
-            "⚠️ DATABASE UNAVAILABLE\n"
+            "DATABASE UNAVAILABLE\n"
             "The ChromaDB vector store could not process this query.\n"
             "This is a transient error — please retry in a few seconds.\n"
-            f"Detail: {results['_error']}"
+            f"Detail: {sanitized}"
         )
     return None
 
