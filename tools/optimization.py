@@ -38,10 +38,10 @@ async def optimize_code(
 ) -> str:
     """Analyze PineScript v6 code for performance anti-patterns and optimization opportunities.
 
-    Runs 73 static-analysis rules (OPT-001 through OPT-076) covering ALL
+    Runs 80 static-analysis rules (OPT-001 through OPT-083) covering ALL
     optimization techniques from TradingView's Pine Profiler documentation,
     plus the Limitations page, Repainting Prevention guide, Style Guide,
-    and Other Timeframes page.
+    Other Timeframes page, and patterns from PineCoders' published v6 scripts.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     WHEN TO USE
@@ -74,7 +74,9 @@ async def optimize_code(
                                 OPT-039 (unused request result),
                                 OPT-041 (missing calc_bars_count),
                                 OPT-057 (request in loop with variable args),
-                                OPT-074 (lower-TF request.security misuse)
+                                OPT-074 (lower-TF request.security misuse),
+                                OPT-082 (request.security may repaint),
+                                OPT-083 (missing TF validation)
     4. AVOID REDRAWING        → OPT-004 (delete+recreate → use setters),
                                 OPT-013 (na coordinates waste drawing slots)
     5. REDUCE DRAWING UPDATES → OPT-005 (wrap in barstate.islast),
@@ -83,9 +85,13 @@ async def optimize_code(
     6. STORE CALCULATED VALUES→ OPT-030 (missing var for cross-bar accumulation),
                                 OPT-066 (color.new every bar → var),
                                 OPT-068 (unnecessary var for always-overwritten),
-                                OPT-075 (literal values → const keyword)
+                                OPT-075 (literal values → const keyword),
+                                OPT-077 (manual cum → ta.cum()),
+                                OPT-079 (manual midpoint → math.avg()),
+                                OPT-081 (plot display optimization)
     7. ELIMINATE LOOPS        → OPT-001 (loop vs ta.highest/lowest/sma),
-                                OPT-007 (algebraic simplification)
+                                OPT-007 (algebraic simplification),
+                                OPT-078 (push loop → array.from())
     8. OPTIMIZE LOOPS         → OPT-006 (invariant calc inside loop),
                                 OPT-008 (array.indexof in for...in),
                                 OPT-009 (array.min/max inside loop),
@@ -96,6 +102,15 @@ async def optimize_code(
                                 OPT-012 (missing calc_bars_count),
                                 OPT-020 (unbounded array growth),
                                 OPT-021 (deep history >5000 bars)
+
+    ADDITIONAL CORRECTNESS RULES (from PineCoders v6 published scripts):
+    ─────────────────────────────────────────────────────────────────────────
+    OPT-080 (division by input without runtime.error() guard),
+    OPT-071 (input bounds validation), OPT-072 (ticker vs tickerid),
+    OPT-060 (missing barstate.isconfirmed for signals),
+    OPT-074 (lower-TF request.security misuse),
+    OPT-082 (request.security may repaint without lookahead+offset),
+    OPT-083 (request.security without timeframe validation)
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     PLATFORM LIMITS (all enforced by specific rules)
@@ -137,6 +152,33 @@ async def optimize_code(
        BAD:  h = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_on)
              l = request.security(syminfo.tickerid, "D", low[1], lookahead=barmerge.lookahead_on)
        GOOD: [h, l] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+    7. PUSH LOOP → ARRAY.FROM (PineCoders pattern):
+       BAD:  arr = array.new<float>()
+             array.push(arr, val1) / array.push(arr, val2) / array.push(arr, val3)
+       GOOD: arr = array.from(val1, val2, val3)
+
+    8. MANUAL CUM → TA.CUM (PineCoders pattern):
+       BAD:  var float cumVal = 0 / cumVal += source
+       GOOD: ta.cum(source)
+
+    9. CONDITIONAL PLOT → DISPLAY.DATA_WINDOW (PineCoders pattern):
+       BAD:  plot(cond ? val : na, "Data")  // renders visually even when not needed
+       GOOD: plot(cond ? val : na, "Data", display = display.data_window)
+       NOTE: Use display.status_line + display.data_window for status line visibility.
+
+    10. INPUT VALIDATION → RUNTIME.ERROR (PineCoders pattern):
+        BAD:  myVal = input.int(10, "Value") / result = close / myVal  // division by zero possible
+        GOOD: if myVal == 0 / runtime.error("Value must be > 0") / result := close / myVal
+
+    11. REPAINING REQUEST.SECURITY → ANTI-REPAINTING (PineCoders HTF pattern):
+        BAD:  h = request.security(syminfo.tickerid, "D", high)  // repaints on realtime bars
+        GOOD: h = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_on)
+        WHY:  Without [1] offset + lookahead_on, the value changes on every realtime tick
+              and differs from historical data after chart reload.
+        NOTE: Also add timeframe validation:
+              if timeframe.in_seconds(tf) <= timeframe.in_seconds()
+                  runtime.error("Requested TF must be higher than chart TF")
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SEVERITY LEVELS

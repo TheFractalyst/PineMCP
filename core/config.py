@@ -121,7 +121,7 @@ CODEGEN TOOLS (use for scaffolding):
                                    the code should do but don't have an error msg.
 
 OPTIMIZATION TOOLS (use for performance analysis):
-  optimize_code(code)             Detect 73 static-analysis rules (OPT-001 to OPT-076)
+  optimize_code(code)             Detect 80 static-analysis rules (OPT-001 to OPT-083)
                                    covering all Pine Profiler optimization techniques:
                                    built-in usage, repetition reduction, request consolidation,
                                    drawing lifecycle, value storage, loop elimination,

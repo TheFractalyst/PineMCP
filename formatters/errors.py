@@ -101,6 +101,17 @@ _FIX_HINTS: dict[str, str] = {
     "Too many drawings": "Drawing objects exceed the limit. Set max_lines_count=500, max_labels_count=500, or max_boxes_count=500 in your declaration.",
     "too many local variables": "Each scope has a 1000-variable limit. Inline expressions to reduce count, or extract into helper functions.",
     "too many securities": "Pine limits to 40 request.security() calls. Combine calls using tuples, or wrap in a UDF and reuse the result.",
+    # ── v6 API patterns (from PineCoders published scripts) ──────────────────
+    "Cannot use 'import'": "v6 import syntax: use 'import author/libraryName/version as alias'. The alias is then used as prefix: alias.function(). Check the library exists and version number is correct.",
+    "method already defined": "v6 disallows duplicate method definitions for the same type. Each type can only have one method with a given name. Rename or remove the duplicate.",
+    "Library script must have": "v6 library scripts require //@version=6 and library() declaration at the top. The library() call replaces indicator()/strategy(). Use export to expose functions.",
+    "order of elements in tuple": "v6 enforces strict tuple element ordering. Elements in the assignment must match the expression order exactly. Check that [a, b, c] = matches the order of [expr1, expr2, expr3].",
+    "runtime.error": "v6 runtime.error() raises a visible error on the chart. Use it to validate inputs: `if val == 0\n    runtime.error(\"msg\")`. This prevents silent failures.",
+    "display.data_window": "v6 display parameter controls plot visibility. Use `display = display.data_window` to keep values accessible without chart rendering. Combine with `display.status_line` for status line + data window.",
+    "math.avg": "v6 math.avg() calculates the average of multiple arguments. Use `math.avg(a, b)` instead of `(a + b) / 2` for cleaner midpoint calculations.",
+    "array.from": "v6 array.from() creates and populates an array in one statement. Use `array.from(val1, val2, val3)` instead of multiple `array.push()` calls.",
+    "color.from_gradient": "v6 color.from_gradient() interpolates between two colors based on a value. Use it instead of manual transparency calculations with color.new().",
+    "str.format_time": "v6 str.format_time() formats UNIX timestamps. Use `str.format_time(time, \"dd/MM/yy '@' HH:mm:ss\")` instead of manual time formatting.",
 }
 
 
