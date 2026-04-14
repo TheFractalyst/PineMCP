@@ -721,6 +721,16 @@ async def lookup_and_correct(
             fixed_code = study_pattern.sub("indicator(", fixed_code)
             changes_made.append("Replaced study() → indicator() (v6)")
 
+        # Missing namespace: ema() → ta.ema(), etc.
+        bare_fn_pattern = re.compile(
+            r'(?<!\.)\b(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
+            r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
+            r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
+        )
+        if bare_fn_pattern.search(fixed_code):
+            fixed_code = bare_fn_pattern.sub(r'ta.\1(', fixed_code)
+            changes_made.append("Added ta. namespace prefix to unqualified TA functions")
+
         # Apply ALL V5→V6 namespace replacements
         for pattern, replacement in V5_TO_V6.items():
             if re.search(pattern, fixed_code):

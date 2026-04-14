@@ -110,13 +110,15 @@ VALIDATION TOOLS (use after every edit):
   validate_syntax(code)            Compile check via TradingView's pine-facade
   validate_and_explain(code)       Compile + cross-reference errors against docs
   validate_file(file_path)         Validate by file path (for large files)
-  fix_and_validate(code, error)    Auto-fix known issues and validate
+  fix_and_validate(code, error)    Auto-fix when you have a specific compiler error.
+                                   Applies targeted v6 namespace + syntax fixes.
   debug_pine_facade(code)          Raw compiler response for debugging
 
 CODEGEN TOOLS (use for scaffolding):
   generate_indicator(name, ...)    Scaffold a validated indicator
   generate_strategy(name, ...)     Scaffold a validated strategy
-  lookup_and_correct(code, desc)   Validate + correct code with doc lookup
+  lookup_and_correct(code, desc)   Validate + v5→v6 migration when you know what
+                                   the code should do but don't have an error msg.
 
 OPTIMIZATION TOOLS (use for performance analysis):
   optimize_code(code)             Detect 55 anti-patterns: request.*() waste, drawing
