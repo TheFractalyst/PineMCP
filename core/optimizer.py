@@ -17,6 +17,8 @@ from typing import Callable
 
 from loguru import logger
 
+from formatters.errors import strip_string_literals
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data structures
 # ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +54,20 @@ class _Rule:
 def _find_lines(lines: list[str], pattern: re.Pattern[str]) -> list[int]:
     """Return 1-based line numbers where pattern matches."""
     return [i + 1 for i, line in enumerate(lines) if pattern.search(line)]
+
+
+def _is_global_scope(line: str) -> bool:
+    """Check if a line is at global scope (no indentation).
+
+    Uses lstrip comparison instead of length arithmetic to correctly
+    handle tab characters (which have length 1 but represent 4-space indent).
+    """
+    return line.lstrip() == line
+
+
+def _strip_block_comments(code: str) -> str:
+    """Remove /* */ block comments from entire code string."""
+    return re.sub(r'/\*.*?\*/', '', code, flags=re.DOTALL)
 
 
 def _strip_comments(line: str) -> str:
@@ -233,8 +249,7 @@ def _detect_unprotected_drawings(code: str, lines: list[str]) -> list[Optimizati
             stripped = _strip_comments(line).strip()
             if setter_pattern.search(stripped):
                 # Verify it's not inside an if block
-                indent = len(line) - len(line.lstrip())
-                if indent == 0:
+                if _is_global_scope(line):
                     results.append(_result(
                         _RULES_BY_ID["OPT-005"], i + 1,
                         stripped[:100],
@@ -423,7 +438,9 @@ def _detect_na_drawing_coords(code: str, lines: list[str]) -> list[OptimizationR
     na_coord_pattern = re.compile(r"(label|box|line)\.new\s*\(.*\?.*:.*(?<![a-zA-Z])na(?![a-zA-Z])")
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
-        if na_coord_pattern.search(stripped):
+        # Strip string literals to avoid matching "na" inside strings
+        stripped_no_strings = strip_string_literals(stripped)
+        if na_coord_pattern.search(stripped_no_strings):
             results.append(_result(
                 _RULES_BY_ID["OPT-013"], i + 1,
                 stripped[:100],
@@ -543,8 +560,7 @@ def _detect_unbounded_collection(code: str, lines: list[str]) -> list[Optimizati
             stripped = _strip_comments(line).strip()
             if push_pattern.search(stripped):
                 # Check if it's inside global scope (runs every bar)
-                indent = len(line) - len(line.lstrip())
-                if indent == 0:
+                if _is_global_scope(line):
                     results.append(_result(
                         _RULES_BY_ID["OPT-020"], i + 1,
                         stripped[:100],
@@ -559,16 +575,21 @@ def _detect_unbounded_collection(code: str, lines: list[str]) -> list[Optimizati
 def _detect_deep_history(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-021: History references beyond 5000 bars."""
     results: list[OptimizationResult] = []
+    # Skip array-style variable names (lowercase first char typically = local var/array)
+    _array_hint = re.compile(r"(?:array|arr|list|buf|queue|data|items)\w*$", re.IGNORECASE)
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
-        m = re.search(r"\w+\[\s*(\d+)\s*\]", stripped)
-        if m and int(m.group(1)) > 4900:
-            var_name = stripped.split("[")[0].strip().split()[-1] if "[" in stripped else "series"
+        m = re.search(r"(\w+)\[\s*(\d+)\s*\]", stripped)
+        if m and int(m.group(2)) > 4900:
+            var_name = m.group(1)
+            # Skip if the variable looks like an array (array indexing, not history)
+            if _array_hint.search(var_name):
+                continue
             results.append(_result(
                 _RULES_BY_ID["OPT-021"], i + 1,
                 stripped[:100],
-                f"History reference [{m.group(1)}] may exceed the 5000-bar buffer limit "
-                f"for user-defined series. Add max_bars_back({var_name}, {m.group(1)}) if needed."
+                f"History reference [{m.group(2)}] may exceed the 5000-bar buffer limit "
+                f"for user-defined series. Add max_bars_back({var_name}, {m.group(2)}) if needed."
             ))
     return results
 
@@ -787,8 +808,7 @@ def _detect_realtime_tick_repaint(code: str, lines: list[str]) -> list[Optimizat
             in_realtime_block = True
             continue
         if in_realtime_block:
-            indent = len(line) - len(line.lstrip())
-            if stripped and indent == 0 and not stripped.startswith(("else", "//")):
+            if stripped and _is_global_scope(line) and not stripped.startswith(("else", "//")):
                 in_realtime_block = False
                 continue
             m_assign = re.match(r"(\w+)\s*:=\s*", stripped)
@@ -904,7 +924,7 @@ def _detect_variable_shadowing(code: str, lines: list[str]) -> list[Optimization
     for line in lines:
         stripped = _strip_comments(line).strip()
         indent = len(line) - len(line.lstrip())
-        if indent == 0:
+        if _is_global_scope(line):
             m = re.match(r"^(\w+)\s*=\s*", stripped)
             if m and m.group(1) not in (
                 "if", "for", "while", "switch", "else", "var", "varip",
@@ -1003,8 +1023,7 @@ def _detect_table_creation_every_bar(code: str, lines: list[str]) -> list[Optimi
         for i, line in enumerate(lines):
             stripped = _strip_comments(line).strip()
             if re.search(r"table\.new\s*\(", stripped):
-                indent = len(line) - len(line.lstrip())
-                if indent == 0:
+                if _is_global_scope(line):
                     results.append(_result(
                         _RULES_BY_ID["OPT-038"], i + 1, stripped[:100],
                         "Create tables once on the first bar using `if barstate.isfirst` "
@@ -1086,9 +1105,8 @@ def _detect_strategy_order_limit(code: str, lines: list[str]) -> list[Optimizati
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
         if "strategy.entry" in stripped:
-            indent = len(line) - len(line.lstrip())
             # Entry at global scope (no if guard) = order on every bar
-            if indent == 0:
+            if _is_global_scope(line):
                 entry_in_global = True
                 break
     if entry_in_global:
@@ -1249,12 +1267,11 @@ def _detect_missing_isconfirmed(code: str, lines: list[str]) -> list[Optimizatio
         return results
 
     # Look for strategy.entry/exit/alertcondition/alert at global scope (no guard)
-    signal_pattern = re.compile(r"\b(strategy\.entry|strategy\.exit|alertcondition|alert\s*\()\b")
+    signal_pattern = re.compile(r"\b(strategy\.entry|strategy\.exit|alertcondition|alert\s*\()")
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
         if signal_pattern.search(stripped):
-            indent = len(line) - len(line.lstrip())
-            if indent == 0:
+            if _is_global_scope(line):
                 results.append(_result(
                     _RULES_BY_ID["OPT-052"], i + 1, stripped[:100],
                     "Signal-producing logic at global scope without barstate.isconfirmed guard "
@@ -1515,7 +1532,6 @@ def _detect_string_concat_in_loop(code: str, lines: list[str]) -> list[Optimizat
             in_loop = True
             continue
         if in_loop and stripped:
-            indent = len(line) - len(line.lstrip())
             # Check for string concatenation: varName += "..." or varName += '...'
             if re.search(r"\w+\s*\+=\s*(?:\"[^\"]*\"|'[^']*')", stripped):
                 results.append(_result(
@@ -1525,7 +1541,7 @@ def _detect_string_concat_in_loop(code: str, lines: list[str]) -> list[Optimizat
                 ))
                 break
             # Exit loop body
-            if indent == 0 and not stripped.startswith("else"):
+            if _is_global_scope(line) and not stripped.startswith("else"):
                 in_loop = False
     return results
 
@@ -1596,9 +1612,8 @@ def _detect_color_new_every_bar(code: str, lines: list[str]) -> list[Optimizatio
     results: list[OptimizationResult] = []
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
-        indent = len(line) - len(line.lstrip())
         # color.new() at global scope (indent 0) without var — recomputed every bar
-        if indent == 0 and re.search(r"\bcolor\.new\s*\(", stripped):
+        if _is_global_scope(line) and re.search(r"\bcolor\.new\s*\(", stripped):
             # Check it's NOT a var declaration
             if not stripped.startswith(("var ", "varip ")):
                 results.append(_result(
@@ -1658,8 +1673,7 @@ def _detect_unnecessary_var(code: str, lines: list[str]) -> list[OptimizationRes
             if j == i:
                 continue
             other_stripped = _strip_comments(other).strip()
-            other_indent = len(lines[j]) - len(lines[j].lstrip())
-            if other_indent == 0 and re.match(rf"^{re.escape(var_name)}\s*:=", other_stripped):
+            if _is_global_scope(lines[j]) and re.match(rf"^{re.escape(var_name)}\s*:=", other_stripped):
                 unconditional_reassign = True
                 break
         if unconditional_reassign:
@@ -2099,8 +2113,7 @@ def _detect_request_no_tf_validation(code: str, lines: list[str]) -> list[Optimi
     has_global_req = False
     for line in lines:
         stripped = _strip_comments(line).strip()
-        indent = len(line) - len(line.lstrip())
-        if indent == 0 and req_pattern.search(stripped):
+        if _is_global_scope(line) and req_pattern.search(stripped):
             has_global_req = True
             break
 
@@ -2175,9 +2188,8 @@ def _detect_table_cell_every_bar(code: str, lines: list[str]) -> list[Optimizati
         return results  # Script already guards with islast
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
-        indent = len(line) - len(line.lstrip())
         # table.cell() at global scope that updates content (has text argument with formatting)
-        if indent == 0 and re.search(r"\btable\.cell\s*\(", stripped):
+        if _is_global_scope(line) and re.search(r"\btable\.cell\s*\(", stripped):
             # Check if this is a content update (has str.format or str.tostring or a variable)
             if re.search(r"(str\.(format|tostring)|format\.mintick)", stripped):
                 results.append(_result(
@@ -2475,6 +2487,8 @@ def analyze_code(code: str) -> list[OptimizationResult]:
     if not code or not code.strip():
         return []
 
+    # Strip block comments first to prevent false positives from commented-out code
+    code = _strip_block_comments(code)
     lines = code.splitlines()
     all_results: list[OptimizationResult] = []
 

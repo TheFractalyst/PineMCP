@@ -41,7 +41,7 @@ from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddlewa
 from fastmcp.server.middleware.middleware import Middleware  # noqa: E402
 from fastmcp.server.providers.filesystem import FileSystemProvider  # noqa: E402
 
-from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS  # noqa: E402
+from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS, _safe_int  # noqa: E402
 from core.db import get_collection, build_name_index  # noqa: E402
 from core.embeddings import get_model, _model_executor, _embedding_model_ready  # noqa: E402
 from core.hot_cache import build_hot_cache  # noqa: E402
@@ -271,7 +271,7 @@ if __name__ == "__main__":
     logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (21 tools, 100% local)")
 
     if _TRANSPORT == "http" or _TRANSPORT == "sse":
-        _port = int(os.getenv("PORT", "8080"))
+        _port = _safe_int("PORT", 8080)
         logger.info(f"Transport: SSE (HTTP) on 0.0.0.0:{_port}")
         mcp.run(transport="sse", host="0.0.0.0", port=_port)
     else:

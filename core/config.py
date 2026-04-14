@@ -64,7 +64,7 @@ platform. Version 6 (v6) is the current production release and introduces
 UDTs (user-defined types), methods, enums, polylines, and improved performance.
 
 This server provides complete local PineScript v6 reference documentation
-via a ChromaDB vector store with 3,400+ entries covering all functions,
+via a ChromaDB vector store with 7,400+ entries covering all functions,
 variables, types, constants, keywords, operators, and user guides.
 
 MANDATORY USAGE PATTERN (NON-NEGOTIABLE)

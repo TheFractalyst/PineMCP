@@ -18,6 +18,7 @@ from pydantic import Field
 
 import core.db as _db
 from core.db import get_all_where_async, query_async
+from core.hot_cache import ensure_hot_cache
 from formatters.entry import (
     _BOX_BL,
     _BOX_BR,
@@ -74,6 +75,7 @@ async def suggest_functions(
         n_results: How many suggestions (default 8)
     """
     try:
+        await ensure_hot_cache()
         query_text = context
         if current_line:
             query_text += f" | current line: {current_line}"
@@ -166,6 +168,7 @@ async def get_namespace_cheatsheet(
     descriptions per member, use list_namespace().
     """
     try:
+        await ensure_hot_cache()
         ns = norm_ns(namespace)
         if ns == "global":
             where: Optional[dict] = {"namespace": ""}
