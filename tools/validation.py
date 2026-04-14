@@ -113,7 +113,7 @@ async def validate_syntax(
 
             analysis_block = "\n".join(f"  {a}" for a in code_analysis)
 
-            return (
+            return cap_response(
                 f"VALID — Code compiles successfully.{extra}{fallback_note}\n"
                 f"Compiler: {compiler_label}\n"
                 f"Errors: 0 | Warnings: 0\n\n"
@@ -214,7 +214,7 @@ async def validate_and_explain(
             )
             fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
 
-            return (
+            return cap_response(
                 f"VALIDATION + DEBUG REPORT\n"
                 f"{'=' * 50}\n"
                 f"Compiler: {compiler_label}\n"
