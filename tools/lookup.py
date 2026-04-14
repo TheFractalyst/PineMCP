@@ -190,7 +190,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                     f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)"
                 )
 
-        cat_label = category.upper()
+        cat_label = (category or "ENTRY").upper()
         if suggestions:
             return (
                 f"{cat_label} '{name}' not found in the database.\n\n"
@@ -204,7 +204,7 @@ async def _lookup_entry(name: str, category: str) -> str:
         logger.error(f"[_lookup_entry] {e}")
         if _db._chroma_breaker.is_open():
             return circuit_breaker_msg()
-        raise ToolError(safe_error(e, category))
+        raise ToolError(safe_error(e, category or "lookup"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
