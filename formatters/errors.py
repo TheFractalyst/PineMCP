@@ -86,6 +86,14 @@ _FIX_HINTS: dict[str, str] = {
     "Reserved keyword": "PineScript reserves words like 'strategy', 'plot', 'if'. Rename variable: 'strategy = 1' → 'myStrategy = 1'.",
     "lookahead": "request.security() with lookahead=barmerge.lookahead_on peeks into future (repainting). Use barmerge.lookahead_off (v6 default) for honest backtests.",
     "repainting": "Signal uses future data or unconfirmed bar values. Guard with barstate.isconfirmed. Avoid lookahead=barmerge.lookahead_on.",
+    # ── Additional common v6 errors ──
+    "Mismatched types": "Type mismatch between expected and actual. Check function parameter types — v6 is stricter than v5. Use explicit type conversions: float(), int(), str.tostring().",
+    "Cannot determine the type": "v6 cannot infer variable type. Add explicit type annotation: 'float x = close * 2' instead of 'x = close * 2'.",
+    "is not a named argument": "v6 requires named arguments in some functions. Use 'strategy.entry(\"Long\", direction=strategy.long)' — check the function signature.",
+    "Variable is not found": "Typo or undeclared variable. PineScript is case-sensitive. Check spelling and ensure the variable is declared before use in the script.",
+    "The signature of": "Wrong number or type of arguments passed to a function. Use get_function(name) to check the exact parameter list and types.",
+    "Nested functions are not": "PineScript does not support nested function definitions. Move helper logic to the global scope or use a method on a user-defined type.",
+    "Script has too many": "Script exceeds a TradingView resource limit (tokens, variables, plots, lines, etc.). Simplify: reduce plot count, remove unused variables, inline helper functions.",
 }
 
 
