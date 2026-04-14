@@ -678,6 +678,8 @@ async def search_by_return_type(
 
         return cap_response("\n".join(output_lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[search_by_return_type] {e}")
         if _db._chroma_breaker.is_open():
