@@ -349,9 +349,12 @@ async def get_type(
     ],
 ) -> str:
     """
-    Get documentation for a PineScript v6 type.
+    Get documentation for a PineScript v6 built-in type.
     Types: array, matrix, map, line, label, box, table, polyline,
-    color, string, int, float, bool, and user-defined types.
+    color, string, int, float, bool.
+
+    Note: Only built-in types are available. User-defined types (UDTs)
+    defined in your script are not indexed here.
 
     Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
