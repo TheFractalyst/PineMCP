@@ -81,8 +81,9 @@ def _count_in_scope(code: str, pattern: re.Pattern[str]) -> int:
     """Count non-comment matches across entire code."""
     count = 0
     for line in code.splitlines():
-        if _strip_comments(line).strip():
-            count += len(pattern.findall(_strip_comments(line)))
+        stripped = _strip_comments(line)
+        if stripped.strip():
+            count += len(pattern.findall(stripped))
     return count
 
 
@@ -391,7 +392,7 @@ def _detect_missing_calc_bars_count(code: str, lines: list[str]) -> list[Optimiz
 
     if has_islast_heavy and not has_calc_bars_count:
         # Only suggest if there's drawing-heavy islast logic
-        if re.search(r"(table|box|line|label)\.(new|cell_set|set_)", code):
+        if _count_in_scope(code, re.compile(r"(table|box|line|label)\.(new|cell_set|set_)")) > 0:
             results.append(_result(
                 _RULES_BY_ID["OPT-012"], 0,
                 "Script uses barstate.islast with drawings",
@@ -516,8 +517,8 @@ def _detect_unbounded_collection(code: str, lines: list[str]) -> list[Optimizati
     """OPT-020: Unbounded array.push() on every bar."""
     results: list[OptimizationResult] = []
     push_pattern = re.compile(r"array\.push\s*\(")
-    has_shift = "array.shift(" in code or "array.pop(" in code
-    has_fixed_size = "array.new<" in code and re.search(r"array\.new<\w+>\s*\(\s*\d+", code)
+    has_shift = _code_has_keyword(code, "array.shift(") or _code_has_keyword(code, "array.pop(")
+    has_fixed_size = _code_has_keyword(code, "array.new<") and _count_in_scope(code, re.compile(r"array\.new<\w+>\s*\(\s*\d+")) > 0
 
     if not has_shift and not has_fixed_size:
         for i, line in enumerate(lines):
@@ -918,15 +919,15 @@ def _detect_variable_shadowing(code: str, lines: list[str]) -> list[Optimization
 def _detect_strategy_no_date_filter(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-037: strategy() with strategy.entry() but no time/date filter."""
     results: list[OptimizationResult] = []
-    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
-    has_entry = bool(re.search(r"\bstrategy\.entry\s*\(", code))
+    has_strategy = _code_has_keyword(code, "strategy(")
+    has_entry = _code_has_keyword(code, "strategy.entry(")
     if not (has_strategy and has_entry):
         return results
     time_filters = (
         "time(", "year(", "month(", "dayofmonth(", "hour(", "minute(",
         "timenow", "timestamp(", "input.time", "timeframe.",
     )
-    has_filter = any(tf in code for tf in time_filters)
+    has_filter = any(_code_has_keyword(code, tf) for tf in time_filters)
     if not has_filter:
         results.append(_result(
             _RULES_BY_ID["OPT-037"], 0, "strategy() with strategy.entry()",
@@ -978,7 +979,7 @@ def _detect_table_count_limit(code: str, lines: list[str]) -> list[OptimizationR
 def _detect_table_creation_every_bar(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-038: Table creation every bar without barstate.isfirst guard."""
     results: list[OptimizationResult] = []
-    has_table_new = bool(re.search(r"table\.new\s*\(", code))
+    has_table_new = _code_has_keyword(code, "table.new(")
     has_isfirst = _code_has_keyword(code, "barstate.isfirst")
     if has_table_new and not has_isfirst:
         for i, line in enumerate(lines):
@@ -1058,8 +1059,8 @@ def _detect_code_duplication(code: str, lines: list[str]) -> list[OptimizationRe
 def _detect_strategy_order_limit(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-044: Strategy likely to exceed 9000 order limit."""
     results: list[OptimizationResult] = []
-    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
-    has_entry = bool(re.search(r"\bstrategy\.entry\s*\(", code))
+    has_strategy = _code_has_keyword(code, "strategy(")
+    has_entry = _code_has_keyword(code, "strategy.entry(")
     if not (has_strategy and has_entry):
         return results
     # Detect strategies with unconditional entry on every bar
@@ -1223,7 +1224,7 @@ def _detect_isnew_signal_repaint(code: str, lines: list[str]) -> list[Optimizati
 def _detect_missing_isconfirmed(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-052: Signal-producing logic without barstate.isconfirmed guard."""
     results: list[OptimizationResult] = []
-    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
+    has_strategy = _code_has_keyword(code, "strategy(")
     has_isconfirmed = _code_has_keyword(code, "barstate.isconfirmed")
 
     if not has_strategy or has_isconfirmed:
@@ -1249,7 +1250,7 @@ def _detect_missing_isconfirmed(code: str, lines: list[str]) -> list[Optimizatio
 def _detect_non_standard_chart_strategy(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-053: Strategy using non-standard chart types produces misleading backtests."""
     results: list[OptimizationResult] = []
-    has_strategy = bool(re.search(r"\bstrategy\s*\(", code))
+    has_strategy = _code_has_keyword(code, "strategy(")
     if not has_strategy:
         return results
     non_standard = re.compile(r"ticker\.(heikinashi|renko|kagi|linebreak|pointfigure|range)\s*\(")
