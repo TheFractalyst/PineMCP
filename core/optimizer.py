@@ -466,15 +466,18 @@ def _detect_tuple_limit(code: str, lines: list[str]) -> list[OptimizationResult]
     """OPT-016: Exceeding 127 tuple elements in request.*()."""
     results: list[OptimizationResult] = []
     tuple_pattern = re.compile(r"\[([^\]]{50,})\]\s*=\s*request\.\w+\s*\(")
-    for m in tuple_pattern.finditer(code):
-        elements = m.group(1).split(",")
-        if len(elements) > 100:
-            results.append(_result(
-                _RULES_BY_ID["OPT-016"], code[:m.start()].count("\n") + 1,
-                f"[{len(elements)} elements] = request.*()",
-                f"Tuple has {len(elements)} elements — limit is 127. "
-                "Use a UDT (user-defined type) instead of tuples for large data structures."
-            ))
+    for i, line in enumerate(lines):
+        stripped = _strip_comments(line).strip()
+        m = tuple_pattern.search(stripped)
+        if m:
+            elements = m.group(1).split(",")
+            if len(elements) > 100:
+                results.append(_result(
+                    _RULES_BY_ID["OPT-016"], i + 1,
+                    f"[{len(elements)} elements] = request.*()",
+                    f"Tuple has {len(elements)} elements — limit is 127. "
+                    "Use a UDT (user-defined type) instead of tuples for large data structures."
+                ))
     return results
 
 
