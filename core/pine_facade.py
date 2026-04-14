@@ -342,7 +342,9 @@ async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
         }
 
     # Fast path: check content-hash cache BEFORE running linter or network call.
-    cached = get_cached_validation(code)
+    # Use sanitized code as cache key to match store key (avoids mismatch from whitespace/control chars)
+    code_key = sanitize_text(code)
+    cached = get_cached_validation(code_key)
     if cached:
         return cached
 

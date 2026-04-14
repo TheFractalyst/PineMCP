@@ -230,7 +230,13 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
             cached_result, cached_ts = _QUERY_RESULT_CACHE[_cache_key]
             if time.time() - cached_ts < _QUERY_CACHE_TTL:
                 logger.debug(f"L1 cache hit: {query_text[:40]}")
-                return cached_result
+                # Return deep copy to prevent callers from mutating cached data
+                return {
+                    "ids": [list(cached_result["ids"][0])] if cached_result.get("ids") else [[]],
+                    "metadatas": [list(cached_result["metadatas"][0])] if cached_result.get("metadatas") else [[]],
+                    "documents": [list(cached_result["documents"][0])] if cached_result.get("documents") else [[]],
+                    "distances": [list(cached_result["distances"][0])] if cached_result.get("distances") else [[]],
+                }
             else:
                 del _QUERY_RESULT_CACHE[_cache_key]
     try:
