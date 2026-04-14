@@ -159,6 +159,8 @@ async def validate_syntax(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[validate_syntax] {e}")
         raise ToolError(safe_error(e, "validate_syntax"))
@@ -285,6 +287,8 @@ async def validate_and_explain(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[validate_and_explain] {e}")
         raise ToolError(safe_error(e, "validate_and_explain"))
@@ -499,6 +503,8 @@ async def fix_and_validate(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[fix_and_validate] {e}")
         raise ToolError(safe_error(e, "fix_and_validate"))
@@ -589,6 +595,8 @@ async def debug_pine_facade(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[debug_pine_facade] {e}")
         raise ToolError(safe_error(e, "debug_pine_facade"))
@@ -784,6 +792,8 @@ async def validate_file(
         set_cached_file_validation(resolved, mtime_ns, fsize, response)
         return cap_response(response)
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.exception("Unexpected error in validate_file")
         raise ToolError(safe_error(e, "validate_file"))

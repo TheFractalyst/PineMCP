@@ -200,6 +200,8 @@ async def _lookup_entry(name: str, category: str) -> str:
             f"{cat_label} '{name}' not found. Try search_docs() for a broader search."
         )
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[_lookup_entry] {e}")
         if _db._chroma_breaker.is_open():
@@ -279,6 +281,8 @@ async def get_function(
         # Step 3: Fall back to the general lookup
         return await _lookup_entry(name, "function")
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_function] {e}")
         if _db._chroma_breaker.is_open():
@@ -318,6 +322,8 @@ async def get_variable(
     """
     try:
         return await _lookup_entry(norm_name(name), "variable")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_variable] {e}")
         if _db._chroma_breaker.is_open():
@@ -462,6 +468,8 @@ async def get_type(
             f"box, table, polyline, color, string, int, float, bool"
         )
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_type] {e}")
         if _db._chroma_breaker.is_open():
@@ -501,6 +509,8 @@ async def get_constant(
     """
     try:
         return await _lookup_entry(norm_name(name), "constant")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_constant] {e}")
         if _db._chroma_breaker.is_open():
@@ -540,6 +550,8 @@ async def get_keyword(
     """
     try:
         return await _lookup_entry(norm_name(name), "keyword")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_keyword] {e}")
         if _db._chroma_breaker.is_open():
@@ -579,6 +591,8 @@ async def get_operator(
     """
     try:
         return await _lookup_entry(norm_name(name), "operator")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_operator] {e}")
         if _db._chroma_breaker.is_open():
