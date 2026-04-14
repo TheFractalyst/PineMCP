@@ -2336,7 +2336,8 @@ def _detect_dynamic_length_needs_mbb(code: str, lines: list[str]) -> list[Optimi
     dynamic_funcs = re.compile(
         r"\bta\.(barssince|valuewhen|lowestsince|highestsince)\s*\("
     )
-    has_mbb = _code_has_keyword(code, "max_bars_back(")
+    has_mbb = _code_has_keyword(code, "max_bars_back(") or \
+              _code_has_keyword(code, "max_bars_back=")
 
     if has_mbb:
         return results
