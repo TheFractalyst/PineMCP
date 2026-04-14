@@ -677,6 +677,8 @@ async def lookup_and_correct(
     a corrected version with explanations.
 
     Use when user shares code and asks 'what's wrong with this'.
+    For a targeted fix when you already have a specific compiler error
+    message, use fix_and_validate() instead.
 
     Args:
         code: The PineScript code (can be partial or full script)

@@ -305,7 +305,7 @@ async def fix_and_validate(
     error_description: Annotated[str, Field(
         min_length=1,
         max_length=500,
-        description="The error message or what's wrong",
+        description="The compiler error message (verbatim) or a description of the problem",
     )],
 ) -> str:
     """
@@ -314,6 +314,9 @@ async def fix_and_validate(
     return the precise fix with validation confirmation.
 
     Use when the user has a specific error they want fixed.
+    For code that may have v5 namespace issues or broader syntax problems
+    without a specific error, use lookup_and_correct() instead.
+    For pure validation without fixes, use validate_syntax().
 
     Args:
         code: The failing PineScript v6 code
