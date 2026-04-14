@@ -1409,11 +1409,19 @@ def _detect_long_if_else_chain(code: str, lines: list[str]) -> list[Optimization
     chain_var = ""
     chain_count = 0
     chain_start = 0
+    init_pattern = re.compile(r"^if\s+(\w+)\s*==\s*(?:\d+|\"[^\"]*\"|'[^']*'|true|false)")
     comparison_pattern = re.compile(r"else\s+if\s+(\w+)\s*==\s*(?:\d+|\"[^\"]*\"|'[^']*'|true|false)")
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
+        # Check for initial `if` that starts a chain
+        init_m = init_pattern.match(stripped)
         m = comparison_pattern.match(stripped)
-        if m:
+        if init_m and chain_count == 0:
+            # Initial `if` starts a potential chain
+            chain_var = init_m.group(1)
+            chain_start = i
+            chain_count = 1
+        elif m:
             var = m.group(1)
             if chain_count == 0:
                 chain_var = var
@@ -1450,8 +1458,8 @@ def _detect_dead_function(code: str, lines: list[str]) -> list[OptimizationResul
     results: list[OptimizationResult] = []
     # Match single-line: name(params) => expr  or  name(params) =>
     func_pattern = re.compile(r"^(\w+)\s*\([^)]*\)\s*=>")
-    # Also match multi-line: name(params) =>  on its own line or name(params) followed by indented body
-    multiline_func = re.compile(r"^(\w+)\s*\([^)]*\)\s*=>?\s*$")
+    # Also match multi-line: name(params) => on its own line (arrow function header)
+    multiline_func = re.compile(r"^(\w+)\s*\([^)]*\)\s*=>\s*$")
 
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
@@ -1505,7 +1513,7 @@ def _detect_string_concat_in_loop(code: str, lines: list[str]) -> list[Optimizat
                 ))
                 break
             # Exit loop body
-            if indent == 0 and not stripped.startswith(("else", "//")):
+            if indent == 0 and not stripped.startswith("else"):
                 in_loop = False
     return results
 
@@ -1523,7 +1531,7 @@ def _detect_formatting_in_loop(code: str, lines: list[str]) -> list[Optimization
             continue
         if in_loop:
             indent = len(line) - len(line.lstrip())
-            if stripped and indent <= loop_indent and not stripped.startswith(("else", "//")):
+            if stripped and indent <= loop_indent and not stripped.startswith("else"):
                 in_loop = False
                 continue
             if re.search(r"\bstr\.(tostring|format)\s*\(", stripped):
@@ -1580,7 +1588,7 @@ def _detect_color_new_every_bar(code: str, lines: list[str]) -> list[Optimizatio
         # color.new() at global scope (indent 0) without var — recomputed every bar
         if indent == 0 and re.search(r"\bcolor\.new\s*\(", stripped):
             # Check it's NOT a var declaration
-            if not stripped.startswith("var "):
+            if not stripped.startswith(("var ", "varip ")):
                 results.append(_result(
                     _RULES_BY_ID["OPT-066"], i + 1, stripped[:100],
                     "color.new() at global scope is recomputed on every bar. "
@@ -1667,7 +1675,7 @@ def _detect_matrix_in_loops(code: str, lines: list[str]) -> list[OptimizationRes
             continue
         if in_loop:
             indent = len(line) - len(line.lstrip())
-            if stripped and indent <= loop_indent and not stripped.startswith(("else", "//")):
+            if stripped and indent <= loop_indent and not stripped.startswith("else"):
                 in_loop = False
                 continue
             if matrix_pattern.search(stripped):
