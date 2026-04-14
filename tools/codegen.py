@@ -89,6 +89,7 @@ async def generate_indicator(
         str | None,
         Field(
             default=None,
+            max_length=2000,
             description="Comma-separated input descriptions, e.g. 'length=14,src=close,mult=2.0'",
         ),
     ] = None,
