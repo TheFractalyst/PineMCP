@@ -644,7 +644,7 @@ def _detect_varip_repaint(code: str, lines: list[str]) -> list[OptimizationResul
             stripped = _strip_comments(line).strip()
             if re.match(r"plot\s*\(", stripped):
                 for var in varip_vars:
-                    if var in stripped:
+                    if re.search(rf"\b{var}\b", stripped):
                         results.append(_result(
                             _RULES_BY_ID["OPT-028"], i + 1,
                             stripped[:100],
