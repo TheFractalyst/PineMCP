@@ -35,7 +35,7 @@ EMBED_DIM = 384  # all-MiniLM-L6-v2 output dimension
 MAX_RESULTS = _safe_int("PINESCRIPT_MAX_RESULTS", 100)
 PINE_FACADE_URL = os.getenv(
     "PINE_FACADE_URL",
-    "https://pine-facade.tradingview.com/pine-facade/translate_light?user_name=admin&v=3",
+    "https://pine-facade.tradingview.com/pine-facade/translate_light?v=3",
 )
 PINE_FACADE_TIMEOUT = _safe_int("PINE_FACADE_TIMEOUT", 20)
 VALIDATION_CACHE_TTL = _safe_int("VALIDATION_CACHE_TTL", 300)
@@ -44,7 +44,7 @@ MAX_TOOL_RESPONSE_CHARS = 80000
 MAX_FUZZY_SCAN_ENTRIES = 5000
 
 # Pre-computed at import time (not inside per-call hot path)
-_ALLOWED_BASE_DIRS = [
+_DEFAULT_BASE_DIRS = [
     os.path.realpath(os.path.expanduser("~")),
     os.path.realpath(os.path.expanduser("~/Documents")),
     os.path.realpath(os.path.expanduser("~/Desktop")),
@@ -52,6 +52,11 @@ _ALLOWED_BASE_DIRS = [
     os.path.realpath(os.path.expanduser("~/repos")),
     os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
 ]
+
+_EXTRA_BASE_DIR = os.getenv("PINESCRIPT_EXTRA_BASE_DIR", "")
+_ALLOWED_BASE_DIRS = _DEFAULT_BASE_DIRS + (
+    [os.path.realpath(_EXTRA_BASE_DIR)] if _EXTRA_BASE_DIR else []
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Server instructions (shown to AI agents connecting to this MCP server)
