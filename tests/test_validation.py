@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from fastmcp.exceptions import ToolError
 from tools.validation import (
     debug_pine_facade,
     fix_and_validate,
@@ -195,30 +196,27 @@ class TestValidateFile:
 
     @pytest.mark.asyncio
     async def test_empty_path(self):
-        result = await validate_file(file_path="")
-        assert "error" in result.lower()
-        assert len(result) > 50  # Helpful message
+        with pytest.raises(ToolError, match="No file path"):
+            await validate_file(file_path="")
 
     @pytest.mark.asyncio
     async def test_nonexistent_path(self):
-        result = await validate_file(file_path="/nonexistent/path/test.ps")
-        assert "error" in result.lower()
-        assert "access denied" in result.lower() or "not found" in result.lower()
+        with pytest.raises(ToolError, match="Access denied"):
+            await validate_file(file_path="/nonexistent/path/test.ps")
 
     @pytest.mark.asyncio
     async def test_system_file_rejected(self):
-        result = await validate_file(file_path="/etc/passwd")
-        assert "error" in result.lower()
-        assert ".ps" in result or ".pine" in result
+        with pytest.raises(ToolError, match="Access denied|\.ps"):
+            await validate_file(file_path="/etc/passwd")
 
     @pytest.mark.asyncio
     async def test_non_ps_extension(self):
-        result = await validate_file(file_path="/tmp/test.txt")
-        assert "error" in result.lower()
-        assert ".ps" in result or ".pine" in result
+        with pytest.raises(ToolError, match=r"\.ps"):
+            await validate_file(file_path="/tmp/test.txt")
 
     @pytest.mark.asyncio
     async def test_no_path_leakage(self):
-        result = await validate_file(file_path="/nonexistent/path/test.ps")
-        # Should NOT contain full absolute paths in output
-        assert "/nonexistent/path/test.ps" not in result or "access denied" in result.lower()
+        with pytest.raises(ToolError, match="Access denied") as exc_info:
+            await validate_file(file_path="/nonexistent/path/test.ps")
+        # Should NOT contain full absolute paths in error message
+        assert "/nonexistent/path/test.ps" not in str(exc_info.value)

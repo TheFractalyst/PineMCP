@@ -44,6 +44,7 @@ from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 
 from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS, _safe_int  # noqa: E402
+from core.errors import safe_error  # noqa: E402
 from core.db import get_collection, build_name_index  # noqa: E402
 from core.embeddings import get_model, _model_executor, _embedding_model_ready  # noqa: E402
 from core.hot_cache import build_hot_cache  # noqa: E402
@@ -281,7 +282,7 @@ async def health_check(request: Request) -> JSONResponse:
         col = get_collection()
         return JSONResponse({"status": "ok", "entries": col.count()})
     except Exception as e:
-        return JSONResponse({"status": "error", "error": str(e)}, status_code=503)
+        return JSONResponse({"status": "error", "error": safe_error(e, "health_check")}, status_code=503)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry point

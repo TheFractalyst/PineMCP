@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from fastmcp.exceptions import ToolError
 from tools.codegen import (
     generate_indicator,
     generate_strategy,
@@ -72,8 +73,8 @@ class TestGenerateIndicator:
         assert "input." in result
 
     async def test_empty_name(self, mock_facade):
-        result = await generate_indicator(name="")
-        assert "error" in result.lower()
+        with pytest.raises(ToolError, match="No indicator name"):
+            await generate_indicator(name="")
 
     async def test_bollinger_template(self, mock_facade):
         mock_facade.return_value = _FACADE_SUCCESS
@@ -123,8 +124,8 @@ class TestGenerateStrategy:
         assert "strategy(" in result
 
     async def test_empty_name(self, mock_facade):
-        result = await generate_strategy(name="")
-        assert "error" in result.lower()
+        with pytest.raises(ToolError, match="No strategy name"):
+            await generate_strategy(name="")
 
     async def test_has_entry_exit(self, mock_facade):
         mock_facade.return_value = _FACADE_SUCCESS
@@ -154,12 +155,12 @@ class TestLookupAndCorrect:
         assert "after" in result.lower()
 
     async def test_empty_code(self, mock_facade):
-        result = await lookup_and_correct(code="", error_description="test")
-        assert "error" in result.lower()
+        with pytest.raises(ToolError, match="No code provided"):
+            await lookup_and_correct(code="", error_description="test")
 
     async def test_empty_description(self, mock_facade):
-        result = await lookup_and_correct(code="test", error_description="")
-        assert "error" in result.lower()
+        with pytest.raises(ToolError, match="No description provided"):
+            await lookup_and_correct(code="test", error_description="")
 
     async def test_v5_to_v6_migration(self, mock_facade):
         mock_facade.side_effect = [_FACADE_ERRORS, _FACADE_SUCCESS]

@@ -118,7 +118,7 @@ async def generate_indicator(
     try:
         name = name.strip()
         if not name:
-            return "ERROR: No indicator name provided. Pass a display name for the indicator."
+            raise ToolError("No indicator name provided. Pass a display name for the indicator.")
         safe_name = sanitize_pine_string(name)
 
         # ── Cache check: avoid re-compiling identical templates ──
@@ -532,7 +532,7 @@ async def generate_strategy(
     try:
         name = name.strip()
         if not name:
-            return "ERROR: No strategy name provided. Pass a display name for the strategy."
+            raise ToolError("No strategy name provided. Pass a display name for the strategy.")
         safe_name = sanitize_pine_string(name)
 
         # ── Cache check: avoid re-compiling identical templates ──
@@ -694,9 +694,9 @@ async def lookup_and_correct(
         code = code.strip()
         error_description = error_description.strip()
         if not code:
-            return "ERROR: No code provided. Pass the PineScript code snippet to look up and correct."
+            raise ToolError("No code provided. Pass the PineScript code snippet to look up and correct.")
         if not error_description:
-            return "ERROR: No description provided. Describe what the code is supposed to do."
+            raise ToolError("No description provided. Describe what the code is supposed to do.")
 
         # Step 1: Validate
         validation = await call_pine_facade(code)

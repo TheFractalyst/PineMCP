@@ -6,7 +6,6 @@
 #   docker build -t pinescript-mcp .
 #   docker run -p 8080:8080 pinescript-mcp
 #
-# On Render: set PORT env var (Render injects it automatically).
 # ChromaDB data (pinescript_db/) is baked into the image.
 # ─────────────────────────────────────────────────────────────────────────────
 

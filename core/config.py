@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 
+SERVER_VERSION = "4.0"
+
 
 def _safe_int(env_var: str, default: int, min_val: int = 0) -> int:
     """Parse env var as int, returning default on invalid or negative values."""
@@ -29,6 +31,7 @@ DB_PATH = os.getenv(
 )
 COLLECTION = os.getenv("PINESCRIPT_COLLECTION", "pinescript_v6")
 EMBED_MODEL = os.getenv("PINESCRIPT_EMBED_MODEL", "all-MiniLM-L6-v2")
+EMBED_DIM = 384  # all-MiniLM-L6-v2 output dimension
 MAX_RESULTS = _safe_int("PINESCRIPT_MAX_RESULTS", 100)
 PINE_FACADE_URL = os.getenv(
     "PINE_FACADE_URL",
