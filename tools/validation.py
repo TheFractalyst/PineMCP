@@ -32,6 +32,7 @@ from formatters.errors import (
     extract_name_from_error,
     lookup_fix_hint,
     safe_error,
+    strip_string_literals,
 )
 from tools.lookup import _lookup_entry
 
@@ -46,7 +47,7 @@ async def validate_syntax(
         min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
-    )] = "",
+    )],
 ) -> str:
     """
     Validate PineScript v6 code using TradingView's official pine-facade
@@ -54,6 +55,8 @@ async def validate_syntax(
 
     Returns real compilation errors with line numbers and column positions.
     Use BEFORE suggesting code to the user to catch errors proactively.
+
+    Note: Requires network access to TradingView's pine-facade compiler.
 
     Args:
         code: Complete PineScript v6 source code to validate
@@ -69,13 +72,10 @@ async def validate_syntax(
         warnings = result.get("warnings", [])
         success = result.get("success", False)
         meta = result.get("meta", {})
-        is_fallback = meta.get("fallback") == "local_linter_tier1"
-        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         if success and not errors and not warnings:
             name = meta.get("name", "")
             extra = f"\nMeta: {name}" if name else ""
-            fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
 
             # Add quick code analysis for richer output
             code_lines = code.strip().splitlines()
@@ -90,7 +90,7 @@ async def validate_syntax(
             imports = [line.strip() for line in code_lines if line.strip().startswith("import ")]
             var_count = sum(1 for line in code_lines if line.strip().startswith("var ") or line.strip().startswith("varip "))
             has_methods = any("method " in line for line in code_lines)
-            has_types = any("type " in line and "//" not in line.split("type ")[0][-3:] for line in code_lines if not line.strip().startswith("//"))
+            has_types = any(re.search(r'(?<!\w\.)type\s+\w+', line.split("//")[0]) for line in code_lines if not line.strip().startswith("//"))
 
             code_analysis.append(f"Script type: {script_type}")
             code_analysis.append(f"Lines: {len(code_lines)}")
@@ -113,9 +113,9 @@ async def validate_syntax(
 
             analysis_block = "\n".join(f"  {a}" for a in code_analysis)
 
-            return (
-                f"VALID — Code compiles successfully.{extra}{fallback_note}\n"
-                f"Compiler: {compiler_label}\n"
+            return cap_response(
+                f"VALID — Code compiles successfully.{extra}\n"
+                f"Compiler: TradingView pine-facade v6\n"
                 f"Errors: 0 | Warnings: 0\n\n"
                 f"Code Analysis:\n{analysis_block}"
             )
@@ -123,10 +123,7 @@ async def validate_syntax(
         lines = []
         total_issues = len(errors) + len(warnings)
         lines.append(f"COMPILATION ISSUES ({total_issues}):")
-        lines.append(f"Compiler: {compiler_label}")
-        if is_fallback:
-            note = meta.get("note", "Local linter catches ~50% of common errors.")
-            lines.append(f"Note: {note}")
+        lines.append(f"Compiler: TradingView pine-facade v6")
         lines.append(f"Errors: {len(errors)} | Warnings: {len(warnings)}")
         lines.append("")
 
@@ -155,6 +152,8 @@ async def validate_syntax(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[validate_syntax] {e}")
         raise ToolError(safe_error(e, "validate_syntax"))
@@ -171,16 +170,18 @@ async def validate_and_explain(
         min_length=1,
         max_length=50000,
         description="Complete PineScript v6 source code to validate",
-    )] = "",
+    )],
 ) -> str:
     """
     Validate PineScript v6 code AND cross-reference any errors against
     the documentation database to provide precise fix instructions.
 
     Combines pine-facade compilation + semantic doc lookup into one call.
-    This is the most powerful debugging tool for PineScript AI assistance.
+    For each error, extracts the relevant identifier and looks up the
+    correct syntax from the PineScript v6 docs.
 
-    Use when helping user debug failing PineScript code.
+    Use when helping user debug failing PineScript code. For pure
+    validation without doc lookups, use validate_syntax() instead.
     """
     try:
         code = code.strip()
@@ -193,8 +194,6 @@ async def validate_and_explain(
         warnings = result.get("warnings", [])
         success = result.get("success", False)
         meta = result.get("meta", {})
-        is_fallback = meta.get("fallback") == "local_linter_tier1"
-        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         if success and not errors and not warnings:
             # Quick code analysis on success
@@ -212,12 +211,11 @@ async def validate_and_explain(
                 if is_strategy
                 else ("indicator" if is_indicator else "library")
             )
-            fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
 
-            return (
+            return cap_response(
                 f"VALIDATION + DEBUG REPORT\n"
                 f"{'=' * 50}\n"
-                f"Compiler: {compiler_label}\n"
+                f"Compiler: TradingView pine-facade v6\n"
                 f"Status: PASSED\n"
                 f"Errors: 0 | Warnings: 0\n\n"
                 f"Code Analysis:\n"
@@ -225,17 +223,13 @@ async def validate_and_explain(
                 f"  Lines: {len(code_lines)}\n"
                 f"  Plots: {plots}\n"
                 f"  Inputs: {inputs}\n"
-                f"{fallback_note}"
             )
 
         # Process errors with doc cross-reference
         lines = []
         lines.append("VALIDATION + DEBUG REPORT")
         lines.append("=" * 50)
-        lines.append(f"Compiler: {compiler_label}")
-        if is_fallback:
-            note = meta.get("note", "Local linter catches ~50% of common errors.")
-            lines.append(f"Note: {note}")
+        lines.append("Compiler: TradingView pine-facade v6")
         lines.append("Status: FAILED")
         lines.append(f"Errors: {len(errors)} | Warnings: {len(warnings)}")
         lines.append("")
@@ -252,7 +246,7 @@ async def validate_and_explain(
             extracted_name = extract_name_from_error(text)
             if extracted_name:
                 lines.append(f"  Docs lookup for '{extracted_name}':")
-                doc_result = await _lookup_entry(extracted_name, "")
+                doc_result = await _lookup_entry(extracted_name, None)
                 if "not found" not in doc_result[:80].lower():
                     # Show first 5 lines of the doc result
                     doc_lines = doc_result.splitlines()[:5]
@@ -279,6 +273,8 @@ async def validate_and_explain(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[validate_and_explain] {e}")
         raise ToolError(safe_error(e, "validate_and_explain"))
@@ -295,11 +291,12 @@ async def fix_and_validate(
         min_length=1,
         max_length=50000,
         description="The failing PineScript v6 code",
-    )] = "",
+    )],
     error_description: Annotated[str, Field(
+        min_length=1,
         max_length=500,
-        description="The error message or what's wrong",
-    )] = "",
+        description="The compiler error message (verbatim) or a description of the problem",
+    )],
 ) -> str:
     """
     Given PineScript code and a description of what's wrong (or the
@@ -307,6 +304,9 @@ async def fix_and_validate(
     return the precise fix with validation confirmation.
 
     Use when the user has a specific error they want fixed.
+    For code that may have v5 namespace issues or broader syntax problems
+    without a specific error, use lookup_and_correct() instead.
+    For pure validation without fixes, use validate_syntax().
 
     Args:
         code: The failing PineScript v6 code
@@ -382,6 +382,7 @@ async def fix_and_validate(
 
         # Step 4: Attempt auto-fix for common patterns
         fixed_code = code
+        code_stripped = strip_string_literals(code)  # for safe search gating
         fix_applied = "No automatic fix available"
         fixes_list = []
 
@@ -391,81 +392,136 @@ async def fix_and_validate(
             r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
             r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
         )
-        if bare_fn_pattern.search(fixed_code):
+        if bare_fn_pattern.search(code_stripped):
             fixed_code = bare_fn_pattern.sub(r'ta.\1(', fixed_code)
             fixes_list.append("Added ta. namespace prefix to unqualified TA functions")
 
         # Pattern 2: v6 breaking change — transp= parameter removed
         transp_pattern = re.compile(r',\s*transp\s*=\s*\d+')
-        if transp_pattern.search(fixed_code):
+        if transp_pattern.search(code_stripped):
             fixed_code = transp_pattern.sub('', fixed_code)
             fixes_list.append("Removed transp= parameter (v6: use color.new() instead)")
 
         # Pattern 3: v6 breaking change — when= parameter removed from strategy.*
         # Use function-based replacement to handle arbitrarily nested parens.
         def _remove_when_param(code: str) -> str:
-            """Remove when= parameter from strategy.entry/exit calls."""
-            when_start = re.search(r',\s*when\s*=', code)
-            if not when_start:
+            """Remove when= parameter from strategy.entry/exit/close calls.
+
+            Handles multiple calls and avoids matching when= inside nested
+            function arguments (e.g., calcQty(when=true) inside a strategy call).
+            """
+            # Find all strategy.entry/exit/close( call boundaries
+            removals: list[tuple[int, int]] = []  # (start, end) in code coords
+            call_re = re.compile(r'strategy\.(entry|exit|close)\s*\(')
+            for call_match in call_re.finditer(code):
+                # Walk forward from opening ( to find matching )
+                open_end = call_match.end()  # position after (
+                depth = 1
+                pos = open_end
+                while pos < len(code) and depth > 0:
+                    if code[pos] == '(':
+                        depth += 1
+                    elif code[pos] == ')':
+                        depth -= 1
+                    pos += 1
+                if depth != 0:
+                    continue  # unbalanced — skip
+
+                # Scan the call body for a top-level , when= parameter
+                body = code[open_end:pos - 1]
+                when_info = _find_toplevel_when(body)
+                if when_info is None:
+                    continue
+                arg_off_start, arg_off_end = when_info
+                removals.append((open_end + arg_off_start, open_end + arg_off_end))
+
+            if not removals:
                 return code
-            # Walk forward from when= value start, counting balanced parens
-            pos = when_start.end()
+
+            # Remove from end to start to preserve offsets
+            result = code
+            for start, end in sorted(removals, reverse=True):
+                result = result[:start] + result[end:]
+            return result
+
+        def _find_toplevel_when(body: str) -> tuple[int, int] | None:
+            """Find ', when=' at top level (depth 0) in a call body."""
             depth = 0
-            while pos < len(code):
-                ch = code[pos]
+            i = 0
+            while i < len(body):
+                ch = body[i]
                 if ch == '(':
                     depth += 1
+                    i += 1
                 elif ch == ')':
-                    if depth == 0:
-                        # This closing paren belongs to the strategy.entry() call
-                        return code[:when_start.start()] + ')' + code[pos + 1:]
                     depth -= 1
-                pos += 1
-            return code  # unbalanced — return unchanged
+                    i += 1
+                elif depth == 0 and ch == ',':
+                    m = re.match(r',\s*when\s*=', body[i:])
+                    if m:
+                        # Found top-level , when=. Find end of argument value.
+                        val_pos = i + m.end()
+                        val_depth = 0
+                        while val_pos < len(body):
+                            c = body[val_pos]
+                            if c == '(':
+                                val_depth += 1
+                            elif c == ')':
+                                if val_depth == 0:
+                                    break
+                                val_depth -= 1
+                            elif c == ',' and val_depth == 0:
+                                break
+                            val_pos += 1
+                        return (i, val_pos)
+                    i += 1
+                else:
+                    i += 1
+            return None
 
-        if re.search(r',\s*when\s*=', fixed_code):
+        if re.search(r'strategy\.(entry|exit|close)\s*\(', code_stripped) and re.search(r',\s*when\s*=', code_stripped):
+            prev = fixed_code
             fixed_code = _remove_when_param(fixed_code)
-            fixes_list.append("Removed when= parameter (v6: wrap in if block instead)")
+            if fixed_code != prev:
+                fixes_list.append("Removed when= parameter (v6: wrap in if block instead)")
 
         # Pattern 4: strategy.* called in indicator context
         if "strategy.entry" in fixed_code and "strategy(" not in fixed_code:
             fixes_list.append("strategy.entry() requires strategy() declaration, not indicator()")
 
         # Pattern 5: Implicit bool — if volume, if close (v6 needs explicit comparison)
-        implicit_bool_pattern = re.compile(r'\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])')
-        if implicit_bool_pattern.search(fixed_code):
-            fixed_code = implicit_bool_pattern.sub(r'if \1 > 0', fixed_code)
+        implicit_bool_pattern = re.compile(r'\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])')
+        if implicit_bool_pattern.search(code_stripped):
+            fixed_code = implicit_bool_pattern.sub(r'if \1\2 > 0', fixed_code)
             fixes_list.append("Added explicit > 0 comparison (v6: implicit bool casting removed)")
 
         # Pattern 6: bool x = na (v6: bools can't be na)
         bool_na_pattern = re.compile(r'\bbool\s+(\w+)\s*=\s*na\b')
-        if bool_na_pattern.search(fixed_code):
+        if bool_na_pattern.search(code_stripped):
             fixed_code = bool_na_pattern.sub(r'var bool \1 = false', fixed_code)
             fixes_list.append("Changed 'bool x = na' to 'var bool x = false' (v6: bool can't be na)")
 
         if fixes_list:
             fix_applied = " | ".join(fixes_list)
 
-        # Step 5: Validate the fixed code using local linter
+        # Step 5: Validate the fixed code via pine-facade.
         validation_result = None
         if fixed_code != code:
             try:
-                from pine_linter import lint as _pine_lint
-                lint_result = _pine_lint(fixed_code)
-                lint_dict = lint_result.to_dict()
-                if lint_dict["success"]:
-                    validation_result = "✅ Fixed code passes local linter (Tier 1)"
+                fix_validation = await call_pine_facade(fixed_code)
+                if fix_validation.get("success"):
+                    validation_result = "✅ Fixed code compiles successfully"
                 else:
-                    errs = lint_dict.get("errors", [])
+                    errs = fix_validation.get("errors", [])
                     if errs:
                         validation_result = (
                             f"⚠️ Fixed code still has {len(errs)} error(s):\n" +
                             "\n".join(f"  Line {e['line']}: {e['text']}" for e in errs[:3])
                         )
                     else:
-                        validation_result = "✅ Fixed code passes local linter (Tier 1)"
+                        validation_result = "✅ Fixed code compiles successfully"
             except Exception:
-                validation_result = "⚠️ Could not validate fix (linter unavailable)"
+                validation_result = "⚠️ Could not validate fix (compiler unavailable)"
 
         # Build response
         lines = [
@@ -486,6 +542,8 @@ async def fix_and_validate(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[fix_and_validate] {e}")
         raise ToolError(safe_error(e, "fix_and_validate"))
@@ -502,12 +560,16 @@ async def debug_pine_facade(
             min_length=1,
             max_length=50000,
             description="Complete PineScript v6 source code to compile",
-    )] = "",
+    )],
 ) -> str:
     """
     Diagnostic tool: compile code via pine-facade and return the FULL raw
     response alongside the normalized interpretation. Use for debugging
     when validate_syntax or validate_and_explain produce unexpected results.
+
+    Do not use for normal validation or debugging user code — use
+    validate_syntax() or validate_and_explain() instead. This tool is
+    for diagnosing unexpected compiler behavior only.
 
     Args:
         code: Complete PineScript v6 source code to compile
@@ -560,8 +622,11 @@ async def debug_pine_facade(
 
         # Raw response
         raw = result.get("raw_response", {})
+        raw_str = json.dumps(raw, indent=2, default=str)
+        if len(raw_str) > 2000:
+            raw_str = raw_str[:2000] + "\n  [...truncated — use debug_pine_facade for full output]"
         lines.append("RAW RESPONSE:")
-        lines.append(json.dumps(raw, indent=2, default=str)[:2000])
+        lines.append(raw_str)
         lines.append("")
 
         # Validation cache
@@ -569,6 +634,8 @@ async def debug_pine_facade(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[debug_pine_facade] {e}")
         raise ToolError(safe_error(e, "debug_pine_facade"))
@@ -583,6 +650,7 @@ async def debug_pine_facade(
 async def validate_file(
     file_path: Annotated[str, Field(
         min_length=1,
+        max_length=4096,
         description="Absolute path to PineScript v6 file to validate"
     )]
 ) -> str:
@@ -595,7 +663,6 @@ async def validate_file(
 
     Optimization: caches results keyed on (path, mtime_ns, size). Re-validating
     an unchanged file returns the cached result in <1ms instead of ~2800ms.
-    Runs local linter as fast-reject before remote compile.
 
     Args:
         file_path: Absolute path to the .ps file to validate
@@ -625,9 +692,10 @@ async def validate_file(
         for base in _ALLOWED_BASE_DIRS
     )
     if not allowed:
+        safe_dirs = ", ".join(os.path.basename(str(d)) for d in _ALLOWED_BASE_DIRS)
         return (
             "ERROR: Access denied. File must be in an allowed directory.\n"
-            "Allowed directories: ~/Documents, ~/Desktop, ~/Projects, ~/repos"
+            f"Allowed directories: {safe_dirs}"
         )
 
     # Check file existence
@@ -645,6 +713,10 @@ async def validate_file(
         if cached:
             return cached
 
+        # Reject oversized files before reading into memory
+        if fsize > 500_000:
+            return f"ERROR: File too large ({fsize:,} bytes). Maximum is 500KB."
+
         # Read file contents
         with open(resolved, "r", encoding="utf-8", errors="replace") as f:
             code = f.read()
@@ -652,62 +724,13 @@ async def validate_file(
         file_size = len(code.encode("utf-8"))
         line_count = code.count("\n") + 1
 
-        # Fast-reject: run local linter first (catches common errors in ~5ms)
-        try:
-            from pine_linter import lint as _pine_lint
-            lint_result = _pine_lint(code)
-            lint_dict = lint_result.to_dict()
-            lint_errors = lint_dict.get("errors", [])
-            lint_warnings = lint_dict.get("warnings", [])
-
-            # Fast-reject: local linter found errors — skip expensive remote compile
-            if lint_errors:
-                response = f"FILE: {display_name}\n"
-                response += f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
-                response += "=" * 80 + "\n\n"
-
-                total_issues = len(lint_errors) + len(lint_warnings)
-                response += f"COMPILATION ISSUES ({total_issues})\n"
-                response += "Compiler: Local Linter (Tier 1) -- fast-reject\n"
-                response += f"Errors: {len(lint_errors)} | Warnings: {len(lint_warnings)}\n\n"
-
-                for idx, err in enumerate(lint_errors, 1):
-                    line = err.get("line", "?")
-                    col = err.get("column", "?")
-                    text = err.get("text", "Unknown error")
-                    err_type = err.get("type", "error")
-                    response += f"  ERROR {idx} -- Line {line}, Col {col} [{err_type.upper()}]\n"
-                    response += f"    {text}\n"
-                    hint = lookup_fix_hint(text)
-                    if hint:
-                        response += f"    Fix hint: {hint}\n"
-                    response += "\n"
-
-                for idx, warn in enumerate(lint_warnings, 1):
-                    line = warn.get("line", "?")
-                    col = warn.get("column", "?")
-                    text = warn.get("text", "Unknown warning")
-                    response += f"  WARNING {idx} -- Line {line}, Col {col}\n"
-                    response += f"    {text}\n\n"
-
-                # Do NOT cache linter-only failures — remote compiler may find
-                # different/additional errors. Only cache confirmed remote failures.
-                return response
-
-        except Exception as e:
-            logger.warning(f"Local linter failed for {display_name}: {e}")
-            # Continue to remote compile even if linter failed
-
-        # -- Linter passed clean -- proceed to remote compiler --
-        # skip_lint=True avoids running the linter again inside call_pine_facade
-        result = await call_pine_facade(code, skip_lint=True)
+        # Compile via pine-facade
+        result = await call_pine_facade(code)
 
         errors = enrich_error_with_code(result.get("errors", []), code)
         warnings = result.get("warnings", [])
         success = result.get("success", False)
         meta = result.get("meta", {})
-        is_fallback = meta.get("fallback") == "local_linter_tier1"
-        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         # Build response with file info
         response = f"FILE: {display_name}\n"
@@ -716,20 +739,15 @@ async def validate_file(
 
         if success and not errors and not warnings:
             response += "VALID -- PineScript v6 code compiles successfully.\n\n"
-            response += f"Compiler: {compiler_label}\n"
+            response += "Compiler: TradingView pine-facade v6\n"
             response += "Errors: 0 | Warnings: 0\n"
-            if is_fallback and meta.get("note"):
-                response += f"\nNote: {meta['note']}\n"
             set_cached_file_validation(resolved, mtime_ns, fsize, response)
-            return response
+            return cap_response(response)
 
         # Has errors or warnings
         total_issues = len(errors) + len(warnings)
         response += f"{'COMPILATION ISSUES' if errors else 'WARNINGS'} ({total_issues})\n"
-        response += f"Compiler: {compiler_label}\n"
-
-        if is_fallback and meta.get("note"):
-            response += f"Note: {meta['note']}\n"
+        response += "Compiler: TradingView pine-facade v6\n"
 
         response += f"Errors: {len(errors)} | Warnings: {len(warnings)}\n\n"
 
@@ -756,8 +774,10 @@ async def validate_file(
             response += f"    {text}\n\n"
 
         set_cached_file_validation(resolved, mtime_ns, fsize, response)
-        return response
+        return cap_response(response)
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.exception("Unexpected error in validate_file")
         raise ToolError(safe_error(e, "validate_file"))

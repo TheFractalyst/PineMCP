@@ -24,7 +24,7 @@ jobs:
           pip install ruff
 
       - name: Lint
-        run: ruff check server.py core/ formatters/ templates/ tools/ pine_linter.py pipeline/
+        run: ruff check server.py core/ formatters/ templates/ tools/ pipeline/
 
       - name: Run tests
         run: pytest tests/ -q --tb=short

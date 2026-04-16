@@ -49,17 +49,18 @@ def _return_type_matches(query_type: str, field_type: str) -> bool:
     """
     import re
 
+    ft = field_type.lower()
     # Exact match
-    if query_type == field_type:
+    if query_type == ft:
         return True
     # Query is a substring of field — check word boundary
     # e.g., "float" in "series float" ✓, "int" in "point" ✗
-    if query_type in field_type:
+    if query_type in ft:
         # Check that query_type appears as a complete word in field_type
         pattern = rf"(?:^|[\s<>,\[\]]){re.escape(query_type)}(?:$|[\s<>,\[\]])"
-        return bool(re.search(pattern, field_type))
+        return bool(re.search(pattern, ft))
     # Field is a substring of query — e.g., "series float" matches query "float"
-    if field_type in query_type:
+    if ft in query_type:
         return True
     return False
 
@@ -151,6 +152,7 @@ async def search_docs(
         str | None,
         Field(
             default=None,
+            max_length=50,
             description="'function','variable','type',etc.",
         ),
     ] = None,
@@ -158,6 +160,7 @@ async def search_docs(
         str | None,
         Field(
             default=None,
+            max_length=50,
             description="Namespace e.g. 'ta', 'strategy'",
         ),
     ] = None,
@@ -165,6 +168,9 @@ async def search_docs(
     """
     Semantic search across the complete PineScript v6 knowledge base.
     Searches functions, variables, types, constants, keywords, and operators.
+
+    Do not use when you know the exact function name -- use get_function() instead.
+    Do not use for 'how do I accomplish X' queries -- use suggest_functions() instead.
 
     Args:
         query: Natural language or code query about PineScript v6
@@ -201,6 +207,12 @@ async def search_docs(
         # entries stored under other categories (e.g. strategy.closedtrades.profit
         # is stored as 'variable' but has function syntax with parameters)
         if category_filter == "function" and results["ids"] and results["ids"][0]:
+            # Shallow-copy lists to avoid mutating cached ChromaDB result objects
+            results["ids"][0] = list(results["ids"][0])
+            results["metadatas"][0] = list(results["metadatas"][0])
+            results["documents"][0] = list(results["documents"][0])
+            results["distances"][0] = list(results["distances"][0])
+
             supp_where = {"namespace": namespace_filter} if namespace_filter else None
             supp = await query_async(query, n_results, where=supp_where)
             if supp["ids"] and supp["ids"][0]:
@@ -223,6 +235,11 @@ async def search_docs(
                         results["documents"][0].append(doc)
                         results["distances"][0].append(dist)
                         existing_ids.add(rid)
+
+        # Cap total results to n_results after supplementary additions
+        if results["ids"] and results["ids"][0] and len(results["ids"][0]) > n_results:
+            for key in ("ids", "metadatas", "documents", "distances"):
+                results[key][0] = results[key][0][:n_results]
 
         db_err = check_query_error(results)
         if db_err:
@@ -430,6 +447,7 @@ async def list_namespace(
         str | None,
         Field(
             default=None,
+            max_length=50,
             description="Optional category filter",
         ),
     ] = None,
@@ -660,6 +678,8 @@ async def search_by_return_type(
 
         return cap_response("\n".join(output_lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[search_by_return_type] {e}")
         if _db._chroma_breaker.is_open():

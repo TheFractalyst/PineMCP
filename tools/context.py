@@ -18,6 +18,7 @@ from pydantic import Field
 
 import core.db as _db
 from core.db import get_all_where_async, query_async
+from core.hot_cache import ensure_hot_cache
 from formatters.entry import (
     _BOX_BL,
     _BOX_BR,
@@ -65,12 +66,16 @@ async def suggest_functions(
 
     Use when user asks 'how do I...' or 'what function does...'.
 
+    Do not use for looking up a specific known function's full documentation
+    -- use get_function() instead.
+
     Args:
         context: What you're trying to accomplish
         current_line: The current line being written (optional)
         n_results: How many suggestions (default 8)
     """
     try:
+        await ensure_hot_cache()
         query_text = context
         if current_line:
             query_text += f" | current line: {current_line}"
@@ -128,6 +133,8 @@ async def suggest_functions(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[suggest_functions] {e}")
         if _db._chroma_breaker.is_open():
@@ -155,8 +162,13 @@ async def get_namespace_cheatsheet(
 
     Namespaces: ta, strategy, math, array, matrix, map, str, color,
     chart, line, label, box, table, request, ticker, timeframe, syminfo
+
+    Do not use for getting full documentation for specific entries —
+    use get_function() or get_type() instead. For full one-line
+    descriptions per member, use list_namespace().
     """
     try:
+        await ensure_hot_cache()
         ns = norm_ns(namespace)
         if ns == "global":
             where: Optional[dict] = {"namespace": ""}
@@ -234,6 +246,8 @@ async def get_namespace_cheatsheet(
         lines.append(f"Total: {total} entries in namespace '{ns}'")
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_namespace_cheatsheet] {e}")
         if _db._chroma_breaker.is_open():

@@ -3,10 +3,13 @@ test_validation.py — Tests for the 5 validation tools:
   validate_syntax, validate_and_explain, fix_and_validate,
   debug_pine_facade, validate_file
 
-Uses local linter / pine-facade with content-hash caching.
+Uses pine-facade (TradingView's remote compiler) with content-hash caching.
+Tests that call the remote compiler mock call_pine_facade to avoid
+network dependencies in CI.
 """
 
 import os
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -18,63 +21,106 @@ from tools.validation import (
     validate_syntax,
 )
 
+# ── Shared mock responses for call_pine_facade ─────────────────────────────────
+
+_FACADE_SUCCESS = {
+    "success": True,
+    "errors": [],
+    "warnings": [],
+    "meta": {"name": "test"},
+    "raw_response": {"success": True},
+}
+
+_FACADE_ERRORS = {
+    "success": False,
+    "errors": [{"line": 1, "column": 1, "text": "Cannot call 'ema'", "type": "error"}],
+    "warnings": [],
+    "meta": {},
+    "raw_response": {},
+}
+
+_FACADE_DEBUG = {
+    "success": True,
+    "errors": [],
+    "warnings": [],
+    "meta": {},
+    "raw_response": {"result": {}, "success": True},
+}
+
+_FACADE_WARNINGS = {
+    "success": True,
+    "errors": [],
+    "warnings": [{"line": 1, "column": 1, "text": "Unused variable 'x'", "type": "warning"}],
+    "meta": {},
+    "raw_response": {},
+}
+
+
 # ── validate_syntax ───────────────────────────────────────────────────────────
 
+
+@patch("tools.validation.call_pine_facade", new_callable=AsyncMock)
 class TestValidateSyntax:
-    @pytest.mark.asyncio
-    async def test_valid_code(self, valid_pine_code):
+    async def test_valid_code(self, mock_facade, valid_pine_code):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await validate_syntax(code=valid_pine_code)
         assert "valid" in result.lower() or "compiles" in result.lower()
         assert "compiler" in result.lower()
         assert "error" in result.lower()  # "Errors: 0"
 
-    @pytest.mark.asyncio
-    async def test_invalid_code(self, invalid_pine_code):
+    async def test_invalid_code(self, mock_facade, invalid_pine_code):
+        mock_facade.return_value = _FACADE_ERRORS
         result = await validate_syntax(code=invalid_pine_code)
         assert "error" in result.lower() or "issue" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_empty_code(self):
+    async def test_empty_code(self, mock_facade):
         result = await validate_syntax(code="")
         assert "error" in result.lower() or "no code" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_whitespace_only(self):
+    async def test_whitespace_only(self, mock_facade):
         result = await validate_syntax(code="   \n\t  ")
         assert "error" in result.lower() or "no code" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_analysis_on_valid(self, valid_pine_code):
+    async def test_analysis_on_valid(self, mock_facade, valid_pine_code):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await validate_syntax(code=valid_pine_code)
         assert "analysis" in result.lower() or "script type" in result.lower()
+
+    async def test_warnings_shown(self, mock_facade, valid_pine_code):
+        mock_facade.return_value = _FACADE_WARNINGS
+        result = await validate_syntax(code=valid_pine_code)
+        assert "warning" in result.lower()
 
 
 # ── validate_and_explain ─────────────────────────────────────────────────────
 
+
+@patch("tools.validation.call_pine_facade", new_callable=AsyncMock)
 class TestValidateAndExplain:
-    @pytest.mark.asyncio
-    async def test_valid_code(self, valid_pine_code):
+    async def test_valid_code(self, mock_facade, valid_pine_code):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await validate_and_explain(code=valid_pine_code)
         assert "passed" in result.lower() or "valid" in result.lower()
         assert "compiler" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_invalid_with_doc_lookup(self):
+    async def test_invalid_with_doc_lookup(self, mock_facade):
+        mock_facade.return_value = _FACADE_ERRORS
         code = "//@version=6\nindicator('test')\nema(close, 14)"
         result = await validate_and_explain(code=code)
         assert "error" in result.lower() or "report" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_empty_code(self):
+    async def test_empty_code(self, mock_facade):
         result = await validate_and_explain(code="")
         assert "error" in result.lower() or "no code" in result.lower()
 
 
 # ── fix_and_validate ──────────────────────────────────────────────────────────
 
+
+@patch("tools.validation.call_pine_facade", new_callable=AsyncMock)
 class TestFixAndValidate:
-    @pytest.mark.asyncio
-    async def test_ema_namespace_fix(self):
+    async def test_ema_namespace_fix(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await fix_and_validate(
             code="ema(close, 14)",
             error_description="Undeclared identifier 'ema'"
@@ -83,26 +129,24 @@ class TestFixAndValidate:
         assert "hint" in result.lower()
         assert "ta.ema" in result
 
-    @pytest.mark.asyncio
-    async def test_empty_code(self):
+    async def test_empty_code(self, mock_facade):
         result = await fix_and_validate(code="", error_description="test")
         assert "error" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_empty_error_description(self):
+    async def test_empty_error_description(self, mock_facade):
         result = await fix_and_validate(code="test", error_description="")
         assert "error" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_transp_removal(self):
+    async def test_transp_removal(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await fix_and_validate(
             code='//@version=6\nindicator("test")\nplot(close, color=color.red, transp=50)',
             error_description="transp parameter not supported"
         )
         assert "transp" in result.lower() or "fix" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_produces_fixed_code(self):
+    async def test_produces_fixed_code(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await fix_and_validate(
             code="sma(close, 20)",
             error_description="Undeclared identifier 'sma'"
@@ -113,26 +157,32 @@ class TestFixAndValidate:
 
 # ── debug_pine_facade ─────────────────────────────────────────────────────────
 
+
+@patch("tools.validation.call_pine_facade", new_callable=AsyncMock)
 class TestDebugPineFacade:
-    @pytest.mark.asyncio
-    async def test_valid_code(self, valid_pine_code):
+    async def test_valid_code(self, mock_facade, valid_pine_code):
+        mock_facade.return_value = _FACADE_DEBUG
         result = await debug_pine_facade(code=valid_pine_code)
         assert "debug" in result.lower()
         assert "circuit breaker" in result.lower()
         assert "normalized" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_empty_code(self):
+    async def test_empty_code(self, mock_facade):
         result = await debug_pine_facade(code="")
         assert "error" in result.lower() or "no code" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_circuit_breaker_stats(self, valid_pine_code):
+    async def test_circuit_breaker_stats(self, mock_facade, valid_pine_code):
+        mock_facade.return_value = _FACADE_DEBUG
         result = await debug_pine_facade(code=valid_pine_code)
         assert "circuit_open" in result.lower() or "network_failures" in result.lower()
 
 
 # ── validate_file ─────────────────────────────────────────────────────────────
+
+# validate_file tests for path validation don't hit the network,
+# so they don't need mocking. Tests that compile file content are
+# skipped if the example file doesn't exist.
+
 
 class TestValidateFile:
     @pytest.mark.asyncio

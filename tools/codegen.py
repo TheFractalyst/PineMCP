@@ -28,6 +28,7 @@ from formatters.errors import (
     circuit_breaker_msg,
     safe_error,
     sanitize_pine_string,
+    strip_string_literals,
 )
 from templates.indicators import (
     _INDICATOR_TEMPLATES,
@@ -37,6 +38,24 @@ from templates.indicators import (
 from templates.v5_migration import V5_TO_V6
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PINE_IDENT = re.compile(r"[^a-zA-Z0-9_]")
+
+
+def _sanitize_pine_ident(name: str) -> str:
+    """Sanitize a string to be a valid PineScript identifier."""
+    clean = _PINE_IDENT.sub("_", name).strip("_")
+    if not clean:
+        return "param"
+    # Ensure starts with letter or underscore
+    if clean[0].isdigit():
+        clean = f"_{clean}"
+    return clean
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TOOL 14: generate_indicator
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -44,8 +63,8 @@ from templates.v5_migration import V5_TO_V6
 @tool(
     annotations=ToolAnnotations(
         title="Generate Indicator Template",
-        readOnlyHint=True,
-        openWorldHint=False,
+        readOnlyHint=False,
+        openWorldHint=True,
         destructiveHint=False,
         idempotentHint=False,
     )
@@ -71,6 +90,7 @@ async def generate_indicator(
         str | None,
         Field(
             default=None,
+            max_length=2000,
             description="Comma-separated input descriptions, e.g. 'length=14,src=close,mult=2.0'",
         ),
     ] = None,
@@ -83,8 +103,11 @@ async def generate_indicator(
     ] = False,
 ) -> str:
     """
-    Generate a syntactically correct PineScript v6 indicator template.
-    Validates the output with pine-facade before returning.
+    Generate a PineScript v6 indicator template with correct boilerplate.
+    Searches docs for relevant functions and validates the output.
+
+    Returns a complete indicator() script with inputs, calculation stub,
+    and plot(). The template may need manual edits for complex logic.
 
     Args:
         name: Indicator display name
@@ -134,7 +157,7 @@ async def generate_indicator(
                     key, val = raw_inp.split("=", 1)
                     key = key.strip()
                     val = val.strip()
-                    var_name = key.replace(" ", "_").replace("-", "_")
+                    var_name = _sanitize_pine_ident(key)
                     display_name = key
                     inp_lower = key.lower()
 
@@ -168,8 +191,11 @@ async def generate_indicator(
                             default_val = val
                 else:
                     inp_lower = raw_inp.lower()
-                    var_name = raw_inp.replace(" ", "_").replace("-", "_")
-                    if any(k in inp_lower for k in ("length", "period", "len")):
+                    var_name = _sanitize_pine_ident(raw_inp)
+                    if inp_lower in ("close", "open", "high", "low", "hl2", "hlc3", "ohlc4"):
+                        pine_type = "source"
+                        default_val = inp_lower
+                    elif any(k in inp_lower for k in ("length", "period", "len")):
                         pine_type = "int"
                         default_val = "20"
                     elif any(k in inp_lower for k in ("source", "src")):
@@ -423,6 +449,8 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
         set_codegen_cache(cache_key, result)
         return result
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[generate_indicator] {e}")
         if _db._chroma_breaker.is_open():
@@ -438,8 +466,8 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
 @tool(
     annotations=ToolAnnotations(
         title="Generate Strategy Template",
-        readOnlyHint=True,
-        openWorldHint=False,
+        readOnlyHint=False,
+        openWorldHint=True,
         destructiveHint=False,
         idempotentHint=False,
     )
@@ -519,7 +547,8 @@ async def generate_strategy(
             return cached_result
 
         # Search docs for strategy-related functions
-        relevant = await query_async(description, 5, where={"namespace": "strategy"})
+        search_desc = (description or "").strip() or name
+        relevant = await query_async(search_desc, 5, where={"namespace": "strategy"})
         db_err = check_query_error(relevant)
         if db_err:
             return db_err
@@ -532,6 +561,7 @@ async def generate_strategy(
                 relevant_funcs.append(f"//   {fname}: {fsyntax[:80]}")
 
         # BUG FIX: Use correct v6 input.bool syntax (default value first, then title)
+        desc_comment = f"\n// Description: {description}" if description else ""
         template = f"""//@version=6
 strategy("{safe_name}", overlay=true,
     initial_capital={initial_capital},
@@ -542,7 +572,7 @@ strategy("{safe_name}", overlay=true,
     pyramiding={pyramiding},
     margin_long=0, margin_short=0,
     calc_on_every_tick=false)
-
+{desc_comment}
 // ── Inputs ──────────────────────────────────────────────────
 enableLong  = input.bool(true,  "Enable Long",  group="Filters")
 enableShort = input.bool(false, "Enable Short", group="Filters")
@@ -583,14 +613,14 @@ if barstate.islast
                 f"  Line {e['line']}: {e['text']}" for e in validation["errors"][:5]
             )
             return (
-                f"⚠️ Template generation failed validation:\n{errors_str}\n\n"
+                f"WARNING: Template generation failed validation:\n{errors_str}\n\n"
                 f"Raw template for manual fix:\n```pine\n{template}\n```"
             )
 
         lines = []
         lines.append("GENERATED STRATEGY TEMPLATE")
         lines.append("=" * 50)
-        lines.append("Validated: ✅ 0 compilation errors")
+        lines.append("Validated: 0 compilation errors (OK)")
         lines.append("")
         lines.append("```pine")
         lines.append(template.strip())
@@ -606,6 +636,8 @@ if barstate.islast
         set_codegen_cache(cache_key, result)
         return result
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[generate_strategy] {e}")
         if _db._chroma_breaker.is_open():
@@ -621,8 +653,8 @@ if barstate.islast
 @tool(
     annotations=ToolAnnotations(
         title="Lookup and Correct Code",
-        readOnlyHint=True,
-        openWorldHint=False,
+        readOnlyHint=False,
+        openWorldHint=True,
         destructiveHint=False,
         idempotentHint=False,
     )
@@ -635,7 +667,7 @@ async def lookup_and_correct(
             max_length=50000,
             description="The PineScript code (can be partial or full script)",
         ),
-    ] = "",
+    ],
     error_description: Annotated[
         str,
         Field(
@@ -643,7 +675,7 @@ async def lookup_and_correct(
             max_length=500,
             description="What the code is supposed to do",
         ),
-    ] = "",
+    ],
 ) -> str:
     """
     Given a PineScript code snippet and what it's supposed to do,
@@ -651,6 +683,8 @@ async def lookup_and_correct(
     a corrected version with explanations.
 
     Use when user shares code and asks 'what's wrong with this'.
+    For a targeted fix when you already have a specific compiler error
+    message, use fix_and_validate() instead.
 
     Args:
         code: The PineScript code (can be partial or full script)
@@ -670,34 +704,45 @@ async def lookup_and_correct(
 
         # Step 2: Apply ALL v5→v6 namespace fixes
         fixed_code = code
+        code_stripped = strip_string_literals(code)  # for safe search gating
         changes_made = []
 
         # v6 breaking changes
         transp_pattern = re.compile(r",\s*transp\s*=\s*\d+")
-        if transp_pattern.search(fixed_code):
+        if transp_pattern.search(code_stripped):
             fixed_code = transp_pattern.sub("", fixed_code)
             changes_made.append("Removed transp= parameter (v6: use color.new())")
 
         bool_na = re.compile(r"\bbool\s+(\w+)\s*=\s*na\b")
-        if bool_na.search(fixed_code):
+        if bool_na.search(code_stripped):
             fixed_code = bool_na.sub(r"var bool \1 = false", fixed_code)
             changes_made.append("Changed 'bool x = na' to 'var bool x = false' (v6)")
 
         implicit_bool = re.compile(
-            r"\bif\s+(volume|close|open|high|low)\b(?!\s*[<>=!])"
+            r"\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])"
         )
-        if implicit_bool.search(fixed_code):
-            fixed_code = implicit_bool.sub(r"if \1 > 0", fixed_code)
+        if implicit_bool.search(code_stripped):
+            fixed_code = implicit_bool.sub(r"if \1\2 > 0", fixed_code)
             changes_made.append("Added explicit > 0 (v6: implicit bool removed)")
 
         study_pattern = re.compile(r"\bstudy\s*\(")
-        if study_pattern.search(fixed_code):
+        if study_pattern.search(code_stripped):
             fixed_code = study_pattern.sub("indicator(", fixed_code)
             changes_made.append("Replaced study() → indicator() (v6)")
 
+        # Missing namespace: ema() → ta.ema(), etc.
+        bare_fn_pattern = re.compile(
+            r'(?<!\.)\b(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
+            r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
+            r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
+        )
+        if bare_fn_pattern.search(code_stripped):
+            fixed_code = bare_fn_pattern.sub(r'ta.\1(', fixed_code)
+            changes_made.append("Added ta. namespace prefix to unqualified TA functions")
+
         # Apply ALL V5→V6 namespace replacements
         for pattern, replacement in V5_TO_V6.items():
-            if re.search(pattern, fixed_code):
+            if re.search(pattern, code_stripped):
                 fixed_code = re.sub(pattern, replacement, fixed_code)
                 changes_made.append(f"Replaced: {pattern} → {replacement}")
 
@@ -765,7 +810,7 @@ async def lookup_and_correct(
             lines.append("")
         else:
             lines.append(
-                "AFTER FIXES: ✅ All issues resolved! Code compiles successfully."
+                "AFTER FIXES: All issues resolved. Code compiles successfully."
             )
             lines.append("")
 
@@ -803,6 +848,8 @@ async def lookup_and_correct(
 
         return cap_response("\n".join(lines))
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[lookup_and_correct] {e}")
         if _db._chroma_breaker.is_open():

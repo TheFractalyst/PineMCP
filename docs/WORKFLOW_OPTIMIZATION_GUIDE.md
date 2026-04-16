@@ -109,7 +109,7 @@ limits=httpx.Limits(
 ### 3. Circuit Breaker Pattern
 - **Purpose**: Prevent cascading failures when TradingView API is down
 - **Behavior**: Exponential backoff (60s, 120s, 240s...)
-- **Fallback**: Local linter (~50% error coverage)
+- **Behavior**: Returns clear error when circuit is open; auto-retries after cooldown
 
 ### 4. Timeout Configuration
 ```bash
