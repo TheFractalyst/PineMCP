@@ -21,9 +21,11 @@ You are a test engineering specialist for this PineScript v6 MCP server. You wri
 - **templates/v5_migration.py** — All 60+ regex patterns: verify they don't double-prefix (input "ta.ema(" should NOT become "ta.ta.ema("), verify correct replacement text
 - **templates/indicators.py** — `extract_indicator_keywords()` with ambiguous inputs ("BB" = Bollinger vs "bb"), `map_input_to_param()` suffix/prefix matching
 
-### Priority 3: pine_linter.py (currently zero tests)
-- Each individual lint rule: missing version directive, wrong version, v5 syntax (study, security, bare function names), bracket balance, undeclared reassignment, reserved words
-- Edge cases: empty input, very long lines, unicode, null bytes
+### Priority 3: core/pine_facade.py error handling
+- Circuit breaker open state returns proper error dict
+- HTTP 403/502/503/504 responses return clear error messages
+- Network timeout/exception handling returns user-friendly errors
+- Content-hash cache hit returns cached result without network call
 
 ### Priority 4: tools/ Edge Cases
 - Error paths: circuit breaker open, ChromaDB down, empty/whitespace inputs, names with special characters
