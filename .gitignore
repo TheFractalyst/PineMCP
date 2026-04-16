@@ -73,3 +73,6 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+
+# Claude Code worktrees (temporary agent sessions)
+.claude/worktrees/
