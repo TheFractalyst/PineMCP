@@ -56,9 +56,7 @@ async def validate_syntax(
     Returns real compilation errors with line numbers and column positions.
     Use BEFORE suggesting code to the user to catch errors proactively.
 
-    Note: When the remote compiler is unreachable, falls back to a local
-    linter (Tier 1) that catches ~50% of common errors. The response
-    indicates which compiler was used.
+    Note: Requires network access to TradingView's pine-facade compiler.
 
     Args:
         code: Complete PineScript v6 source code to validate
@@ -74,13 +72,10 @@ async def validate_syntax(
         warnings = result.get("warnings", [])
         success = result.get("success", False)
         meta = result.get("meta", {})
-        is_fallback = meta.get("fallback") == "local_linter_tier1"
-        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         if success and not errors and not warnings:
             name = meta.get("name", "")
             extra = f"\nMeta: {name}" if name else ""
-            fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
 
             # Add quick code analysis for richer output
             code_lines = code.strip().splitlines()
@@ -119,8 +114,8 @@ async def validate_syntax(
             analysis_block = "\n".join(f"  {a}" for a in code_analysis)
 
             return cap_response(
-                f"VALID — Code compiles successfully.{extra}{fallback_note}\n"
-                f"Compiler: {compiler_label}\n"
+                f"VALID — Code compiles successfully.{extra}\n"
+                f"Compiler: TradingView pine-facade v6\n"
                 f"Errors: 0 | Warnings: 0\n\n"
                 f"Code Analysis:\n{analysis_block}"
             )
@@ -128,10 +123,7 @@ async def validate_syntax(
         lines = []
         total_issues = len(errors) + len(warnings)
         lines.append(f"COMPILATION ISSUES ({total_issues}):")
-        lines.append(f"Compiler: {compiler_label}")
-        if is_fallback:
-            note = meta.get("note", "Local linter catches ~50% of common errors.")
-            lines.append(f"Note: {note}")
+        lines.append(f"Compiler: TradingView pine-facade v6")
         lines.append(f"Errors: {len(errors)} | Warnings: {len(warnings)}")
         lines.append("")
 
@@ -202,8 +194,6 @@ async def validate_and_explain(
         warnings = result.get("warnings", [])
         success = result.get("success", False)
         meta = result.get("meta", {})
-        is_fallback = meta.get("fallback") == "local_linter_tier1"
-        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         if success and not errors and not warnings:
             # Quick code analysis on success
@@ -221,12 +211,11 @@ async def validate_and_explain(
                 if is_strategy
                 else ("indicator" if is_indicator else "library")
             )
-            fallback_note = "\nNote: Validated by local linter (remote compiler unavailable)." if is_fallback else ""
 
             return cap_response(
                 f"VALIDATION + DEBUG REPORT\n"
                 f"{'=' * 50}\n"
-                f"Compiler: {compiler_label}\n"
+                f"Compiler: TradingView pine-facade v6\n"
                 f"Status: PASSED\n"
                 f"Errors: 0 | Warnings: 0\n\n"
                 f"Code Analysis:\n"
@@ -234,17 +223,13 @@ async def validate_and_explain(
                 f"  Lines: {len(code_lines)}\n"
                 f"  Plots: {plots}\n"
                 f"  Inputs: {inputs}\n"
-                f"{fallback_note}"
             )
 
         # Process errors with doc cross-reference
         lines = []
         lines.append("VALIDATION + DEBUG REPORT")
         lines.append("=" * 50)
-        lines.append(f"Compiler: {compiler_label}")
-        if is_fallback:
-            note = meta.get("note", "Local linter catches ~50% of common errors.")
-            lines.append(f"Note: {note}")
+        lines.append("Compiler: TradingView pine-facade v6")
         lines.append("Status: FAILED")
         lines.append(f"Errors: {len(errors)} | Warnings: {len(warnings)}")
         lines.append("")
@@ -519,29 +504,24 @@ async def fix_and_validate(
         if fixes_list:
             fix_applied = " | ".join(fixes_list)
 
-        # Step 5: Validate the fixed code using local linter (Tier 1 only).
-        # Note: We do NOT call the remote pine-facade here for speed.
-        # The local linter catches ~50% of errors. For full validation,
-        # call validate_syntax() on the fixed code after this tool returns.
+        # Step 5: Validate the fixed code via pine-facade.
         validation_result = None
         if fixed_code != code:
             try:
-                from pine_linter import lint as _pine_lint
-                lint_result = _pine_lint(fixed_code)
-                lint_dict = lint_result.to_dict()
-                if lint_dict["success"]:
-                    validation_result = "✅ Fixed code passes local linter (Tier 1)"
+                fix_validation = await call_pine_facade(fixed_code)
+                if fix_validation.get("success"):
+                    validation_result = "✅ Fixed code compiles successfully"
                 else:
-                    errs = lint_dict.get("errors", [])
+                    errs = fix_validation.get("errors", [])
                     if errs:
                         validation_result = (
                             f"⚠️ Fixed code still has {len(errs)} error(s):\n" +
                             "\n".join(f"  Line {e['line']}: {e['text']}" for e in errs[:3])
                         )
                     else:
-                        validation_result = "✅ Fixed code passes local linter (Tier 1)"
+                        validation_result = "✅ Fixed code compiles successfully"
             except Exception:
-                validation_result = "⚠️ Could not validate fix (linter unavailable)"
+                validation_result = "⚠️ Could not validate fix (compiler unavailable)"
 
         # Build response
         lines = [
@@ -683,7 +663,6 @@ async def validate_file(
 
     Optimization: caches results keyed on (path, mtime_ns, size). Re-validating
     an unchanged file returns the cached result in <1ms instead of ~2800ms.
-    Runs local linter as fast-reject before remote compile.
 
     Args:
         file_path: Absolute path to the .ps file to validate
@@ -745,62 +724,13 @@ async def validate_file(
         file_size = len(code.encode("utf-8"))
         line_count = code.count("\n") + 1
 
-        # Fast-reject: run local linter first (catches common errors in ~5ms)
-        try:
-            from pine_linter import lint as _pine_lint
-            lint_result = _pine_lint(code)
-            lint_dict = lint_result.to_dict()
-            lint_errors = lint_dict.get("errors", [])
-            lint_warnings = lint_dict.get("warnings", [])
-
-            # Fast-reject: local linter found errors — skip expensive remote compile
-            if lint_errors:
-                response = f"FILE: {display_name}\n"
-                response += f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
-                response += "=" * 80 + "\n\n"
-
-                total_issues = len(lint_errors) + len(lint_warnings)
-                response += f"COMPILATION ISSUES ({total_issues})\n"
-                response += "Compiler: Local Linter (Tier 1) -- fast-reject\n"
-                response += f"Errors: {len(lint_errors)} | Warnings: {len(lint_warnings)}\n\n"
-
-                for idx, err in enumerate(lint_errors, 1):
-                    line = err.get("line", "?")
-                    col = err.get("column", "?")
-                    text = err.get("text", "Unknown error")
-                    err_type = err.get("type", "error")
-                    response += f"  ERROR {idx} -- Line {line}, Col {col} [{err_type.upper()}]\n"
-                    response += f"    {text}\n"
-                    hint = lookup_fix_hint(text)
-                    if hint:
-                        response += f"    Fix hint: {hint}\n"
-                    response += "\n"
-
-                for idx, warn in enumerate(lint_warnings, 1):
-                    line = warn.get("line", "?")
-                    col = warn.get("column", "?")
-                    text = warn.get("text", "Unknown warning")
-                    response += f"  WARNING {idx} -- Line {line}, Col {col}\n"
-                    response += f"    {text}\n\n"
-
-                # Do NOT cache linter-only failures — remote compiler may find
-                # different/additional errors. Only cache confirmed remote failures.
-                return cap_response(response)
-
-        except Exception as e:
-            logger.warning(f"Local linter failed for {display_name}: {e}")
-            # Continue to remote compile even if linter failed
-
-        # -- Linter passed clean -- proceed to remote compiler --
-        # skip_lint=True avoids running the linter again inside call_pine_facade
-        result = await call_pine_facade(code, skip_lint=True)
+        # Compile via pine-facade
+        result = await call_pine_facade(code)
 
         errors = enrich_error_with_code(result.get("errors", []), code)
         warnings = result.get("warnings", [])
         success = result.get("success", False)
         meta = result.get("meta", {})
-        is_fallback = meta.get("fallback") == "local_linter_tier1"
-        compiler_label = "Local Linter (Tier 1)" if is_fallback else "TradingView pine-facade v6"
 
         # Build response with file info
         response = f"FILE: {display_name}\n"
@@ -809,20 +739,15 @@ async def validate_file(
 
         if success and not errors and not warnings:
             response += "VALID -- PineScript v6 code compiles successfully.\n\n"
-            response += f"Compiler: {compiler_label}\n"
+            response += "Compiler: TradingView pine-facade v6\n"
             response += "Errors: 0 | Warnings: 0\n"
-            if is_fallback and meta.get("note"):
-                response += f"\nNote: {meta['note']}\n"
             set_cached_file_validation(resolved, mtime_ns, fsize, response)
             return cap_response(response)
 
         # Has errors or warnings
         total_issues = len(errors) + len(warnings)
         response += f"{'COMPILATION ISSUES' if errors else 'WARNINGS'} ({total_issues})\n"
-        response += f"Compiler: {compiler_label}\n"
-
-        if is_fallback and meta.get("note"):
-            response += f"Note: {meta['note']}\n"
+        response += "Compiler: TradingView pine-facade v6\n"
 
         response += f"Errors: {len(errors)} | Warnings: {len(warnings)}\n\n"
 

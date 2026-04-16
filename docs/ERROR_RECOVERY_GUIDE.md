@@ -164,28 +164,28 @@ def find_or_ask(file_name: str) -> str:
     return None  # User must provide path
 ```
 
-### Workflow 4: Timeout/Local Linter Fallback
+### Workflow 4: Remote Compiler Unavailable
 
 ```python
 # When you see this in results:
-# "Compiler: Local Linter (Tier 1)"
-# "Note: Remote compiler unreachable (ReadTimeout)"
+# "Remote compiler temporarily unavailable (circuit breaker open)"
+# or HTTP 502/503/504 errors
 
-# This is NORMAL and EXPECTED for:
-# - Large files (>500 lines)
-# - Files with many imports
-# - When TradingView API is slow
+# This can happen when:
+# - TradingView API is under heavy load
+# - Network connectivity issues
+# - Circuit breaker tripped after consecutive failures
 
-# Action: Display results to user
-print("✅ Validation complete (local linter)")
-print("Note: Local linter covers ~50% of common errors")
-print("For full validation, copy to TradingView Pine Editor")
-print("\nResults:")
+# Action: Inform the user and suggest retrying
+print("⚠️ Remote compiler temporarily unavailable")
+print("This is a transient issue — try again in a minute")
+print("For immediate validation, copy code to TradingView Pine Editor")
+print("\nError details:")
 print(result)
 
-# DO NOT retry or treat as error
+# DO NOT retry immediately (circuit breaker prevents thundering herd)
 # DO NOT switch to different tool
-# JUST display the results
+# JUST display the error and suggest retry
 ```
 
 ## Error Patterns & Solutions

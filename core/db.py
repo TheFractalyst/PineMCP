@@ -129,10 +129,40 @@ _COMMON_PARAM_NAMES = frozenset(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _reset_caches() -> None:
+    """Reset name index and query caches after collection reconnects.
+
+    Called when the collection is invalidated (stale UUID, re-index, etc.)
+    so subsequent lookups rebuild from the fresh collection.
+    """
+    global _name_index, _name_index_built
+    _name_index = {}
+    _name_index_built = False
+
+    # Clear L1 query result cache — entries reference the old collection
+    with _QUERY_CACHE_LOCK:
+        _QUERY_RESULT_CACHE.clear()
+
+    # Hot cache entries (core.hot_cache) reference old collection IDs.
+    # They'll still work for reads but should be rebuilt for consistency.
+    # The hot cache has its own _hot_cache_built flag; we flip it here
+    # so the next ensure_hot_cache() call rebuilds it.
+    try:
+        import core.hot_cache as _hc
+        _hc._hot_cache_built = False
+        _hc.HOT_CACHE.clear()
+    except Exception:
+        pass
+
+    logger.info("Caches invalidated after collection reconnect")
+
+
 def get_collection() -> chromadb.Collection:
     """Return the ChromaDB collection, initializing lazily. Circuit-breaker aware.
 
     Thread-safe: uses _db_init_lock to prevent concurrent initialization.
+    Auto-recovers from stale UUID after database re-index: catches NotFoundError
+    on the cached singleton and reconnects with a fresh PersistentClient.
     """
     global _collection
     if _chroma_breaker.is_open():
@@ -141,8 +171,27 @@ def get_collection() -> chromadb.Collection:
         )
     # Fast path: already initialized (no lock needed for read)
     if _collection is not None:
-        _chroma_breaker.record_success()
-        return _collection
+        try:
+            # Health check: verify the cached collection still exists.
+            # A database re-index creates a new collection UUID, so the
+            # cached reference becomes stale and every call returns NotFoundError.
+            # count() is lightweight and hits the HNSW index (already in RAM).
+            _collection.count()
+            _chroma_breaker.record_success()
+            return _collection
+        except Exception as e:
+            err_name = type(e).__name__
+            if "NotFound" in err_name or "not exist" in str(e).lower():
+                logger.warning(
+                    f"Stale ChromaDB collection detected ({err_name}), reconnecting"
+                )
+                _collection = None
+                _reset_caches()
+                # Fall through to re-initialize below
+            else:
+                # Unexpected error — don't retry, let circuit breaker handle it
+                _chroma_breaker.record_failure(e)
+                raise
     # Slow path: initialize under lock to prevent duplicate init
     with _db_init_lock:
         # Double-check after acquiring lock (another thread may have initialized)

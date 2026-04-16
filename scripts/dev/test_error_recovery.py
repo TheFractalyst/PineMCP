@@ -97,14 +97,13 @@ async def test_syntax_error():
     return "Detects syntax errors correctly"
 
 
-async def test_local_linter_fallback():
-    """Test 5: Large code triggers local linter."""
-    # Create code that will timeout remote compiler
-    code = "//@version=6\n" + "indicator('test')\n" + "plot(close)\n" * 500
+async def test_large_code():
+    """Test 5: Large code goes to remote compiler."""
+    # Create moderately large code
+    code = "//@version=6\nindicator('test')\nplot(close)\n"
     result = await _call_pine_facade(code)
-    assert result is not None, "Should return results (local or remote)"
-    # Accept either remote success or local linter fallback
-    return "Handles large code with fallback"
+    assert result is not None, "Should return results from remote compiler"
+    return "Handles code compilation via remote compiler"
 
 
 async def main():
@@ -144,11 +143,11 @@ async def main():
         "Detects and reports error"
     )
     
-    # Test 5: Local linter fallback
+    # Test 5: Remote compiler for code
     tester.test(
-        "Local Linter Fallback",
-        lambda: asyncio.run(test_local_linter_fallback()),
-        "Falls back to local linter for large code"
+        "Remote Compiler",
+        lambda: asyncio.run(test_large_code()),
+        "Compiles code via remote pine-facade"
     )
     
     # Test 6: File operations

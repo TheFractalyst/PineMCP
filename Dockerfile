@@ -62,6 +62,6 @@ EXPOSE 8080
 
 # Health check: verify server process is responding (start-period allows model loading)
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/sse')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
 
 CMD ["python", "server.py"]
