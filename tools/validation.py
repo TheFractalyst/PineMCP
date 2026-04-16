@@ -34,7 +34,7 @@ from formatters.errors import (
     safe_error,
     strip_string_literals,
 )
-from tools.lookup import _lookup_entry
+from tools.lookup import lookup_entry
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL 11: validate_syntax
@@ -246,7 +246,7 @@ async def validate_and_explain(
             extracted_name = extract_name_from_error(text)
             if extracted_name:
                 lines.append(f"  Docs lookup for '{extracted_name}':")
-                doc_result = await _lookup_entry(extracted_name, None)
+                doc_result = await lookup_entry(extracted_name, None)
                 if "not found" not in doc_result[:80].lower():
                     # Show first 5 lines of the doc result
                     doc_lines = doc_result.splitlines()[:5]
