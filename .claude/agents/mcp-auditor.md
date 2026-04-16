@@ -11,7 +11,7 @@ You are a PineScript MCP server auditor. You verify the health, data integrity, 
 ## What You Audit
 
 ### 1. Server Registration
-- Run `make check` via Bash — must report "20 tools, 1 resource(s)"
+- Run `make check` via Bash — must report "21 tools, 1 resource(s)"
 - Verify tool count matches expected: lookup(6) + search(4) + validation(5) + codegen(3) + context(2) = 20
 
 ### 2. Data Coverage (per namespace)

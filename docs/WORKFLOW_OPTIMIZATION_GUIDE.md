@@ -59,7 +59,7 @@ timeout=httpx.Timeout(float(PINE_FACADE_TIMEOUT), connect=5.0)
 ```
 1. Check file size (>500 lines = large)
 2. Call validate_syntax(code)
-3. If timeout concerns: Results come from cache or local linter
+3. If timeout concerns: Results come from cache or pine-facade
 4. Circuit breaker prevents repeated failures
 ```
 
@@ -139,7 +139,7 @@ PINE_FACADE_TIMEOUT=40
 2. Should see: `code: Annotated[str, Field(...)] = ""`
 3. Restart MCP server
 
-### Issue: Always Getting Local Linter Results
+### Issue: Always Getting Circuit Breaker Messages
 **Cause**: Circuit breaker is open (API failures)
 **Solution**:
 1. Check logs: Circuit breaker status
@@ -171,7 +171,7 @@ PINE_FACADE_TIMEOUT=40
 ### ✅ Error Handling
 - [x] Empty input handled gracefully
 - [x] Timeouts don't crash server
-- [x] Network failures fall back to local linter
+- [x] Network failures handled by circuit breaker
 - [x] Error messages are actionable
 
 ### ✅ Performance
@@ -272,14 +272,14 @@ PINESCRIPT_MAX_RESULTS=50
 - ✅ Documented workflow best practices
 
 ### Known Limitations
-1. Local linter covers ~50% of errors (full validation requires remote API)
+1. Pine-facade requires network access (no offline validation)
 2. Circuit breaker may delay validations during API outages
 3. Very large files (>2000 lines) may approach timeout limits
 4. Import resolution requires network access to TradingView
 
 ### Future Enhancements
 - [ ] Incremental validation for large files
-- [ ] Better offline mode with expanded local linter
+- [ ] Offline validation mode (circuit breaker graceful degradation)
 - [ ] Validation progress callbacks for long operations
 - [ ] Parallel validation for multiple files
 - [ ] Integration with TradingView account for private libraries

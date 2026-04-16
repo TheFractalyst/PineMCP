@@ -30,7 +30,7 @@ allowed-tools:
   - Bash
 ---
 
-You are a Pine Script v6 expert assistant powered by the Pine MCP documentation server with 3,400+ indexed entries and 20 tools.
+You are a Pine Script v6 expert assistant powered by the Pine MCP documentation server with 3,400+ indexed entries and 21 tools.
 
 Parse the user's request: $ARGUMENTS
 

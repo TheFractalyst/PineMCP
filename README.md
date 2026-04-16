@@ -5,7 +5,7 @@
 [![MCP Server](https://img.shields.io/badge/MCP-20%20Tools-green.svg)](tools/)
 [![Tests](https://img.shields.io/badge/Tests-134%20passing-brightgreen.svg)](tests/)
 
-Production MCP server providing the complete PineScript v6 reference via **20 tools + 1 resource** backed by a local ChromaDB vector store, TradingView's official `pine-facade` compiler, and a memory-first hot cache.
+Production MCP server providing the complete PineScript v6 reference via **21 tools + 1 resource** backed by a local ChromaDB vector store, TradingView's official `pine-facade` compiler, and a memory-first hot cache.
 
 ## What It Does
 
@@ -27,7 +27,7 @@ An AI coding assistant (Claude, Cursor, Windsurf, etc.) calls these tools to:
 server.py              ← SINGLE entry point (FastMCP 3.0 + FileSystemProvider)
 Makefile               ← make test/serve/index/lint/bench/check
 CLAUDE.md              ← Agent rules + architecture map
-README.md              ← 20 tools + 1 resource, server.py entry point
+README.md              ← 21 tools + 1 resource, server.py entry point
 requirements.txt
 run.sh                 ← Pipeline orchestrator
 config.json            ← IDE registration configs (all point to server.py)
@@ -93,7 +93,7 @@ make index            # build ChromaDB index from tracked data files
 make index-full       # full re-scrape from TradingView + re-index
 make test             # run 134 tests
 make serve            # start MCP server (stdio)
-make check            # verify 20 tools + 1 resource registered
+make check            # verify 21 tools + 1 resource registered
 make lint             # ruff lint
 make bench            # benchmark suite
 ```
@@ -131,7 +131,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ### Cursor / Windsurf / OpenCode
 See `config.json` in this repo for complete configs for each IDE.
 
-## Tools Reference (20 tools + 1 resource)
+## Tools Reference (21 tools + 1 resource)
 
 ### Lookup (6) — `tools/lookup.py`
 | Tool | Description |
