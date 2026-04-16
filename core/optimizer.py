@@ -1468,7 +1468,8 @@ def _detect_drawing_past_max_bars(code: str, lines: list[str]) -> list[Optimizat
 def _detect_long_if_else_chain(code: str, lines: list[str]) -> list[OptimizationResult]:
     """OPT-060: Long if/else if chain replaceable with switch."""
     results: list[OptimizationResult] = []
-    # Count consecutive else-if blocks comparing the same variable against literals
+    # Count consecutive else-if blocks comparing the same variable against literals.
+    # Indented body lines between comparisons are skipped — they don't break the chain.
     chain_var = ""
     chain_count = 0
     chain_start = 0
@@ -1476,6 +1477,9 @@ def _detect_long_if_else_chain(code: str, lines: list[str]) -> list[Optimization
     comparison_pattern = re.compile(r"else\s+if\s+(\w+)\s*==\s*(?:\d+|\"[^\"]*\"|'[^']*'|true|false)")
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
+        # Skip indented body lines inside chain blocks — they don't break the chain
+        if chain_count > 0 and not _is_global_scope(line) and not stripped.startswith("else"):
+            continue
         # Check for initial `if` that starts a chain
         init_m = init_pattern.match(stripped)
         m = comparison_pattern.match(stripped)
@@ -1500,6 +1504,9 @@ def _detect_long_if_else_chain(code: str, lines: list[str]) -> list[Optimization
         elif stripped.startswith("else if") or stripped.startswith("elif"):
             # Non-comparison else-if, count toward chain
             chain_count += 1
+        elif stripped.startswith("else") and chain_count > 0:
+            # Terminal else block — skip its body lines, then the chain is complete
+            pass
         elif chain_count >= 5:
             break  # Already enough to report
         else:
