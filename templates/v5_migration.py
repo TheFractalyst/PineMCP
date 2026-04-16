@@ -43,6 +43,13 @@ V5_TO_V6: dict[str, str] = {
     r'(?<!\.)\bdmi\s*\(':          'ta.dmi(',
     r'(?<!\.)\bstdev\s*\(':        'ta.stdev(',
     r'(?<!\.)\bvariance\s*\(':     'ta.variance(',
+    r'(?<!\.)\brising\s*\(':       'ta.rising(',
+    r'(?<!\.)\bfalling\s*\(':      'ta.falling(',
+    r'(?<!\.)\balma\s*\(':         'ta.alma(',
+    r'(?<!\.)\bkama\s*\(':         'ta.kama(',
+    r'(?<!\.)\bswma\s*\(':         'ta.swma(',
+    r'(?<!\.)\bpercentile_nearest_rank\s*\(':  'ta.percentile_nearest_rank(',
+    r'(?<!\.)\bpercentile_linear_interpolation\s*\(': 'ta.percentile_linear_interpolation(',
     # request.* functions
     r'(?<!\.)\bsecurity\s*\(':     'request.security(',
     # math.* functions
@@ -56,6 +63,14 @@ V5_TO_V6: dict[str, str] = {
     r'(?<!\.)\bexp\s*\(':          'math.exp(',
     r'(?<!\.)\bsin\s*\(':          'math.sin(',
     r'(?<!\.)\bcos\s*\(':          'math.cos(',
+    r'(?<!\.)\btan\s*\(':          'math.tan(',
+    r'(?<!\.)\basin\s*\(':         'math.asin(',
+    r'(?<!\.)\bacos\s*\(':         'math.acos(',
+    r'(?<!\.)\batan\s*\(':         'math.atan(',
+    r'(?<!\.)\bsign\s*\(':         'math.sign(',
+    r'(?<!\.)\bmin\s*\(':          'math.min(',
+    r'(?<!\.)\bmax\s*\(':          'math.max(',
+    r'(?<!\.)\bavg\s*\(':          'math.avg(',
     # str.* functions
     r'(?<!\.)\btostring\s*\(':     'str.tostring(',
     r'(?<!\.)\btonumber\s*\(':     'str.tonumber(',

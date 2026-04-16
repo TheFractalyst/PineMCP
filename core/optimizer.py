@@ -167,13 +167,24 @@ def _detect_repeated_calls(code: str, lines: list[str]) -> list[OptimizationResu
     """OPT-002: Repeating identical function calls across multiple lines."""
     results: list[OptimizationResult] = []
     call_counts: dict[str, list[int]] = {}
-    call_pattern = re.compile(r"([\w.]+)\s*\(([^)]*)\)")
+    call_start = re.compile(r"([\w.]+)\s*\(")
     for i, line in enumerate(lines):
         stripped = _strip_comments(line).strip()
         if not stripped:
             continue
-        for m in call_pattern.finditer(stripped):
-            key = f"{m.group(1)}({m.group(2).strip()})"
+        for m in call_start.finditer(stripped):
+            fn_name = m.group(1)
+            pos = m.end()  # position after opening '('
+            depth = 1
+            end = pos
+            while end < len(stripped) and depth > 0:
+                if stripped[end] == '(':
+                    depth += 1
+                elif stripped[end] == ')':
+                    depth -= 1
+                end += 1
+            args = stripped[pos:end - 1].strip() if depth == 0 else stripped[pos:]
+            key = f"{fn_name}({args})"
             if len(key) > 200:
                 continue  # Skip very long expressions
             call_counts.setdefault(key, []).append(i + 1)
@@ -2699,7 +2710,7 @@ _RULES: list[_Rule] = [
           _detect_request_no_tf_validation, "PineScript request.security timeframe.in_seconds validation higher timeframe"),
 
     # --- PineCoders v6 Published Script Patterns (OPT-084, OPT-085) ---
-    _Rule("OPT-084", "Input-dependent function result recalculated every bar", "low", "Code quality",
+    _Rule("OPT-084", "Input-dependent function result recalculated every bar", "medium", "Code quality",
           _detect_input_only_calculation, "PineScript var keyword input-dependent static value evaluate once optimization"),
 
     _Rule("OPT-085", "table.cell() content updates on every bar (use islast)", "medium", "Drawing waste",

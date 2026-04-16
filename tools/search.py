@@ -8,6 +8,7 @@ SEARCH tools (4): search_docs, get_examples, search_by_return_type,
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Optional
 
 import xxhash
@@ -37,18 +38,11 @@ from formatters.errors import (
 )
 
 
-def _is_function_like(meta: dict) -> bool:
-    """Check if an entry has function characteristics regardless of stored category."""
-    return is_function_like(meta)
-
-
 def _return_type_matches(query_type: str, field_type: str) -> bool:
     """Check if a query return type matches a field return type.
 
     Uses word-boundary-aware matching to avoid 'int' matching 'point'.
     """
-    import re
-
     ft = field_type.lower()
     # Exact match
     if query_type == ft:
@@ -226,7 +220,7 @@ async def search_docs(
                     if (
                         rid not in existing_ids
                         and meta.get("category") != "function"
-                        and _is_function_like(meta)
+                        and is_function_like(meta)
                     ):
                         # Override category so display shows FUNCTION, not VARIABLE
                         meta = {**meta, "category": "function"}
