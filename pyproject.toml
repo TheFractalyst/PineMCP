@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pinescript-mcp"
-version = "1.0.0"
-description = "PineScript v6 MCP server — 20 tools for docs lookup, code validation, and code generation"
+version = "4.0.0"
+description = "PineScript v6 MCP server — 21 tools for docs lookup, code validation, and code generation"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "TheFractalyst" }]

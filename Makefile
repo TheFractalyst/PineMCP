@@ -3,7 +3,7 @@
 serve:           ## Start MCP server (stdio transport)
 	.venv/bin/python server.py
 
-test:            ## Run full test suite (134 tests)
+test:            ## Run full test suite
 	.venv/bin/python -m pytest tests/ -q
 
 bench:           ## Run benchmark suite
@@ -21,7 +21,7 @@ lint:            ## Lint source packages
 install:         ## Setup venv + install all dependencies
 	python3 -m venv .venv && .venv/bin/pip install -e ".[dev,pipeline]"
 
-check:           ## Verify server: 20 tools + 1 resource
+check:           ## Verify server: 21 tools + 1 resource
 	@.venv/bin/python -c "from server import mcp; import asyncio; t=asyncio.run(mcp.list_tools()); r=asyncio.run(mcp.list_resources()); print(f'{len(t)} tools, {len(r)} resource(s)')"
 
 help:            ## Show this help
