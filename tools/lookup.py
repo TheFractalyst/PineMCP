@@ -39,10 +39,6 @@ from formatters.errors import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _is_function_like(meta: dict) -> bool:
-    """Check if an entry has function characteristics regardless of stored category."""
-    return is_function_like(meta)
-
 
 def _pick_best_version(result: dict) -> tuple:
     """From multiple DB entries with the same name, pick the best version.
@@ -56,7 +52,7 @@ def _pick_best_version(result: dict) -> tuple:
 
     # First pass: look for function-like entries (syntax with parens or params)
     for meta, doc in candidates:
-        if _is_function_like(meta):
+        if is_function_like(meta):
             meta = {**meta, "category": "function"}
             return meta, doc
 
@@ -75,7 +71,7 @@ def _pick_best_version(result: dict) -> tuple:
     return None, None
 
 
-async def _lookup_entry(name: str, category: str) -> str:
+async def lookup_entry(name: str, category: str) -> str:
     """Lookup an entry by name and category. Returns formatted string or error."""
     try:
         await ensure_hot_cache()
@@ -203,7 +199,7 @@ async def _lookup_entry(name: str, category: str) -> str:
     except ToolError:
         raise
     except Exception as e:
-        logger.error(f"[_lookup_entry] {e}")
+        logger.error(f"[lookup_entry] {e}")
         if _db._chroma_breaker.is_open():
             return circuit_breaker_msg()
         raise ToolError(safe_error(e, category or "lookup"))
@@ -279,7 +275,7 @@ async def get_function(
             logger.debug(f"Exact name match failed: {e}")
 
         # Step 3: Fall back to the general lookup
-        return await _lookup_entry(name, "function")
+        return await lookup_entry(name, "function")
 
     except ToolError:
         raise
@@ -321,7 +317,7 @@ async def get_variable(
     Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
-        return await _lookup_entry(norm_name(name), "variable")
+        return await lookup_entry(norm_name(name), "variable")
     except ToolError:
         raise
     except Exception as e:
@@ -508,7 +504,7 @@ async def get_constant(
     Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
-        return await _lookup_entry(norm_name(name), "constant")
+        return await lookup_entry(norm_name(name), "constant")
     except ToolError:
         raise
     except Exception as e:
@@ -549,7 +545,7 @@ async def get_keyword(
     Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
-        return await _lookup_entry(norm_name(name), "keyword")
+        return await lookup_entry(norm_name(name), "keyword")
     except ToolError:
         raise
     except Exception as e:
@@ -590,7 +586,7 @@ async def get_operator(
     Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
-        return await _lookup_entry(norm_name(name), "operator")
+        return await lookup_entry(norm_name(name), "operator")
     except ToolError:
         raise
     except Exception as e:
