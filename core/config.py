@@ -9,6 +9,16 @@ from __future__ import annotations
 
 import os
 
+
+def _safe_int(env_var: str, default: int, min_val: int = 0) -> int:
+    """Parse env var as int, returning default on invalid or negative values."""
+    try:
+        val = int(os.getenv(env_var, str(default)))
+        return val if val >= min_val else default
+    except (ValueError, TypeError):
+        return default
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Runtime configuration (env-var overridable)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -19,14 +29,14 @@ DB_PATH = os.getenv(
 )
 COLLECTION = os.getenv("PINESCRIPT_COLLECTION", "pinescript_v6")
 EMBED_MODEL = os.getenv("PINESCRIPT_EMBED_MODEL", "all-MiniLM-L6-v2")
-MAX_RESULTS = int(os.getenv("PINESCRIPT_MAX_RESULTS", "100"))
+MAX_RESULTS = _safe_int("PINESCRIPT_MAX_RESULTS", 100)
 PINE_FACADE_URL = os.getenv(
     "PINE_FACADE_URL",
     "https://pine-facade.tradingview.com/pine-facade/translate_light?user_name=admin&v=3",
 )
-PINE_FACADE_TIMEOUT = int(os.getenv("PINE_FACADE_TIMEOUT", "20"))
-VALIDATION_CACHE_TTL = int(os.getenv("VALIDATION_CACHE_TTL", "300"))
-VALIDATION_CACHE_MAX_SIZE = int(os.getenv("VALIDATION_CACHE_SIZE", "500"))
+PINE_FACADE_TIMEOUT = _safe_int("PINE_FACADE_TIMEOUT", 20)
+VALIDATION_CACHE_TTL = _safe_int("VALIDATION_CACHE_TTL", 300)
+VALIDATION_CACHE_MAX_SIZE = _safe_int("VALIDATION_CACHE_SIZE", 500)
 MAX_TOOL_RESPONSE_CHARS = 80000
 MAX_FUZZY_SCAN_ENTRIES = 5000
 
@@ -54,7 +64,7 @@ platform. Version 6 (v6) is the current production release and introduces
 UDTs (user-defined types), methods, enums, polylines, and improved performance.
 
 This server provides complete local PineScript v6 reference documentation
-via a ChromaDB vector store with 3,400+ entries covering all functions,
+via a ChromaDB vector store with 7,400+ entries covering all functions,
 variables, types, constants, keywords, operators, and user guides.
 
 MANDATORY USAGE PATTERN (NON-NEGOTIABLE)
@@ -100,19 +110,26 @@ VALIDATION TOOLS (use after every edit):
   validate_syntax(code)            Compile check via TradingView's pine-facade
   validate_and_explain(code)       Compile + cross-reference errors against docs
   validate_file(file_path)         Validate by file path (for large files)
-  fix_and_validate(code, error)    Auto-fix known issues and validate
+  fix_and_validate(code, error)    Auto-fix when you have a specific compiler error.
+                                   Applies targeted v6 namespace + syntax fixes.
   debug_pine_facade(code)          Raw compiler response for debugging
 
 CODEGEN TOOLS (use for scaffolding):
   generate_indicator(name, ...)    Scaffold a validated indicator
   generate_strategy(name, ...)     Scaffold a validated strategy
-  lookup_and_correct(code, desc)   Validate + correct code with doc lookup
+  lookup_and_correct(code, desc)   Validate + v5→v6 migration when you know what
+                                   the code should do but don't have an error msg.
 
 OPTIMIZATION TOOLS (use for performance analysis):
-  optimize_code(code)             Detect 28 anti-patterns: request.*() waste, drawing
-                                   inefficiency, loop waste, memory/buffer issues, correctness
-                                   traps, and resource limit violations. Returns line-by-line
-                                   findings with severity ratings and fix suggestions.
+  optimize_code(code)             Detect 87 static-analysis rules (OPT-001 to OPT-090)
+                                   covering all Pine Profiler optimization techniques:
+                                   built-in usage, repetition reduction, request consolidation,
+                                   drawing lifecycle, value storage, loop elimination,
+                                   buffer management, platform limits, repainting prevention,
+                                   visible chart optimization, varip lifecycle, dynamic-length
+                                   buffers, string optimization, xloc correctness, and code quality.
+                                   Returns severity-rated findings with
+                                   fix suggestions and doc lookup queries.
 
 This tool is OPT-IN ONLY. It does NOT run automatically on validation or codegen calls.
 Call it explicitly when you want to check PineScript code for performance issues.

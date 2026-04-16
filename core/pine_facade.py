@@ -5,7 +5,7 @@ core/pine_facade.py
 Pine-facade compiler integration.
 - PineFacadeCircuitBreaker with exponential backoff + jitter
 - Shared httpx.AsyncClient (keep-alive, connection pooling)
-- Dual-tier validation: local linter → remote pine-facade
+- Remote pine-facade compilation (TradingView's official compiler)
 - Response normalization + placeholder resolution
 """
 
@@ -18,10 +18,7 @@ import random
 import re
 import threading
 import time
-from typing import TYPE_CHECKING, Optional
-
-if TYPE_CHECKING:
-    from pine_linter import LintResult
+from typing import Optional
 
 import httpx
 from loguru import logger
@@ -99,6 +96,7 @@ class PineFacadeCircuitBreaker:
     def stats(self) -> dict:
         return {
             "circuit_open": self.is_open(),
+            "open_until": self.open_until,
             "network_failures": self.network_failures,
             "total_calls": self.total_calls,
             "total_network_errors": self.total_network_errors,
@@ -218,18 +216,22 @@ def normalize_facade_response(raw: dict) -> dict:
                 placeholder = f"{{{key}}}"
                 if placeholder in text:
                     text = text.replace(placeholder, str(val))
+        start = e.get("start") or {}
         return {
             "line": e.get("line")
             or e.get("lineNumber")
-            or e.get("start", {}).get("line", 0),
+            or (start.get("line", 0) if isinstance(start, dict) else 0),
             "column": e.get("column")
             or e.get("col")
-            or e.get("start", {}).get("column", 0),
+            or (start.get("column", 0) if isinstance(start, dict) else 0),
             "text": text,
             "type": e.get("type") or "error",
         }
 
-    all_normalized = [normalize_error(e) for e in raw_errors if isinstance(e, dict)]
+    all_normalized = [
+        normalize_error(e) if isinstance(e, dict) else {"line": 0, "column": 0, "text": str(e), "type": "error"}
+        for e in raw_errors
+    ]
     # Separate errors from warnings — warnings must NOT appear in errors list
     errors = [e for e in all_normalized if e.get("type") != "warning"]
     warnings = [e for e in all_normalized if e.get("type") == "warning"]
@@ -303,16 +305,14 @@ def enrich_error_with_code(errors: list[dict], code: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
+async def call_pine_facade(code: str) -> dict:
     """POST code to pine-facade compiler. Returns normalized response dict.
 
-    Checks content-hash cache FIRST (avoids linter + network on repeat calls).
-    Then runs local Tier 1 linter, then attempts remote compile.
-    If remote fails, returns local linter results as fallback.
+    Checks content-hash cache FIRST (avoids network on repeat calls).
+    Then compiles via TradingView's remote pine-facade compiler.
 
     Args:
         code: PineScript source code to validate.
-        skip_lint: If True, skip local linter (caller already ran it).
 
     Returns:
         {
@@ -324,7 +324,6 @@ async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
         }
     """
     from formatters.errors import sanitize_text
-    from pine_linter import lint as _pine_lint
 
     # Guard: reject empty/whitespace-only code before any work
     if not code or not code.strip():
@@ -336,28 +335,33 @@ async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
             "raw_response": {},
         }
 
-    # Fast path: check content-hash cache BEFORE running linter or network call.
-    cached = get_cached_validation(code)
+    # Fast path: check content-hash cache BEFORE network call.
+    # Use sanitized code as cache key to match store key (avoids mismatch from whitespace/control chars)
+    code_key = sanitize_text(code)
+    cached = get_cached_validation(code_key)
     if cached:
         return cached
 
-    # Tier 1: Run local linter (instant, always available)
-    local_result = _pine_lint(code) if not skip_lint else None
-
-    # Lazy linter: ensures local_result is populated when needed for fallback paths.
-    def _ensure_lint() -> LintResult:
-        nonlocal local_result
-        if local_result is None:
-            local_result = _pine_lint(code)
-        return local_result
-
     if pine_cb.is_open():
-        # Remote unavailable — return local linter results as fallback
-        logger.info("Circuit breaker open, returning local linter results")
-        lint_dict = _ensure_lint().to_dict()
-        lint_dict["meta"]["fallback"] = "local_linter_tier1"
-        lint_dict["meta"]["note"] = "Remote compiler unavailable. Local linter catches ~50% of errors."
-        return lint_dict
+        # Remote unavailable — return error with circuit breaker info
+        logger.info("Circuit breaker open, remote compiler unavailable")
+        return {
+            "success": False,
+            "errors": [
+                {
+                    "line": 0,
+                    "column": 0,
+                    "text": (
+                        "Remote compiler temporarily unavailable (circuit breaker open). "
+                        "The service will retry automatically."
+                    ),
+                    "type": "error",
+                }
+            ],
+            "warnings": [],
+            "meta": {"fallback": "circuit_breaker_open"},
+            "raw_response": {},
+        }
 
     code = sanitize_text(code)
 
@@ -374,32 +378,46 @@ async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
                 f"body: {resp.text[:200]}"
             )
             pine_cb.record_network_failure()
-            lint_dict = _ensure_lint().to_dict()
-            lint_dict["meta"]["fallback"] = "local_linter_tier1"
-            lint_dict["meta"]["note"] = (
-                "Remote compiler returned HTTP 403 (access denied). "
-                "Showing local linter results — catches ~50% of common errors. "
-                "Validate in TradingView's Pine Editor for full compilation."
-            )
-            lint_dict["raw_response"] = {
-                "http_status": resp.status_code,
-                "body": resp.text[:200],
+            return {
+                "success": False,
+                "errors": [
+                    {
+                        "line": 0,
+                        "column": 0,
+                        "text": (
+                            "Remote compiler returned HTTP 403 (access denied). "
+                            "Validate in TradingView's Pine Editor for full compilation."
+                        ),
+                        "type": "http",
+                    }
+                ],
+                "warnings": [],
+                "meta": {},
+                "raw_response": {
+                    "http_status": resp.status_code,
+                    "body": resp.text[:200],
+                },
             }
-            return lint_dict
 
         if resp.status_code in (502, 503, 504):
             pine_cb.record_network_failure()
-            lint_dict = _ensure_lint().to_dict()
-            lint_dict["meta"]["fallback"] = "local_linter_tier1"
-            lint_dict["meta"]["note"] = (
-                f"Remote compiler returned HTTP {resp.status_code} (service unavailable). "
-                "Showing local linter results."
-            )
-            lint_dict["raw_response"] = {
-                "http_status": resp.status_code,
-                "body": resp.text[:200],
+            return {
+                "success": False,
+                "errors": [
+                    {
+                        "line": 0,
+                        "column": 0,
+                        "text": f"Remote compiler returned HTTP {resp.status_code} (service unavailable). Try again shortly.",
+                        "type": "http",
+                    }
+                ],
+                "warnings": [],
+                "meta": {},
+                "raw_response": {
+                    "http_status": resp.status_code,
+                    "body": resp.text[:200],
+                },
             }
-            return lint_dict
 
         if resp.status_code != 200:
             if resp.status_code in (400, 429):
@@ -473,21 +491,33 @@ async def call_pine_facade(code: str, *, skip_lint: bool = False) -> dict:
     ) as e:
         pine_cb.record_network_failure()
         logger.error(f"[call_pine_facade] network error: {e}")
-        lint_dict = _ensure_lint().to_dict()
-        lint_dict["meta"]["fallback"] = "local_linter_tier1"
-        lint_dict["meta"]["note"] = (
-            f"Remote compiler unreachable ({type(e).__name__}). "
-            "Showing local linter results — catches ~50% of common errors."
-        )
-        lint_dict["raw_response"] = {"exception": str(e)}
-        return lint_dict
+        return {
+            "success": False,
+            "errors": [
+                {
+                    "line": 0,
+                    "column": 0,
+                    "text": f"Remote compiler unreachable ({type(e).__name__}). Check your network connection.",
+                    "type": "http",
+                }
+            ],
+            "warnings": [],
+            "meta": {},
+            "raw_response": {"exception": str(e)},
+        }
     except Exception as e:
         logger.error(f"[call_pine_facade] unexpected: {e}")
-        lint_dict = _ensure_lint().to_dict()
-        lint_dict["meta"]["fallback"] = "local_linter_tier1"
-        lint_dict["meta"]["note"] = (
-            f"Remote compiler error ({type(e).__name__}). "
-            "Showing local linter results."
-        )
-        lint_dict["raw_response"] = {"exception": str(e)}
-        return lint_dict
+        return {
+            "success": False,
+            "errors": [
+                {
+                    "line": 0,
+                    "column": 0,
+                    "text": f"Remote compiler error ({type(e).__name__}): {e}",
+                    "type": "error",
+                }
+            ],
+            "warnings": [],
+            "meta": {},
+            "raw_response": {"exception": str(e)},
+        }

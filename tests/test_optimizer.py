@@ -11,6 +11,63 @@ os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.optimizer import OptimizationResult, analyze_code, format_results  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helper utility tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestStripComments:
+    """String-aware comment stripping."""
+
+    def test_strips_line_comment(self):
+        from core.optimizer import _strip_comments
+        assert "comment" not in _strip_comments('x = 1 // comment')
+
+    def test_preserves_url_in_string(self):
+        from core.optimizer import _strip_comments
+        result = _strip_comments('url = "https://binance.com"')
+        assert "binance.com" in result
+
+    def test_preserves_double_slash_in_string(self):
+        from core.optimizer import _strip_comments
+        result = _strip_comments('s = "a // b"')
+        assert "a // b" in result
+
+    def test_strips_comment_after_code(self):
+        from core.optimizer import _strip_comments
+        result = _strip_comments('x = "hello" // comment')
+        assert "hello" in result
+        assert "comment" not in result
+
+    def test_no_comment_returns_unchanged(self):
+        from core.optimizer import _strip_comments
+        assert _strip_comments('x = 42') == 'x = 42'
+
+    def test_escaped_quote_in_string(self):
+        from core.optimizer import _strip_comments
+        result = _strip_comments('s = "say \\"hello\\"" // end')
+        assert 'say' in result
+        assert "end" not in result
+
+
+class TestCodeHasKeyword:
+    """Keyword presence check ignoring comments."""
+
+    def test_finds_keyword_in_code(self):
+        from core.optimizer import _code_has_keyword
+        code = 'if barstate.islast\n    plot(close)'
+        assert _code_has_keyword(code, "barstate.islast") is True
+
+    def test_ignores_keyword_in_comment(self):
+        from core.optimizer import _code_has_keyword
+        code = '// barstate.islast\nplot(close)'
+        assert _code_has_keyword(code, "barstate.islast") is False
+
+    def test_finds_keyword_mixed(self):
+        from core.optimizer import _code_has_keyword
+        code = '// barstate.islast\nif barstate.islast\n    plot(close)'
+        assert _code_has_keyword(code, "barstate.islast") is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Anti-pattern detection tests
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -129,9 +186,10 @@ class TestOPT015RequestLimit:
     """OPT-015: Approaching request.*() call limit."""
 
     def test_detects_many_request_calls(self):
+        tfs = ["1", "5", "15", "30", "60", "120", "240", "D", "W", "M"] * 4
         calls = "\n".join(
-            f'float r{i} = request.security(syminfo.tickerid, "{tf}", close)'
-            for i, tf in enumerate(["1D"] * 40)
+            f'float r{i} = request.security(syminfo.tickerid, "{tfs[i % len(tfs)]}", close)'
+            for i in range(40)
         )
         code = f"//@version=6\nindicator('test')\n{calls}\nplot(close)"
         results = analyze_code(code)
@@ -1325,7 +1383,7 @@ class TestOPT056MapSizeLimit:
         code = (
             '//@version=6\nindicator("test")\n'
             'm = map.new<string, float>()\n'
-            'for i = 0 to 100\n'
+            'for i = 0 to 5000\n'
             '    map.put(m, str.tostring(i), close[i])\n'
             'plot(close)'
         )
@@ -1343,6 +1401,80 @@ class TestOPT056MapSizeLimit:
         results = analyze_code(code)
         opt056 = [r for r in results if r.rule_id == "OPT-056"]
         assert len(opt056) == 0
+
+
+class TestOPT010DeepOffset:
+    """OPT-010: Deep history offsets starting with non-4 digits."""
+
+    def test_detects_offset_3000(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'if barstate.islast\n    float past = myVar[3000]\nplot(past)'
+        )
+        results = analyze_code(code)
+        opt010 = [r for r in results if r.rule_id == "OPT-010"]
+        assert len(opt010) >= 1
+
+    def test_detects_offset_500(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'if barstate.islast\n    float past = myVar[500]\nplot(past)'
+        )
+        results = analyze_code(code)
+        opt010 = [r for r in results if r.rule_id == "OPT-010"]
+        assert len(opt010) >= 1
+
+
+class TestOPT014CommentSuppress:
+    """OPT-014: Commented-out plots should not count."""
+
+    def test_no_false_positive_commented_plots(self):
+        comment_plots = "\n".join(f'// plot(close, "p{i}")' for i in range(50))
+        code = f'//@version=6\nindicator("test")\n{comment_plots}\nplot(close)'
+        results = analyze_code(code)
+        opt014 = [r for r in results if r.rule_id == "OPT-014"]
+        assert len(opt014) == 0
+
+
+class TestOPT015UniqueCheck:
+    """OPT-015: Should check total count approaching limit."""
+
+    def test_no_false_positive_few_requests(self):
+        calls = "\n".join(
+            f'float r{i} = request.security(syminfo.tickerid, "1D", close)'
+            for i in range(30)
+        )
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt015 = [r for r in results if r.rule_id == "OPT-015"]
+        assert len(opt015) == 0  # 30 calls — not approaching limit
+
+    def test_detects_many_unique_requests(self):
+        timeframes = ["1D", "4H", "1H", "15", "5", "1", "1D", "4H", "1H",
+                      "15", "5", "1", "1D", "4H", "1H", "15", "5", "1",
+                      "D", "W", "M", "60", "120", "240", "30", "10", "3",
+                      "2", "1D", "4H", "1H", "15", "5", "1", "D", "W", "M"]
+        calls = "\n".join(
+            f'float r{i} = request.security(syminfo.tickerid, "{tf}", close)'
+            for i, tf in enumerate(timeframes)
+        )
+        code = f'//@version=6\nindicator("test")\n{calls}\nplot(close)'
+        results = analyze_code(code)
+        opt015 = [r for r in results if r.rule_id == "OPT-015"]
+        assert len(opt015) >= 1
+
+
+class TestOPT046CommentSuppress:
+    """OPT-046: Commented calc_on_every_tick should not trigger."""
+
+    def test_no_false_positive_commented(self):
+        code = (
+            '//@version=6\nstrategy("test", overlay=true)\n'
+            '// calc_on_every_tick=true\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt046 = [r for r in results if r.rule_id == "OPT-046"]
+        assert len(opt046) == 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1437,3 +1569,278 @@ class TestBrandingMiddleware:
                 os.environ.pop("BRANDING", None)
             else:
                 os.environ["BRANDING"] = original
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Negative tests for OPT-009 and OPT-029
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestOPT009Neg:
+    """OPT-009 negative: array.min/max OUTSIDE loop."""
+
+    def test_no_false_positive_outside_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\narr = array.new<float>()\n'
+            'm = array.min(arr)\nfor item in arr\n    result := item * m\nplot(result)'
+        )
+        results = analyze_code(code)
+        opt009 = [r for r in results if r.rule_id == "OPT-009"]
+        assert len(opt009) == 0
+
+
+class TestOPT029Neg:
+    """OPT-029 negative: isrealtime update NOT feeding into plot."""
+
+    def test_no_false_positive_no_plot(self):
+        code = (
+            '//@version=6\nstrategy("test")\n'
+            'varip float x = na\nif barstate.isrealtime\n    x := close\n'
+            'if x > 0\n    strategy.entry("Long", strategy.long)'
+        )
+        results = analyze_code(code)
+        opt029 = [r for r in results if r.rule_id == "OPT-029"]
+        assert len(opt029) == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# New rules (OPT-057 through OPT-059)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestOPT057RequestInLoop:
+    """OPT-057: request.*() inside loop with variable args."""
+
+    def test_detects_request_with_loop_var(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'syms = array.new<string>()\n'
+            'for sym in syms\n'
+            '    float val = request.security(sym, "1D", close)\n'
+            'plot(val)'
+        )
+        results = analyze_code(code)
+        opt057 = [r for r in results if r.rule_id == "OPT-057"]
+        assert len(opt057) >= 1
+
+    def test_no_false_positive_static_request(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'for i = 0 to 10\n'
+            '    val := val + i\n'
+            'float r = request.security(syminfo.tickerid, "1D", close)\n'
+            'plot(r)'
+        )
+        results = analyze_code(code)
+        opt057 = [r for r in results if r.rule_id == "OPT-057"]
+        assert len(opt057) == 0
+
+
+class TestOPT058FootprintLimit:
+    """OPT-058: request.footprint() called more than once."""
+
+    def test_detects_two_footprint_calls(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'f1 = request.footprint("AAPL")\n'
+            'f2 = request.footprint("MSFT")\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt058 = [r for r in results if r.rule_id == "OPT-058"]
+        assert len(opt058) >= 1
+
+    def test_no_false_positive_single_footprint(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'f1 = request.footprint("AAPL")\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt058 = [r for r in results if r.rule_id == "OPT-058"]
+        assert len(opt058) == 0
+
+
+class TestOPT059DrawingPastMaxBars:
+    """OPT-059: Drawing x-coordinate >10,000 bars back."""
+
+    def test_detects_bar_index_minus_15000(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'line.new(bar_index - 15000, close, bar_index, close)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt059 = [r for r in results if r.rule_id == "OPT-059"]
+        assert len(opt059) >= 1
+
+    def test_no_false_positive_normal_offset(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'line.new(bar_index - 100, close, bar_index, close)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt059 = [r for r in results if r.rule_id == "OPT-059"]
+        assert len(opt059) == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Unit 3 edge-case tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestOPT013NaFalsePositive:
+    """OPT-013: na in variable names like 'omega', 'alpha' should not trigger."""
+
+    def test_no_false_positive_omega_alpha(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'omega = close / open\n'
+            'alpha = 0.5\n'
+            'label.new(bar_index, high, text="Buy")\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt013 = [r for r in results if r.rule_id == "OPT-013"]
+        assert len(opt013) == 0
+
+
+class TestOPT006LoopVariable:
+    """OPT-006: Should detect loop var correctly (not hardcoded 'i')."""
+
+    def test_detects_invariant_with_custom_loop_var(self):
+        code = """\
+//@version=6
+indicator("test")
+for idx = 0 to 100
+    val := math.cos(1.5) * idx
+plot(val)
+"""
+        results = analyze_code(code)
+        opt006 = [r for r in results if r.rule_id == "OPT-006"]
+        assert len(opt006) >= 1
+
+    def test_no_false_positive_loop_var_used(self):
+        code = """\
+//@version=6
+indicator("test")
+for j = 0 to 100
+    val := math.cos(j * 0.1)
+plot(val)
+"""
+        results = analyze_code(code)
+        opt006 = [r for r in results if r.rule_id == "OPT-006"]
+        assert len(opt006) == 0
+
+
+class TestOPT022LabelForward:
+    """OPT-022: Should also catch label.new with large forward bars."""
+
+    def test_detects_label_with_large_forward(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'label.new(bar_index, high, text="x", xloc=bar_index + 600)\nplot(close)'
+        )
+        results = analyze_code(code)
+        opt022 = [r for r in results if r.rule_id == "OPT-022"]
+        assert len(opt022) >= 1
+
+
+class TestOPT027ElseIf:
+    """OPT-027: ta.*() inside else if block should be detected."""
+
+    def test_detects_ta_in_else_if_block(self):
+        code = """\
+//@version=6
+indicator("test")
+if close > open
+    val := 1
+else if close < open
+    float mySma = ta.sma(close, 20)
+plot(close)
+"""
+        results = analyze_code(code)
+        opt027 = [r for r in results if r.rule_id == "OPT-027"]
+        assert len(opt027) >= 1
+
+
+class TestOPT029VaripOnly:
+    """OPT-029: Only tracks variables declared as varip, not arbitrary := assignments."""
+
+    def test_no_false_positive_non_varip_assign(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'varip float x = na\n'
+            'float y = na\n'
+            'if barstate.isrealtime\n'
+            '    y := close\n'
+            'plot(y)'
+        )
+        results = analyze_code(code)
+        opt029 = [r for r in results if r.rule_id == "OPT-029"]
+        # y is NOT declared varip, so updating it in isrealtime should not trigger OPT-029
+        assert len(opt029) == 0
+
+    def test_detects_varip_assign_in_plot(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'varip float x = na\n'
+            'if barstate.isrealtime\n'
+            '    x := close\n'
+            'plot(x)'
+        )
+        results = analyze_code(code)
+        opt029 = [r for r in results if r.rule_id == "OPT-029"]
+        assert len(opt029) >= 1
+
+    def test_detects_any_assign_when_no_varip_declared(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'float x = na\n'
+            'if barstate.isrealtime\n'
+            '    x := close\n'
+            'plot(x)'
+        )
+        results = analyze_code(code)
+        opt029 = [r for r in results if r.rule_id == "OPT-029"]
+        # No varip declarations exist, so all := assignments in isrealtime are suspect
+        assert len(opt029) >= 1
+
+
+class TestOPT056LoopThreshold:
+    """OPT-056: Only triggers for large loops (>= 1000) or for...in, not trivial loops."""
+
+    def test_detects_map_in_large_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'for i = 0 to 5000\n'
+            '    map.put(m, str.tostring(i), close[i])\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) >= 1
+
+    def test_detects_map_in_for_in_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'arr = array.new<string>()\n'
+            'for item in arr\n'
+            '    map.put(m, item, close)\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) >= 1
+
+    def test_no_false_positive_small_loop(self):
+        code = (
+            '//@version=6\nindicator("test")\n'
+            'm = map.new<string, float>()\n'
+            'for i = 0 to 10\n'
+            '    map.put(m, str.tostring(i), close[i])\n'
+            'plot(close)'
+        )
+        results = analyze_code(code)
+        opt056 = [r for r in results if r.rule_id == "OPT-056"]
+        assert len(opt056) == 0

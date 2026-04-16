@@ -27,6 +27,7 @@ from core.db import (
 from core.hot_cache import cache_lookup, ensure_hot_cache
 from formatters.entry import format_entry_detail, is_function_like
 from formatters.errors import (
+    cap_response,
     check_query_error,
     circuit_breaker_msg,
     norm_name,
@@ -95,7 +96,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                     cached["metadata"],
                     cached["document"],
                 )
-                return result
+                return cap_response(result)
 
         # Step 0.5: Exact name match across all categories — pick best version
         # (handles entries stored with wrong category, e.g. constant stored as function)
@@ -108,13 +109,13 @@ async def _lookup_entry(name: str, category: str) -> str:
                     all_versions["metadatas"], all_versions["documents"]
                 ):
                     if not category or meta.get("category") == category:
-                        return format_entry_detail(meta.get("name", name), meta, doc)
+                        return cap_response(format_entry_detail(meta.get("name", name), meta, doc))
                 # If no exact category match, pick the best version
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
-                    return format_entry_detail(
+                    return cap_response(format_entry_detail(
                         best_meta.get("name", name), best_meta, best_doc
-                    )
+                    ))
         except Exception as e:
             logger.debug(f"Cross-category lookup failed: {e}")
 
@@ -125,11 +126,11 @@ async def _lookup_entry(name: str, category: str) -> str:
 
         if candidates and candidates[0][0] >= 85:
             best_sim, best_entry = candidates[0]
-            return format_entry_detail(
+            return cap_response(format_entry_detail(
                 best_entry["metadata"].get("name", name),
                 best_entry["metadata"],
                 best_entry["document"],
-            )
+            ))
 
         # Step 2: Semantic search within category
         results = await query_async(
@@ -148,12 +149,12 @@ async def _lookup_entry(name: str, category: str) -> str:
                 len(search_name) >= 3 and search_name in top_name
             )
             if name_match or top_dist < 0.35:
-                return format_entry_detail(
+                return cap_response(format_entry_detail(
                     top_meta.get("name", name),
                     top_meta,
                     results["documents"][0][0],
                     top_dist,
-                )
+                ))
 
         # Step 3: Broaden to all categories (only if highly relevant)
         results = await query_async(name, 5)
@@ -168,12 +169,12 @@ async def _lookup_entry(name: str, category: str) -> str:
             if name_match_broad or (
                 top_dist < 0.35 and top_meta.get("category") == category
             ):
-                return format_entry_detail(
+                return cap_response(format_entry_detail(
                     top_meta.get("name", name),
                     top_meta,
                     results["documents"][0][0],
                     top_dist,
-                )
+                ))
 
         # Step 4: Fuzzy suggestions
         suggestions: list[str] = []
@@ -189,7 +190,7 @@ async def _lookup_entry(name: str, category: str) -> str:
                     f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)"
                 )
 
-        cat_label = category.upper()
+        cat_label = (category or "ENTRY").upper()
         if suggestions:
             return (
                 f"{cat_label} '{name}' not found in the database.\n\n"
@@ -199,11 +200,13 @@ async def _lookup_entry(name: str, category: str) -> str:
             f"{cat_label} '{name}' not found. Try search_docs() for a broader search."
         )
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[_lookup_entry] {e}")
         if _db._chroma_breaker.is_open():
             return circuit_breaker_msg()
-        raise ToolError(safe_error(e, category))
+        raise ToolError(safe_error(e, category or "lookup"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -236,6 +239,8 @@ async def get_function(
 
     Use for: ta.*, strategy.*, array.*, math.*, str.*, request.*, etc.
     Example: get_function("ta.ema"), get_function("strategy.entry")
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         name = norm_name(name)
@@ -252,7 +257,7 @@ async def get_function(
                     cached["metadata"],
                     cached["document"],
                 )
-                return result
+                return cap_response(result)
 
         name_preserved = name.strip()  # preserve case (e.g. "currency.USD")
         name_lower = name.lower().strip()
@@ -267,15 +272,17 @@ async def get_function(
             if all_versions["ids"]:
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
-                    return format_entry_detail(
+                    return cap_response(format_entry_detail(
                         best_meta.get("name", name), best_meta, best_doc
-                    )
+                    ))
         except Exception as e:
             logger.debug(f"Exact name match failed: {e}")
 
         # Step 3: Fall back to the general lookup
         return await _lookup_entry(name, "function")
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_function] {e}")
         if _db._chroma_breaker.is_open():
@@ -310,9 +317,13 @@ async def get_variable(
     Get documentation for a PineScript v6 built-in variable.
     Built-in variables: close, open, high, low, volume, time,
     bar_index, barstate.*, syminfo.*, strategy.*, etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "variable")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_variable] {e}")
         if _db._chroma_breaker.is_open():
@@ -344,9 +355,14 @@ async def get_type(
     ],
 ) -> str:
     """
-    Get documentation for a PineScript v6 type.
+    Get documentation for a PineScript v6 built-in type.
     Types: array, matrix, map, line, label, box, table, polyline,
-    color, string, int, float, bool, and user-defined types.
+    color, string, int, float, bool.
+
+    Note: Only built-in types are available. User-defined types (UDTs)
+    defined in your script are not indexed here.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         name = norm_name(name)
@@ -359,7 +375,7 @@ async def get_type(
                 cached["metadata"],
                 cached["document"],
             )
-            return result
+            return cap_response(result)
 
         # Filter by category="type" — never return function entries
         name_lower = name.lower().strip()
@@ -393,7 +409,7 @@ async def get_type(
                     except Exception as e:
                         logger.debug(f"Type method enrichment failed: {e}")
 
-                return formatted
+                return cap_response(formatted)
         except Exception as e:
             logger.debug(f"Exact type match failed: {e}")
 
@@ -444,7 +460,7 @@ async def get_type(
                 except Exception as e:
                     logger.debug(f"Type method enrichment (fallback) failed: {e}")
 
-            return formatted
+            return cap_response(formatted)
 
         return (
             f"Type '{name}' not found in docs.\n"
@@ -452,6 +468,8 @@ async def get_type(
             f"box, table, polyline, color, string, int, float, bool"
         )
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_type] {e}")
         if _db._chroma_breaker.is_open():
@@ -486,9 +504,13 @@ async def get_constant(
     Get documentation for a PineScript v6 built-in constant.
     Examples: color.red, strategy.long, order.ascending,
     shape.circle, location.top, etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "constant")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_constant] {e}")
         if _db._chroma_breaker.is_open():
@@ -523,9 +545,13 @@ async def get_keyword(
     Get documentation for a PineScript v6 keyword.
     Keywords: if, for, while, switch, var, varip, type, method,
     import, export, and, or, not, true, false, etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "keyword")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_keyword] {e}")
         if _db._chroma_breaker.is_open():
@@ -560,9 +586,13 @@ async def get_operator(
     Get documentation for a PineScript v6 operator.
     Operators: :=, +=, -=, *=, /=, %=, ==, !=, >, <, >=, <=,
     ?, =>, +, -, *, /, %, not, and, or, [], etc.
+
+    Do not use for fuzzy/unknown searches — use search_docs() instead.
     """
     try:
         return await _lookup_entry(norm_name(name), "operator")
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[get_operator] {e}")
         if _db._chroma_breaker.is_open():

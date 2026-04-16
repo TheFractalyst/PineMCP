@@ -25,7 +25,6 @@ An AI coding assistant (Claude, Cursor, Windsurf, etc.) calls these tools to:
 
 ```
 server.py              ← SINGLE entry point (FastMCP 3.0 + FileSystemProvider)
-pine_linter.py         ← Standalone linter (imported by core/pine_facade.py)
 Makefile               ← make test/serve/index/lint/bench/check
 CLAUDE.md              ← Agent rules + architecture map
 README.md              ← 20 tools + 1 resource, server.py entry point
@@ -76,16 +75,6 @@ pine-facade.tradingview.com ──→ compile endpoint ──→ validation tool
 - ResponseCachingMiddleware (lookup 1h, search 5m)
 - ResponseLimitingMiddleware (max response size)
 - DetailedTimingMiddleware (DEBUG mode only)
-
-## Standalone Linter
-
-`pine_linter.py` is a standalone PineScript syntax checker that can be used independently of the MCP server:
-
-```bash
-python pine_linter.py /path/to/script.ps
-```
-
-It provides fast local validation with basic error detection and is imported by `core/pine_facade.py` as a fallback when the remote TradingView compiler is unavailable or for large files.
 
 ## Quick Start
 

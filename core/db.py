@@ -129,10 +129,40 @@ _COMMON_PARAM_NAMES = frozenset(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _reset_caches() -> None:
+    """Reset name index and query caches after collection reconnects.
+
+    Called when the collection is invalidated (stale UUID, re-index, etc.)
+    so subsequent lookups rebuild from the fresh collection.
+    """
+    global _name_index, _name_index_built
+    _name_index = {}
+    _name_index_built = False
+
+    # Clear L1 query result cache — entries reference the old collection
+    with _QUERY_CACHE_LOCK:
+        _QUERY_RESULT_CACHE.clear()
+
+    # Hot cache entries (core.hot_cache) reference old collection IDs.
+    # They'll still work for reads but should be rebuilt for consistency.
+    # The hot cache has its own _hot_cache_built flag; we flip it here
+    # so the next ensure_hot_cache() call rebuilds it.
+    try:
+        import core.hot_cache as _hc
+        _hc._hot_cache_built = False
+        _hc.HOT_CACHE.clear()
+    except Exception:
+        pass
+
+    logger.info("Caches invalidated after collection reconnect")
+
+
 def get_collection() -> chromadb.Collection:
     """Return the ChromaDB collection, initializing lazily. Circuit-breaker aware.
 
     Thread-safe: uses _db_init_lock to prevent concurrent initialization.
+    Auto-recovers from stale UUID after database re-index: catches NotFoundError
+    on the cached singleton and reconnects with a fresh PersistentClient.
     """
     global _collection
     if _chroma_breaker.is_open():
@@ -141,8 +171,27 @@ def get_collection() -> chromadb.Collection:
         )
     # Fast path: already initialized (no lock needed for read)
     if _collection is not None:
-        _chroma_breaker.record_success()
-        return _collection
+        try:
+            # Health check: verify the cached collection still exists.
+            # A database re-index creates a new collection UUID, so the
+            # cached reference becomes stale and every call returns NotFoundError.
+            # count() is lightweight and hits the HNSW index (already in RAM).
+            _collection.count()
+            _chroma_breaker.record_success()
+            return _collection
+        except Exception as e:
+            err_name = type(e).__name__
+            if "NotFound" in err_name or "not exist" in str(e).lower():
+                logger.warning(
+                    f"Stale ChromaDB collection detected ({err_name}), reconnecting"
+                )
+                _collection = None
+                _reset_caches()
+                # Fall through to re-initialize below
+            else:
+                # Unexpected error — don't retry, let circuit breaker handle it
+                _chroma_breaker.record_failure(e)
+                raise
     # Slow path: initialize under lock to prevent duplicate init
     with _db_init_lock:
         # Double-check after acquiring lock (another thread may have initialized)
@@ -230,7 +279,13 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
             cached_result, cached_ts = _QUERY_RESULT_CACHE[_cache_key]
             if time.time() - cached_ts < _QUERY_CACHE_TTL:
                 logger.debug(f"L1 cache hit: {query_text[:40]}")
-                return cached_result
+                # Return deep copy to prevent callers from mutating cached data
+                return {
+                    "ids": [list(cached_result["ids"][0])] if cached_result.get("ids") else [[]],
+                    "metadatas": [list(cached_result["metadatas"][0])] if cached_result.get("metadatas") else [[]],
+                    "documents": [list(cached_result["documents"][0])] if cached_result.get("documents") else [[]],
+                    "distances": [list(cached_result["distances"][0])] if cached_result.get("distances") else [[]],
+                }
             else:
                 del _QUERY_RESULT_CACHE[_cache_key]
     try:
@@ -339,11 +394,12 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                         )
                     ]
             except Exception as e:
-                logger.debug(f"Qualified lookup failed: {e}")
+                logger.warning(f"Qualified lookup failed, falling through: {e}")
             # Try with type=function specifically
             try:
                 if where:
-                    typed_where = {"$and": [{"name": {"$in": name_variants}}, where]}
+                    existing_clauses = where.get("$and", [where]) if isinstance(where, dict) else [where]
+                    typed_where = {"$and": [{"name": {"$in": name_variants}}] + list(existing_clauses)}
                 else:
                     # Skip $and with single element — ChromaDB rejects it
                     # (already covered by the exact match above)
@@ -367,7 +423,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                         )
                     ]
             except Exception as e:
-                logger.debug(f"Typed lookup failed: {e}")
+                logger.warning(f"Typed lookup failed, returning empty: {e}")
             # No result — return empty (do NOT fall through to namespace match)
             return []
 
@@ -397,8 +453,11 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
             if where:
                 cat = where.get("category")
                 if cat:
+                    existing_clauses = where.get("$and", [where])
                     exact_where = {
-                        "$and": [{"name": {"$in": name_variants}}, {"category": cat}]
+                        "$and": [{"name": {"$in": name_variants}}, {"category": cat}] + [
+                            c for c in existing_clauses if "category" not in c
+                        ]
                     }
             exact = col.get(where=exact_where, include=["metadatas", "documents"])
             if exact["ids"]:

@@ -3,7 +3,10 @@ test_codegen.py — Tests for the 3 codegen tools:
   generate_indicator, generate_strategy, lookup_and_correct
 
 Each tool generates PineScript code and validates it.
+Tests mock call_pine_facade to avoid network dependencies in CI.
 """
+
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -13,11 +16,32 @@ from tools.codegen import (
     lookup_and_correct,
 )
 
+# ── Shared mock for call_pine_facade ──────────────────────────────────────────
+
+_FACADE_SUCCESS = {
+    "success": True,
+    "errors": [],
+    "warnings": [],
+    "meta": {},
+    "raw_response": {"success": True},
+}
+
+_FACADE_ERRORS = {
+    "success": False,
+    "errors": [{"line": 1, "column": 1, "text": "Cannot call 'ema'", "type": "error"}],
+    "warnings": [],
+    "meta": {},
+    "raw_response": {},
+}
+
+
 # ── generate_indicator ────────────────────────────────────────────────────────
 
+
+@patch("tools.codegen.call_pine_facade", new_callable=AsyncMock)
 class TestGenerateIndicator:
-    @pytest.mark.asyncio
-    async def test_rsi(self):
+    async def test_rsi(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_indicator(
             name="RSI Test",
             description="relative strength index"
@@ -27,8 +51,8 @@ class TestGenerateIndicator:
         assert "rsi" in result.lower()
         assert "validation" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_ema(self):
+    async def test_ema(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_indicator(
             name="EMA Test",
             description="exponential moving average",
@@ -38,8 +62,8 @@ class TestGenerateIndicator:
         assert "//@version=6" in result
         assert "ta.ema" in result or "ema" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_with_inputs(self):
+    async def test_with_inputs(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_indicator(
             name="Custom",
             description="custom indicator",
@@ -47,13 +71,12 @@ class TestGenerateIndicator:
         )
         assert "input." in result
 
-    @pytest.mark.asyncio
-    async def test_empty_name(self):
+    async def test_empty_name(self, mock_facade):
         result = await generate_indicator(name="")
         assert "error" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_bollinger_template(self):
+    async def test_bollinger_template(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_indicator(
             name="BB Test",
             description="bollinger bands"
@@ -61,8 +84,8 @@ class TestGenerateIndicator:
         assert "//@version=6" in result
         assert "ta.bb" in result or "bollinger" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_macd_template(self):
+    async def test_macd_template(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_indicator(
             name="MACD Test",
             description="MACD indicator"
@@ -73,9 +96,11 @@ class TestGenerateIndicator:
 
 # ── generate_strategy ─────────────────────────────────────────────────────────
 
+
+@patch("tools.codegen.call_pine_facade", new_callable=AsyncMock)
 class TestGenerateStrategy:
-    @pytest.mark.asyncio
-    async def test_basic(self):
+    async def test_basic(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_strategy(
             name="MA Cross Test",
             description="moving average crossover"
@@ -85,8 +110,8 @@ class TestGenerateStrategy:
         assert "ta.ema" in result or "moving" in result.lower()
         assert "validated" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_custom_params(self):
+    async def test_custom_params(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_strategy(
             name="Custom Strategy",
             description="test strategy",
@@ -97,13 +122,12 @@ class TestGenerateStrategy:
         assert "5000" in result
         assert "strategy(" in result
 
-    @pytest.mark.asyncio
-    async def test_empty_name(self):
+    async def test_empty_name(self, mock_facade):
         result = await generate_strategy(name="")
         assert "error" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_has_entry_exit(self):
+    async def test_has_entry_exit(self, mock_facade):
+        mock_facade.return_value = _FACADE_SUCCESS
         result = await generate_strategy(
             name="Entry Exit Test",
             description="test"
@@ -114,9 +138,12 @@ class TestGenerateStrategy:
 
 # ── lookup_and_correct ────────────────────────────────────────────────────────
 
+
+@patch("tools.codegen.call_pine_facade", new_callable=AsyncMock)
 class TestLookupAndCorrect:
-    @pytest.mark.asyncio
-    async def test_ema_fix(self):
+    async def test_ema_fix(self, mock_facade):
+        # First call returns errors (before fix), second returns success (after fix)
+        mock_facade.side_effect = [_FACADE_ERRORS, _FACADE_SUCCESS]
         result = await lookup_and_correct(
             code="ema(close, 14)",
             error_description="calculate EMA"
@@ -126,18 +153,16 @@ class TestLookupAndCorrect:
         assert "before" in result.lower()
         assert "after" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_empty_code(self):
+    async def test_empty_code(self, mock_facade):
         result = await lookup_and_correct(code="", error_description="test")
         assert "error" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_empty_description(self):
+    async def test_empty_description(self, mock_facade):
         result = await lookup_and_correct(code="test", error_description="")
         assert "error" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_v5_to_v6_migration(self):
+    async def test_v5_to_v6_migration(self, mock_facade):
+        mock_facade.side_effect = [_FACADE_ERRORS, _FACADE_SUCCESS]
         result = await lookup_and_correct(
             code="sma(close, 20)\nstudy('test')",
             error_description="calculate SMA"
@@ -145,8 +170,8 @@ class TestLookupAndCorrect:
         assert "ta.sma" in result
         assert "indicator(" in result  # study→indicator fix
 
-    @pytest.mark.asyncio
-    async def test_produces_report(self):
+    async def test_produces_report(self, mock_facade):
+        mock_facade.side_effect = [_FACADE_ERRORS, _FACADE_SUCCESS]
         result = await lookup_and_correct(
             code="ema(close, 14)",
             error_description="calculate EMA"

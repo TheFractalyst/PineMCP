@@ -7,7 +7,7 @@ PineScript v6 Complete Reference MCP Server — modular entry point.
 Architecture:
   - FastMCP 3.0 with FileSystemProvider for auto-discovery of @tool/@resource
   - Composable lifespans: db | model | cache
-  - Dual-tier validation: local linter → remote pine-facade
+  - Remote pine-facade validation (TradingView's official compiler)
   - 21 tools + 1 resource, 100% local ChromaDB vector store
 
 Usage:
@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import os
 import re
 import sys
@@ -39,8 +40,10 @@ from fastmcp.server.middleware.timing import DetailedTimingMiddleware  # noqa: E
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware  # noqa: E402
 from fastmcp.server.middleware.middleware import Middleware  # noqa: E402
 from fastmcp.server.providers.filesystem import FileSystemProvider  # noqa: E402
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
 
-from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS  # noqa: E402
+from core.config import INSTRUCTIONS, MAX_TOOL_RESPONSE_CHARS, _safe_int  # noqa: E402
 from core.db import get_collection, build_name_index  # noqa: E402
 from core.embeddings import get_model, _model_executor, _embedding_model_ready  # noqa: E402
 from core.hot_cache import build_hot_cache  # noqa: E402
@@ -70,6 +73,10 @@ async def db_lifespan(server):
 @lifespan
 async def model_lifespan(server):
     """Initialize embedding model in thread pool."""
+    if os.getenv("LAZY_MODEL", "").lower() in ("1", "true"):
+        logger.info("LAZY_MODEL=1 — deferring embedding model load to first query")
+        yield
+        return
     logger.info("Preloading embedding model...")
     loop = asyncio.get_running_loop()
     model = await loop.run_in_executor(_model_executor, get_model)
@@ -84,10 +91,7 @@ async def model_lifespan(server):
 async def cache_lifespan(server):
     """Build hot cache."""
     logger.info("Building hot cache...")
-    success = await build_hot_cache()
-    if success:
-        import core.hot_cache as _hc
-        _hc._hot_cache_built = True
+    await build_hot_cache()
     logger.info("Hot cache ready")
     yield
     # Shutdown: close HTTP client and thread pool
@@ -207,7 +211,7 @@ _BRANDING_FOOTERS = [
     ),
 ]
 
-_branding_counter = 0
+_branding_counter = itertools.count()
 
 _PINE_WATERMARK = "// PineScript-v6 MCP | © 2025-2026 @Fractalyst"
 
@@ -237,12 +241,10 @@ class BrandingMiddleware(Middleware):
         if os.getenv("BRANDING", "1") == "0":
             return result
 
-        global _branding_counter
-        footer = _BRANDING_FOOTERS[_branding_counter % len(_BRANDING_FOOTERS)]
-        _branding_counter += 1
+        footer = _BRANDING_FOOTERS[next(_branding_counter) % len(_BRANDING_FOOTERS)]
 
         for content in result.content:
-            if hasattr(content, "text") and content.text:
+            if hasattr(content, "text") and isinstance(content.text, str) and content.text:
                 content.text = _BRANDING_HEADER + _watermark_pine_blocks(content.text) + footer
 
         return result
@@ -257,7 +259,7 @@ mcp = FastMCP(
     name="PineScript v6 Complete Reference",
     instructions=INSTRUCTIONS,
     lifespan=db_lifespan | model_lifespan | cache_lifespan,
-    mask_error_details=False,
+    mask_error_details=True,
     providers=[FileSystemProvider(_mcp_dir, reload=False)],
     middleware=[
         _lookup_cache_mw,
@@ -268,6 +270,20 @@ mcp = FastMCP(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Health check endpoint (no auth required)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    """Health endpoint for Docker HEALTHCHECK and Render health checks."""
+    try:
+        col = get_collection()
+        return JSONResponse({"status": "ok", "entries": col.count()})
+    except Exception as e:
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=503)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -275,8 +291,34 @@ if __name__ == "__main__":
     logger.info("Starting PineScript v6 Complete Reference MCP server v4.0 (21 tools, 100% local)")
 
     if _TRANSPORT == "http" or _TRANSPORT == "sse":
-        _port = int(os.getenv("PORT", "8080"))
+        _port = _safe_int("PORT", 8080)
         logger.info(f"Transport: SSE (HTTP) on 0.0.0.0:{_port}")
-        mcp.run(transport="sse", host="0.0.0.0", port=_port)
+
+        # API key auth middleware (only for HTTP transport)
+        _api_key = os.getenv("MCP_API_KEY", "")
+        if _api_key:
+            from starlette.middleware import Middleware as StarletteMiddleware
+            from starlette.middleware.base import BaseHTTPMiddleware
+
+            class _ApiKeyMiddleware(BaseHTTPMiddleware):
+                async def dispatch(self, request: Request, call_next):
+                    # Health check is always unauthenticated
+                    if request.url.path == "/health":
+                        return await call_next(request)
+                    key = request.headers.get("x-api-key", "")
+                    if key != _api_key:
+                        return JSONResponse({"error": "unauthorized"}, status_code=401)
+                    return await call_next(request)
+
+            logger.info("API key authentication enabled")
+            mcp.run(
+                transport="sse",
+                host="0.0.0.0",
+                port=_port,
+                middleware=[StarletteMiddleware(_ApiKeyMiddleware)],
+            )
+        else:
+            logger.warning("No MCP_API_KEY set — server is open to all connections")
+            mcp.run(transport="sse", host="0.0.0.0", port=_port)
     else:
         mcp.run(transport="stdio")

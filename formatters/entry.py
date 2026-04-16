@@ -43,6 +43,12 @@ def section_line(text: str = "") -> str:
 
 
 def source_tag(meta: dict) -> str:
+    """Return a source tag based on entry metadata."""
+    source = meta.get("sources", "")
+    if "tradingview_live" in source and "local_docs" in source:
+        return "[Merged]"
+    if "tradingview_live" in source:
+        return "[Live]"
     return "[Local]"
 
 
@@ -80,16 +86,18 @@ def format_params_text(meta: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         return ""
 
-    if not params:
+    if not params or not isinstance(params, list):
         return ""
 
     lines = [section_line(f"PARAMETERS ({len(params)})")]
     for p in params:
+        if not isinstance(p, dict):
+            continue
         pname = p.get("name", "?")
         ptype = p.get("type", "")
         pdesc = p.get("description", "")
         opt = " [optional]" if p.get("optional") else ""
-        default = f" = {p['default']}" if p.get("default") else ""
+        default = f" = {p['default']}" if p.get("default") is not None else ""
         ptype_str = f" ({ptype})" if ptype else ""
         lines.append(f"  {pname}{ptype_str}{opt}{default}")
         if pdesc:
@@ -116,7 +124,7 @@ def dedup_examples(examples: list[str]) -> list[str]:
 def format_examples_text(meta: dict) -> str:
     """Format examples from raw_examples metadata."""
     raw_ex = meta.get("raw_examples", "")
-    if not raw_ex:
+    if not raw_ex or not isinstance(raw_ex, str):
         ex_count = meta.get("example_count", 0)
         if ex_count:
             return section_line(f"({ex_count} examples — see raw_examples)")
@@ -150,9 +158,11 @@ def format_type_info(meta: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         return ""
 
-    if fields:
+    if isinstance(fields, list) and fields:
         lines.append(section_line("FIELDS"))
         for f in fields:
+            if not isinstance(f, dict):
+                continue
             fname = f.get("name", "?")
             ftype = f.get("type", "")
             fdesc = f.get("description", "")
@@ -172,8 +182,12 @@ def format_entry_detail(
 ) -> str:
     """Format a complete detailed entry for get_* tools."""
 
-    # Check for hollow results
-    if not doc or len(doc) < 10:
+    # Guard against missing metadata
+    if not meta:
+        meta = {}
+
+    # Check for hollow results (including whitespace-only docs)
+    if not doc or not doc.strip() or len(doc.strip()) < 10:
         return (
             f"'{name}' was found but has no local documentation.\n"
             f"This is likely a newer v6 feature not yet indexed."
@@ -184,7 +198,7 @@ def format_entry_detail(
     category = meta.get("category", "?").upper()
     namespace = meta.get("namespace") or ""
     syntax = meta.get("syntax") or ""
-    description = meta.get("raw_description", "")
+    description = meta.get("raw_description", "") or doc.strip()
     returns = meta.get("returns") or ""
     remarks = meta.get("remarks") or ""
     see_also_raw = meta.get("raw_see_also", "")

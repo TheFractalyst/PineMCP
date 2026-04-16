@@ -89,10 +89,10 @@ def analyze_data_completeness(source):
         gaps.append(f"⚠️ Limited error handling ({try_count} try, {except_count} except)")
     
     # Check for fallback mechanisms
-    if "_circuit_breaker_msg" in source:
-        completeness.append("✅ Circuit breaker fallback messages")
+    if "_circuit_breaker_msg" in source or "circuit_breaker_open" in source:
+        completeness.append("✅ Circuit breaker error messages")
     else:
-        gaps.append("❌ Missing circuit breaker fallback")
+        gaps.append("❌ Missing circuit breaker error handling")
     
     # Check for data validation
     if "JSONDecodeError" in source:
