@@ -14,7 +14,7 @@ python3 -m venv .venv
 ```bash
 make test          # Run 134 tests
 make lint          # Ruff check (line-length 120)
-make check         # Verify 20 tools + 1 resource registered
+make check         # Verify 21 tools + 1 resource registered
 ```
 
 Run a single test file:

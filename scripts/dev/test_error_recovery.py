@@ -83,7 +83,7 @@ async def test_valid_small_code():
     """Test 3: Valid small code."""
     code = "//@version=6\nindicator('test')\nplot(close)"
     result = await _call_pine_facade(code)
-    # May succeed or get local linter results
+    # May succeed or get pine-facade results
     assert result is not None, "Should return results"
     return "Validates small code successfully"
 

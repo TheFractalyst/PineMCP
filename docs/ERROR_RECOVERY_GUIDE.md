@@ -10,8 +10,8 @@ This guide ensures Claude Code never gets stuck when validating PineScript files
 |--------------|------------------|----------|
 | "ERROR: No code provided" | Use `validate_file` instead of `validate_syntax` | Standalone script |
 | "File not found" | Search for file with `find_by_name` | Ask user for path |
-| "ReadTimeout" | Accept results (local linter fallback) | Already working |
-| "Circuit breaker open" | Accept results (local linter fallback) | Already working |
+| "ReadTimeout" | Retry or use standalone script | Increase PINE_FACADE_TIMEOUT |
+| "Circuit breaker open" | Wait for cooldown, then retry | ~60-240s auto-recovery |
 | Empty/null response | Use standalone script | Manual validation |
 | "Permission denied" | Check file permissions | Use different file |
 | MCP server crashed | Restart: `pkill -f "python server.py"` | Standalone script |
@@ -50,9 +50,9 @@ if not file_path.startswith("/"):
 try:
     file_info = mcp2_get_file_info(path=file_path)
     file_size = file_info.size
-    # If >50KB, expect local linter fallback
+    # If >50KB, expect timeout or partial results
     if file_size > 50000:
-        print("Large file detected - local linter may be used")
+        print("Large file detected - may need increased PINE_FACADE_TIMEOUT")
 except:
     pass  # Continue anyway
 ```
@@ -85,8 +85,8 @@ def robust_validation(file_path: str) -> str:
             result = mcp5_validate_file(file_path=file_path)
         
         # Check for expected "errors" that are actually OK
-        if "ReadTimeout" in result or "Local Linter" in result:
-            # This is normal - fallback working
+        if "ReadTimeout" in result or "circuit breaker" in result.lower():
+            # Remote API temporarily unavailable - retry later
             return result
         
         return result
@@ -221,18 +221,18 @@ if "ERROR" in result:
 
 **Problem:**
 ```python
-# BAD - treating local linter as error
+# BAD - treating pine-facade timeout as error
 result = mcp5_validate_file(file_path)
-if "Local Linter" in result:
+if "circuit breaker" in result.lower():
     return "ERROR: Validation failed"  # ❌ Wrong!
 ```
 
 **Solution:**
 ```python
-# GOOD - accepting local linter results
+# GOOD - accepting pine-facade results (including circuit breaker messages)
 result = mcp5_validate_file(file_path)
-if "Local Linter" in result:
-    # This is valid fallback, display results
+if "circuit breaker" in result.lower():
+    # Remote API temporarily unavailable, display results and suggest retry
     return result  # ✅ Correct
 ```
 
@@ -357,7 +357,7 @@ Validation has failed ONLY when:
 ## Best Practices
 
 1. **Always use validate_file for files** - More reliable than validate_syntax
-2. **Accept local linter results** - Don't treat as errors
+2. **Accept pine-facade results** - Circuit breaker messages are informational
 3. **Max 1 retry per error** - Don't loop
 4. **Use fallback immediately** - Don't waste time troubleshooting
 5. **Display partial results** - Better than nothing
@@ -369,7 +369,7 @@ Validation has failed ONLY when:
 **Golden Rules:**
 - ✅ Every error has a recovery path
 - ✅ Max 1 retry, then fallback
-- ✅ Local linter = valid results
+- ✅ Pine-facade results = valid (even with circuit breaker messages)
 - ✅ Fallback = standalone script
 - ✅ Never block user workflow
 - ❌ Don't retry forever
