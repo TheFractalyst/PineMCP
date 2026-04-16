@@ -47,7 +47,7 @@ Before implementing any calculation, call `suggest_functions(description)`. If P
 ## Process
 
 ### 1. Diagnose
-1. Read the file. If no path given, Glob for the latest `.ps` file.
+1. Read the file. If no path given, Glob for `.ps` or `.pine` files first, then any file containing PineScript content (indicator/strategy/library declarations).
 2. Call `validate_and_explain(code)` with FULL code — never empty
 3. For each error: extract the name, call `get_function(name)` or `get_variable(name)` for correct syntax
 

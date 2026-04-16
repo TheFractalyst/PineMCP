@@ -45,6 +45,7 @@ MAX_FUZZY_SCAN_ENTRIES = 5000
 
 # Pre-computed at import time (not inside per-call hot path)
 _ALLOWED_BASE_DIRS = [
+    os.path.realpath(os.path.expanduser("~")),
     os.path.realpath(os.path.expanduser("~/Documents")),
     os.path.realpath(os.path.expanduser("~/Desktop")),
     os.path.realpath(os.path.expanduser("~/Projects")),
@@ -72,7 +73,8 @@ variables, types, constants, keywords, operators, and user guides.
 
 MANDATORY USAGE PATTERN (NON-NEGOTIABLE)
 ─────────────────────────────────────────
-When working on ANY PineScript file (.ps, .pine), you MUST consult this
+When working on ANY PineScript file (.ps, .pine, or any file containing
+indicator(), strategy(), library() declarations), you MUST consult this
 server before writing code. Do NOT rely on training data or assumptions.
 
 BEFORE writing a function call or using a built-in:
@@ -87,7 +89,7 @@ BEFORE using a namespace you haven't memorized:
   1. get_namespace_cheatsheet(namespace) — quick scan of all members
   2. list_namespace(namespace) — full list with descriptions
 
-AFTER every edit to a .ps/.pine file:
+AFTER every edit to a PineScript file (.ps/.pine or content-detected):
   1. validate_syntax(code) or validate_file(file_path) — confirm it compiles
   2. If errors: validate_and_explain(code) — get diagnostics + doc-referenced fixes
 
@@ -122,6 +124,15 @@ CODEGEN TOOLS (use for scaffolding):
   generate_strategy(name, ...)     Scaffold a validated strategy
   lookup_and_correct(code, desc)   Validate + v5→v6 migration when you know what
                                    the code should do but don't have an error msg.
+
+FILE DETECTION
+──────────────────
+validate_file accepts files by extension OR content:
+  - .ps and .pine extensions: always accepted (no content check needed)
+  - Any other extension: accepted if the file contains PineScript signatures
+    in the first 20 lines: //@version=6, indicator(, strategy(, or library(
+  - This means PineScript files with unusual extensions (e.g. .txt, no extension)
+    can be validated as long as their content is recognizable as PineScript v6.
 
 OPTIMIZATION TOOLS (use for performance analysis):
   optimize_code(code)             Detect 87 static-analysis rules (OPT-001 to OPT-090)

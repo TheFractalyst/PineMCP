@@ -5,6 +5,7 @@ This bypasses Claude Code limitations with large file parameters.
 Usage:
     python validate_file.py <file_path>
     python validate_file.py /path/to/your/script.ps
+    python validate_file.py /path/to/your/script.txt   (any extension if content is PineScript)
 """
 
 import sys

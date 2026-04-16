@@ -206,13 +206,63 @@ class TestValidateFile:
 
     @pytest.mark.asyncio
     async def test_system_file_rejected(self):
-        with pytest.raises(ToolError, match="Access denied|\.ps"):
+        with pytest.raises(ToolError, match=r"Access denied|\.ps"):
             await validate_file(file_path="/etc/passwd")
 
     @pytest.mark.asyncio
-    async def test_non_ps_extension(self):
-        with pytest.raises(ToolError, match=r"\.ps"):
-            await validate_file(file_path="/tmp/test.txt")
+    async def test_non_ps_extension_rejected_without_pinescript_content(self):
+        """Non-.ps file without PineScript content should be rejected."""
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        test_file = os.path.join(test_dir, "_test_temp_notpine.txt")
+        try:
+            with open(test_file, "w") as f:
+                f.write("this is not pine script code\njust regular text\n")
+            with pytest.raises(ToolError, match="does not appear to be PineScript"):
+                await validate_file(file_path=test_file)
+        finally:
+            os.unlink(test_file)
+
+    @pytest.mark.asyncio
+    async def test_txt_with_pinescript_content_accepted(self):
+        """Non-.ps file WITH PineScript content should be accepted."""
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        test_file = os.path.join(test_dir, "_test_temp_pine.txt")
+        try:
+            with open(test_file, "w") as f:
+                f.write('//@version=6\nindicator("test")\nplot(close)\n')
+            result = await validate_file(file_path=test_file)
+            assert result is not None
+            assert "does not appear to be PineScript" not in result
+        finally:
+            os.unlink(test_file)
+
+    @pytest.mark.asyncio
+    async def test_txt_with_strategy_declaration_accepted(self):
+        """Non-.ps file with strategy() declaration should be accepted."""
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        test_file = os.path.join(test_dir, "_test_temp_strategy.txt")
+        try:
+            with open(test_file, "w") as f:
+                f.write('//@version=6\nstrategy("test", overlay=true)\nplot(close)\n')
+            result = await validate_file(file_path=test_file)
+            assert result is not None
+            assert "does not appear to be PineScript" not in result
+        finally:
+            os.unlink(test_file)
+
+    @pytest.mark.asyncio
+    async def test_txt_with_library_declaration_accepted(self):
+        """Non-.ps file with library() declaration should be accepted."""
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        test_file = os.path.join(test_dir, "_test_temp_lib.txt")
+        try:
+            with open(test_file, "w") as f:
+                f.write('//@version=6\nlibrary("MyLib")\nexport myFunc() => close\n')
+            result = await validate_file(file_path=test_file)
+            assert result is not None
+            assert "does not appear to be PineScript" not in result
+        finally:
+            os.unlink(test_file)
 
     @pytest.mark.asyncio
     async def test_no_path_leakage(self):

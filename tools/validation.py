@@ -642,6 +642,40 @@ async def debug_pine_facade(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Content-based PineScript detection (for validate_file)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PINESCRIPT_SIGNATURES = re.compile(
+    r"(//@version=6|indicator\s*\(|strategy\s*\(|library\s*\()"
+)
+_PINESCRIPT_HEADER_LINES = 20
+
+
+def _is_pinescript_content(resolved_path: str, max_lines: int = _PINESCRIPT_HEADER_LINES) -> bool:
+    """Check if a file contains PineScript v6 content by scanning its header.
+
+    Reads only the first `max_lines` lines to avoid reading large files.
+    A file is considered PineScript if it contains any of:
+    //@version=6, indicator(, strategy(, library(
+    """
+    try:
+        with open(resolved_path, "r", encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i >= max_lines:
+                    break
+                if _PINESCRIPT_SIGNATURES.search(line):
+                    return True
+    except (OSError, UnicodeDecodeError):
+        return False
+    return False
+
+
+def _has_pinescript_extension(path: str) -> bool:
+    """Check if a path ends with a recognized PineScript extension."""
+    return path.endswith(".ps") or path.endswith(".pine")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TOOL 20: validate_file
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -651,7 +685,7 @@ async def validate_file(
     file_path: Annotated[str, Field(
         min_length=1,
         max_length=4096,
-        description="Absolute path to PineScript v6 file to validate"
+        description="Absolute path to PineScript v6 file to validate (any extension accepted if content is PineScript)"
     )]
 ) -> str:
     """
@@ -661,11 +695,15 @@ async def validate_file(
     directly on the server side. Use this for large files (>30KB) that
     cannot be passed as inline parameters through Claude Code.
 
+    Accepts files by extension (.ps, .pine) OR by content detection
+    (files containing //@version=6, indicator(), strategy(), or library()
+    in the first 20 lines, regardless of extension).
+
     Optimization: caches results keyed on (path, mtime_ns, size). Re-validating
     an unchanged file returns the cached result in <1ms instead of ~2800ms.
 
     Args:
-        file_path: Absolute path to the .ps file to validate
+        file_path: Absolute path to a PineScript v6 file (any extension accepted if content is PineScript)
 
     Returns:
         Validation results in the same format as validate_syntax
@@ -673,7 +711,7 @@ async def validate_file(
     if not file_path:
         raise ToolError("No file path provided. Provide an absolute path to a PineScript file.")
 
-    # Path safety: resolve symlinks, enforce .ps extension, allowlist directories
+    # Path safety: resolve symlinks, allowlist directories
     try:
         resolved = os.path.realpath(file_path)
     except Exception:
@@ -681,9 +719,6 @@ async def validate_file(
 
     # Display name: use basename only to avoid leaking absolute paths in response
     display_name = os.path.basename(resolved)
-
-    if not resolved.endswith('.ps') and not resolved.endswith('.pine'):
-        raise ToolError("Only .ps and .pine files are accepted. Please provide a PineScript file with a .ps or .pine extension.")
 
     # Security: path must be within an allowed base directory
     # Use base + "/" to prevent prefix attacks (e.g. /home/user/Documents_evil)
@@ -701,6 +736,15 @@ async def validate_file(
     # Check file existence
     if not os.path.isfile(resolved):
         raise ToolError(f"File not found: {display_name}")
+
+    # Accept by extension (.ps/.pine) OR by content detection
+    if not _has_pinescript_extension(resolved):
+        if not _is_pinescript_content(resolved):
+            raise ToolError(
+                "File does not appear to be PineScript. Provide a .ps/.pine file "
+                "or a file containing PineScript content (//@version=6, indicator(), "
+                "strategy(), or library())."
+            )
 
     try:
         # Get file stats for cache key

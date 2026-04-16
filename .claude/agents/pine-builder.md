@@ -95,7 +95,7 @@ Common reimplementations to AVOID:
 - If namespace issues: call `lookup_and_correct(code, intent)` for auto-fix
 
 ### Step 5: Write
-- Write the file with the `.ps` extension
+- Write the file with the `.ps` extension (preferred; other extensions valid if content is PineScript)
 - Include a header comment with purpose and required parameters
 
 ## Quality Standards

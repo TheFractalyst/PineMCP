@@ -43,7 +43,7 @@ Pine Script v6 code auditor. Review for correctness, performance, repainting, an
 
 ## Process
 
-1. **Read** the file. If none given, Glob for latest `.ps` file.
+1. **Read** the file. If none given, Glob for `.ps` or `.pine` files first, then any file containing PineScript content (any extension).
 2. **Validate** — `validate_syntax(code)`. Fix errors first (hand off to pine-debugger if needed).
 3. **Audit** these categories:
 
