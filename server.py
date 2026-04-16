@@ -276,7 +276,7 @@ mcp = FastMCP(
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> JSONResponse:
-    """Health endpoint for Docker HEALTHCHECK and Render health checks."""
+    """Health endpoint for local development and testing."""
     try:
         col = get_collection()
         return JSONResponse({"status": "ok", "entries": col.count()})
