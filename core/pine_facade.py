@@ -377,7 +377,6 @@ async def call_pine_facade(code: str) -> dict:
                 f"pine-facade 403 — headers: {dict(resp.headers)} | "
                 f"body: {resp.text[:200]}"
             )
-            pine_cb.record_network_failure()
             return {
                 "success": False,
                 "errors": [
