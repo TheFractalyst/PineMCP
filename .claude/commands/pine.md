@@ -36,7 +36,7 @@ Parse the user's request: $ARGUMENTS
 
 ## Argument guard (applies to ALL actions)
 If $ARGUMENTS is empty or whitespace-only, ask the user what they need. Give examples:
-  - `/pine validate myfile.ps`
+  - `/pine validate myfile.ps`  (also works with any extension if content is PineScript)
   - `/pine fix ta.ema error on line 12`
   - `/pine lookup strategy.entry`
   - `/pine build RSI indicator`
@@ -48,9 +48,10 @@ Determine the user's intent and execute the matching workflow:
 
 ### VALIDATE — "validate", "check", "is this correct?", or when user shares code
 1. Read the file or use the code provided
-2. Call `validate_syntax(code)` with the FULL code string — never with empty `code`
-3. If errors found → call `validate_and_explain(code)` for detailed diagnostics
-4. Report: VALID or list errors with line numbers + fix hints
+2. For files: call `validate_file(path)` — accepts any extension if content contains //@version=6, indicator(), strategy(), or library()
+3. For inline code: call `validate_syntax(code)` with the FULL code string — never with empty `code`
+4. If errors found → call `validate_and_explain(code)` for detailed diagnostics
+5. Report: VALID or list errors with line numbers + fix hints
 
 ### FIX — "fix", "error", "broken", "won't compile", or when user reports a TradingView error
 1. Read the file or use the code provided

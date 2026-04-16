@@ -30,4 +30,4 @@ data/              ← Large data files + source docs (pinescriptv6/)
 - `make index` — re-index ChromaDB (skip scraping)
 
 ## File Types
-- `.ps` and `.pine` are PineScript v6 files. MCP consultation and validation rules are in the project-level CLAUDE.md.
+- `.ps` and `.pine` are PineScript v6 extensions. Files with ANY extension are also recognized if they contain `indicator()`, `strategy()`, `library()`, or `//@version=6` in the first 20 lines. `validate_file` accepts both extension-based and content-based detection.
