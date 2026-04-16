@@ -31,6 +31,7 @@ from core.caches import (
 from core.config import (
     COLLECTION,
     DB_PATH,
+    EMBED_DIM,
     MAX_FUZZY_SCAN_ENTRIES,
     MAX_RESULTS,
 )
@@ -211,7 +212,7 @@ def get_collection() -> chromadb.Collection:
             if count > 0:
                 try:
                     _collection.query(
-                        query_embeddings=[[0.0] * 384],
+                        query_embeddings=[[0.0] * EMBED_DIM],
                         n_results=1,
                         include=["distances"],
                     )

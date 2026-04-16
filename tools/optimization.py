@@ -232,6 +232,8 @@ async def optimize_code(
 
         return cap_response(report)
 
+    except ToolError:
+        raise
     except Exception as e:
         logger.error(f"[optimize_code] {e}")
         raise ToolError(safe_error(e, "optimize_code"))

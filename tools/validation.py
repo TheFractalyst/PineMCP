@@ -671,19 +671,19 @@ async def validate_file(
         Validation results in the same format as validate_syntax
     """
     if not file_path:
-        return "ERROR: No file path provided. Provide an absolute path to a PineScript file."
+        raise ToolError("No file path provided. Provide an absolute path to a PineScript file.")
 
     # Path safety: resolve symlinks, enforce .ps extension, allowlist directories
     try:
         resolved = os.path.realpath(file_path)
     except Exception:
-        return "ERROR: Invalid path provided. Could not resolve the file path. Please provide a valid absolute path."
+        raise ToolError("Invalid path provided. Could not resolve the file path. Please provide a valid absolute path.")
 
     # Display name: use basename only to avoid leaking absolute paths in response
     display_name = os.path.basename(resolved)
 
     if not resolved.endswith('.ps') and not resolved.endswith('.pine'):
-        return "ERROR: Only .ps and .pine files are accepted. Please provide a PineScript file with a .ps or .pine extension."
+        raise ToolError("Only .ps and .pine files are accepted. Please provide a PineScript file with a .ps or .pine extension.")
 
     # Security: path must be within an allowed base directory
     # Use base + "/" to prevent prefix attacks (e.g. /home/user/Documents_evil)
@@ -693,14 +693,14 @@ async def validate_file(
     )
     if not allowed:
         safe_dirs = ", ".join(os.path.basename(str(d)) for d in _ALLOWED_BASE_DIRS)
-        return (
-            "ERROR: Access denied. File must be in an allowed directory.\n"
+        raise ToolError(
+            f"Access denied. File must be in an allowed directory. "
             f"Allowed directories: {safe_dirs}"
         )
 
     # Check file existence
     if not os.path.isfile(resolved):
-        return f"ERROR: File not found: {display_name}"
+        raise ToolError(f"File not found: {display_name}")
 
     try:
         # Get file stats for cache key
@@ -715,7 +715,7 @@ async def validate_file(
 
         # Reject oversized files before reading into memory
         if fsize > 500_000:
-            return f"ERROR: File too large ({fsize:,} bytes). Maximum is 500KB."
+            raise ToolError(f"File too large ({fsize:,} bytes). Maximum is 500KB.")
 
         # Read file contents
         with open(resolved, "r", encoding="utf-8", errors="replace") as f:

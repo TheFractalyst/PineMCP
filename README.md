@@ -2,8 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
-[![MCP Server](https://img.shields.io/badge/MCP-20%20Tools-green.svg)](tools/)
-[![Tests](https://img.shields.io/badge/Tests-134%20passing-brightgreen.svg)](tests/)
+[![MCP Server](https://img.shields.io/badge/MCP-21%20Tools-green.svg)](tools/)
+[![Tests](https://img.shields.io/badge/Tests-150%2B-brightgreen.svg)](tests/)
 
 Production MCP server providing the complete PineScript v6 reference via **21 tools + 1 resource** backed by a local ChromaDB vector store, TradingView's official `pine-facade` compiler, and a memory-first hot cache.
 
