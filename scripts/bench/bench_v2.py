@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bench_v2.py — Comprehensive benchmark of all 20 PineScript MCP tools.
+bench_v2.py — Comprehensive benchmark of all 21 PineScript MCP tools.
 
 Measures latency (median of 3 calls), accuracy, completeness, and error handling.
 Outputs results as a formatted table.
@@ -27,6 +27,7 @@ from tools.search import search_docs, get_examples, list_namespace, search_by_re
 from tools.validation import validate_syntax, validate_and_explain, fix_and_validate, debug_pine_facade, validate_file
 from tools.codegen import generate_indicator, generate_strategy, lookup_and_correct
 from tools.context import suggest_functions, get_namespace_cheatsheet
+from tools.optimization import optimize_code
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -348,12 +349,29 @@ TOOL_TESTS = [
             {"file_path": "/etc/passwd"},
         ],
     },
+    {
+        "name": "optimize_code",
+        "fn": optimize_code,
+        "args": {
+            "code": '//@version=6\nindicator("bench test")\n'
+                    'myEma = ta.ema(close, 20)\n'
+                    'mySma = ta.sma(close, 20)\n'
+                    'float a = request.security(syminfo.tickerid, "1D", close)\n'
+                    'float b = request.security(syminfo.tickerid, "1D", ta.sma(close, 20))\n'
+                    'plot(myEma)\nplot(mySma)\nplot(a)\n'
+        },
+        "expected_keywords": ["OPTIMIZATION ANALYSIS", "Summary"],
+        "expected_sections": ["OPTIMIZATION ANALYSIS", "Summary"],
+        "bad_args": [
+            {"code": "short"},
+        ],
+    },
 ]
 
 
 async def main():
     print("=" * 130)
-    print("PineScript MCP v4.0 — Comprehensive 20-Tool Benchmark")
+    print("PineScript MCP v4.0 — Comprehensive 21-Tool Benchmark")
     print("=" * 130)
     print(f"Python: {sys.version.split()[0]}")
     print(f"Working dir: {os.getcwd()}")
