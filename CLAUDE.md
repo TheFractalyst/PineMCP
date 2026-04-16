@@ -16,7 +16,7 @@ tools/             ← 21 @tool + 1 @resource (auto-discovered by FileSystemProv
   optimization.py  1 optimization tool: optimize_code
   resources/stats.py  pinescript://stats resource
 tests/             ← 150+ pytest tests
-scripts/           ← User-facing scripts (install/uninstall daemon, validate_file)
+scripts/           ← User-facing scripts (validate_file)
 scripts/dev/       ← One-off dev/QA scripts (not for public use)
 pipeline/          ← Data pipeline: discover → scrape → merge+index
 data/              ← Large data files + source docs (pinescriptv6/)
