@@ -284,6 +284,53 @@ async def admin_stats(request: Request) -> JSONResponse:
     })
 
 # -----------------------------------------------------------------------------
+# REST adapter for PineRustEngine backend (simple HTTP, no MCP protocol needed)
+# -----------------------------------------------------------------------------
+
+@mcp.custom_route("/api/tools/call", methods=["POST"])
+async def rest_call_tool(request: Request) -> JSONResponse:
+    """REST wrapper for MCP tool calls. Used by PineRustEngine Rust backend."""
+    try:
+        body = await request.json()
+        name = body.get("name", "")
+        arguments = body.get("arguments", {})
+        if not name:
+            return JSONResponse({"error": "missing 'name' field"}, status_code=400)
+        result = await mcp.call_tool(name, arguments)
+        # FastMCP 3.x: ToolResult with .content (list[ContentBlock]) and .is_error
+        text = ""
+        content = getattr(result, "content", None) or []
+        if content:
+            first = content[0]
+            text = first.text if hasattr(first, "text") else str(first)
+        elif isinstance(result, str):
+            text = result
+        else:
+            text = str(result)
+        if getattr(result, "is_error", False):
+            return JSONResponse({"error": text}, status_code=500)
+        return JSONResponse({"result": text})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@mcp.custom_route("/api/tools/list", methods=["GET"])
+async def rest_list_tools(request: Request) -> JSONResponse:
+    """List all available tools and their schemas."""
+    try:
+        tools = await mcp.list_tools()
+        tool_list = []
+        for t in tools:
+            tool_list.append({
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.parameters or {},
+            })
+        return JSONResponse({"tools": tool_list})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+# -----------------------------------------------------------------------------
 # Entry point
 # -----------------------------------------------------------------------------
 
