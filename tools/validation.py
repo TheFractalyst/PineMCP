@@ -173,7 +173,18 @@ async def _render_errors(errors: list, warnings: list, explain: bool) -> list[st
         col_num = err.get("column", "?")
         text = err.get("text", "Unknown error")
         err_type = err.get("type", "error").upper()
-        lines.append(f"  ERROR {i} - Line {line_num}, Col {col_num} [{err_type}]")
+        err_code = err.get("code", "")
+        end_line = err.get("end_line", 0)
+        end_col = err.get("end_col", 0)
+
+        # Build location string with range if end position differs
+        loc = f"Line {line_num}, Col {col_num}"
+        if end_line and end_col and (end_line != line_num or end_col != col_num):
+            loc += f" -> Line {end_line}, Col {end_col}"
+
+        # Include error code (e.g. CE10015) for AI agent diagnostics
+        code_tag = f" [{err_code}]" if err_code else f" [{err_type}]"
+        lines.append(f"  ERROR {i} - {loc}{code_tag}")
         lines.append(f"    {text}")
 
         if explain and explain_lookups_done < _EXPLAIN_MAX_DOC_LOOKUPS:
@@ -210,7 +221,9 @@ async def _render_errors(errors: list, warnings: list, explain: bool) -> list[st
         line_num = warn.get("line", "?")
         col_num = warn.get("column", "?")
         text = warn.get("text", "Unknown warning")
-        lines.append(f"  WARNING {i} - Line {line_num}, Col {col_num}")
+        err_code = warn.get("code", "")
+        code_tag = f" [{err_code}]" if err_code else ""
+        lines.append(f"  WARNING {i} - Line {line_num}, Col {col_num}{code_tag}")
         lines.append(f"    {text}")
         hint = lookup_fix_hint(text)
         if hint:

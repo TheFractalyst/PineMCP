@@ -219,15 +219,25 @@ def normalize_facade_response(raw: dict) -> dict:
 
     def normalize_error(e: dict) -> dict:
         text = e.get("text") or e.get("message") or e.get("msg") or str(e)
-        # TradingView pine-facade returns template variables like {kind}, {fullName}, etc.
-        # Step 1: Resolve from error object fields
+        # TradingView pine-facade returns template variables like {funId}, {argDisplayName}, etc.
+        # The actual values are in the "ctx" sub-object, not at the top level.
+        # Step 1: Resolve from ctx fields (the primary source of placeholder values)
+        ctx = e.get("ctx") or {}
+        if isinstance(ctx, dict):
+            for key, val in ctx.items():
+                if isinstance(val, (str, int, float)):
+                    placeholder = f"{{{key}}}"
+                    if placeholder in text:
+                        text = text.replace(placeholder, str(val))
+        # Step 2: Resolve from top-level error fields (fallback for non-ctx responses)
         for key, val in e.items():
             if isinstance(val, (str, int, float)) and key not in ("line", "column", "col",
-                "lineNumber", "type", "severity", "start", "end"):
+                "lineNumber", "type", "severity", "start", "end", "code", "ctx", "message"):
                 placeholder = f"{{{key}}}"
                 if placeholder in text:
                     text = text.replace(placeholder, str(val))
         start = e.get("start") or {}
+        end = e.get("end") or {}
         return {
             "line": e.get("line")
             or e.get("lineNumber")
@@ -235,6 +245,9 @@ def normalize_facade_response(raw: dict) -> dict:
             "column": e.get("column")
             or e.get("col")
             or (start.get("column", 0) if isinstance(start, dict) else 0),
+            "end_line": end.get("line", 0) if isinstance(end, dict) else 0,
+            "end_col": end.get("column", 0) if isinstance(end, dict) else 0,
+            "code": e.get("code", ""),
             "text": text,
             "type": e.get("type") or "error",
         }
