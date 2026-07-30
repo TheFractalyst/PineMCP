@@ -28,6 +28,7 @@ from core.config import _ALLOWED_BASE_DIRS, _TRANSPORT
 from core.db import _COMMON_PARAM_NAMES
 from core.hot_cache import cache_lookup
 from core.pine_facade import call_pine_facade, enrich_error_with_code
+from formatters.error_codes import describe_code
 from formatters.errors import (
     cap_response,
     extract_name_from_error,
@@ -176,6 +177,7 @@ async def _render_errors(errors: list, warnings: list, explain: bool) -> list[st
         err_code = err.get("code", "")
         end_line = err.get("end_line", 0)
         end_col = err.get("end_col", 0)
+        ctx = err.get("ctx") or {}
 
         # Build location string with range if end position differs
         loc = f"Line {line_num}, Col {col_num}"
@@ -186,6 +188,21 @@ async def _render_errors(errors: list, warnings: list, explain: bool) -> list[st
         code_tag = f" [{err_code}]" if err_code else f" [{err_type}]"
         lines.append(f"  ERROR {i} - {loc}{code_tag}")
         lines.append(f"    {text}")
+
+        # Add error code description (category + common cause)
+        if err_code:
+            desc = describe_code(err_code)
+            if desc:
+                lines.append(f"    Code: {desc}")
+
+        # Add structured context values (funId, argDisplayName, etc.)
+        # This is what pine-facade returns in the ctx object — it tells the
+        # AI exactly which function/argument/value caused the error.
+        if ctx and isinstance(ctx, dict):
+            ctx_parts = [f"{k}={v!r}" for k, v in ctx.items()
+                         if isinstance(v, (str, int, float, bool))]
+            if ctx_parts:
+                lines.append(f"    Context: {', '.join(ctx_parts)}")
 
         if explain and explain_lookups_done < _EXPLAIN_MAX_DOC_LOOKUPS:
             extracted_name = extract_name_from_error(text)
@@ -474,6 +491,28 @@ async def pine_compile(
             lines.append("")
 
         lines.extend(await _render_errors(errors, warnings, explain))
+
+        # Include script metadata from pine-facade (variables, functions, types, scopes)
+        # This gives the AI full context about the script state — what variables exist,
+        # their types, what functions are declared, etc.
+        if meta and not is_fallback:
+            meta_parts = []
+            for key in ("variables", "functions", "types", "enums", "scopes"):
+                val = meta.get(key)
+                if val:
+                    if key == "variables" and isinstance(val, list):
+                        var_lines = [f"    {v.get('name', '?')}: {v.get('type', '?')}" for v in val[:20]]
+                        meta_parts.append(f"  Variables ({len(val)}):\n" + "\n".join(var_lines))
+                    elif key == "functions" and isinstance(val, list) and val:
+                        meta_parts.append(f"  Functions: {len(val)}")
+                    elif key == "types" and isinstance(val, list) and val:
+                        meta_parts.append(f"  Types: {len(val)}")
+                    elif key == "scopes" and isinstance(val, list) and val:
+                        meta_parts.append(f"  Scopes: {len(val)}")
+            if meta_parts:
+                lines.append("Script metadata:")
+                lines.extend(meta_parts)
+                lines.append("")
 
         rendered = cap_response("\n".join(lines))
         if cache_key:

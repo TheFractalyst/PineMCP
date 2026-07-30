@@ -250,6 +250,9 @@ def normalize_facade_response(raw: dict) -> dict:
             "code": e.get("code", ""),
             "text": text,
             "type": e.get("type") or "error",
+            # Preserve raw ctx so AI can see exactly what values caused the error
+            # (e.g. funId="ta.ema", argDisplayName="source", argumentType="literal string")
+            "ctx": ctx if isinstance(ctx, dict) and ctx else {},
         }
 
     all_normalized = [
@@ -383,12 +386,14 @@ def local_syntax_check(code: str) -> dict:
                 "line": other_v[0], "column": 0,
                 "text": f"Version {other_v[1]} detected. This server requires //@version=6",
                 "type": "error",
+                "code": "LOCAL_VERSION",
             })
         else:
             errors.append({
                 "line": 1, "column": 0,
                 "text": "Missing //@version=6 header. First line must be //@version=6",
                 "type": "error",
+                "code": "LOCAL_VERSION",
             })
 
     # 2. v5 syntax: study() instead of indicator()
@@ -398,6 +403,7 @@ def local_syntax_check(code: str) -> dict:
                 "line": i, "column": 0,
                 "text": "study() is v5 syntax. Use indicator() in v6",
                 "type": "error",
+                "code": "LOCAL_V5_STUDY",
             })
             break
 
@@ -409,6 +415,7 @@ def local_syntax_check(code: str) -> dict:
                 "line": i, "column": 0,
                 "text": f"Bare color '{m.group(1)}' is v4 syntax. Use color.{m.group(1)} in v6",
                 "type": "error",
+                "code": "LOCAL_V4_COLOR",
             })
         m2 = re.search(r'\bbgcolor\s*\(\s*(\w+)', line)
         if m2 and m2.group(1) in _V4_COLORS:
@@ -416,6 +423,7 @@ def local_syntax_check(code: str) -> dict:
                 "line": i, "column": 0,
                 "text": f"Bare color '{m2.group(1)}' is v4 syntax. Use color.{m2.group(1)} in v6",
                 "type": "error",
+                "code": "LOCAL_V4_COLOR",
             })
 
     # 4. Unclosed parentheses / brackets (overall balance)
@@ -436,6 +444,7 @@ def local_syntax_check(code: str) -> dict:
                     "line": i, "column": 0,
                     "text": "Unmatched closing parenthesis ')'",
                     "type": "error",
+                    "code": "CE10016",
                 })
                 paren_depth = 0
             if bracket_depth < 0:
@@ -443,6 +452,7 @@ def local_syntax_check(code: str) -> dict:
                     "line": i, "column": 0,
                     "text": "Unmatched closing bracket ']'",
                     "type": "error",
+                    "code": "LOCAL_BRACKET",
                 })
                 bracket_depth = 0
     if paren_depth > 0:
@@ -450,12 +460,14 @@ def local_syntax_check(code: str) -> dict:
             "line": len(raw_lines), "column": 0,
             "text": f"Unclosed parenthesis - {paren_depth} '(' without matching ')'",
             "type": "error",
+            "code": "CE10015",
         })
     if bracket_depth > 0:
         errors.append({
             "line": len(raw_lines), "column": 0,
             "text": f"Unclosed bracket - {bracket_depth} '[' without matching ']'",
             "type": "error",
+            "code": "LOCAL_BRACKET",
         })
 
     # 5. := assignment on first declaration (should use =)
@@ -470,6 +482,7 @@ def local_syntax_check(code: str) -> dict:
                 "line": i, "column": 0,
                 "text": f"'{reassign.group(1)}' uses := before being declared with =. Use = for first declaration",
                 "type": "error",
+                "code": "LOCAL_REASSIGN",
             })
 
     # 6. na comparison with == instead of na() function
@@ -479,6 +492,7 @@ def local_syntax_check(code: str) -> dict:
                 "line": i, "column": 0,
                 "text": "Use na(x) instead of x == na for na comparison",
                 "type": "error",
+                "code": "LOCAL_NA_CMP",
             })
         if re.search(r'!=\s*na\b', line) or re.search(r'\bna\s*!=', line):
             errors.append({
