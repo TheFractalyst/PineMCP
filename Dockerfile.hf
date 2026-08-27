@@ -1,0 +1,47 @@
+# Hugging Face Spaces Dockerfile for PineMCP remote MCP server
+# Docs: https://huggingface.co/docs/hub/spaces-sdks-docker
+#
+# HF Spaces constraints:
+#   - Container runs as non-root user ID 1000 (must create + chown)
+#   - Default exposed port is 7860 (override via app_port in README frontmatter)
+#   - /data is the only persistent volume (runtime only, NOT available at build)
+#   - No GPU at build time
+#
+# This image:
+#   - Installs only runtime deps (no playwright/scraper pipeline -> smaller image)
+#   - Pre-builds ChromaDB at build time into /data/db (baked into image layer)
+#   - Runs pinemcp SSE transport on 0.0.0.0:7860
+
+FROM python:3.12-slim
+
+# Create non-root user (HF Spaces requirement, UID 1000)
+RUN useradd -m -u 1000 user
+
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TRANSPORT=sse \
+    PORT=7860 \
+    PINESCRIPT_DB_PATH=/data/db \
+    LOG_DIR=/data/logs
+
+WORKDIR $HOME/app
+
+# Install pinemcp from source (runtime deps only, no pipeline extras)
+COPY --chown=user . $HOME/app
+RUN pip install --no-cache-dir -e .
+
+# Pre-build ChromaDB at image build time.
+# Writes to /data/db inside the image layer (read-only at runtime is fine;
+# ChromaDB PersistentClient only needs write if the DB changes, which it won't
+# post-build). If you attach an HF Storage Bucket at /data, set
+# PINESCRIPT_DB_PATH to a writable subdir and the DB will be rebuilt on first
+# run from shipped JSON instead.
+RUN mkdir -p /data/db /data/logs && chown -R user:user /data
+USER user
+RUN pinemcp build
+
+EXPOSE 7860
+
+CMD ["pinemcp", "--transport", "sse", "--port", "7860"]

@@ -148,6 +148,29 @@ pinemcp --transport sse --port 8080
 
 Connect to `http://localhost:8080`. Set `MCP_API_KEY` env var for auth.
 
+### Remote (free public hosting on Hugging Face Spaces)
+
+A live public instance is available at:
+
+```
+https://<username>-pinemcp.hf.space/sse
+```
+
+Connect any MCP client without installing anything locally:
+
+```json
+{
+  "mcpServers": {
+    "pinescript-v6": {
+      "url": "https://<username>-pinemcp.hf.space/sse",
+      "transport": "sse"
+    }
+  }
+}
+```
+
+See [HF_DEPLOY.md](HF_DEPLOY.md) to deploy your own free instance.
+
 ## Configuration
 
 ```

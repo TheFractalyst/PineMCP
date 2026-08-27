@@ -85,3 +85,9 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+
+# Hugging Face Spaces deploy artifacts (not needed in the runtime image)
+Dockerfile.hf
+HF_README.md
+HF_DEPLOY.md
+.hf/
