@@ -18,9 +18,13 @@ from loguru import logger
 from core.config import COLLECTION, DB_PATH, EMBED_MODEL
 
 
-def _data_json_path() -> Path:
-    """Locate pine_merged_entries.json relative to this module."""
-    return Path(__file__).resolve().parent.parent / "data" / "pine_merged_entries.json"
+def _data_json_paths() -> list[Path]:
+    """All shipped data files: reference entries + user manual guides."""
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    return [
+        data_dir / "pine_merged_entries.json",
+        data_dir / "pine_manual_entries.json",
+    ]
 
 
 def _extract_return_type(syntax: str) -> str:
@@ -40,6 +44,9 @@ def _build_document_text(entry: dict[str, Any]) -> str:
     parts.append(f"{category.upper()}: {name}")
     if namespace:
         parts.append(f"Namespace: {namespace}")
+    path = entry.get("path") or ""
+    if path:
+        parts.append(f"Path: {path}")
     syntax = entry.get("syntax") or ""
     if syntax:
         parts.append(f"Syntax: {syntax}")
@@ -80,6 +87,7 @@ def _flatten_metadata(entry: dict[str, Any]) -> dict[str, Any]:
     sources = entry.get("sources", [])
     meta["sources"] = ", ".join(sources) if isinstance(sources, list) else str(sources)
     meta["url"] = entry.get("url") or ""
+    meta["path"] = entry.get("path") or ""
     meta["scraped_at"] = entry.get("scraped_at") or ""
     examples = entry.get("examples") or []
     parameters = entry.get("parameters") or []
@@ -154,14 +162,18 @@ def build_db(force: bool = False) -> int:
         logger.info(f"ChromaDB already exists at {DB_PATH} ({COLLECTION}), skipping build")
         return 0
 
-    json_path = _data_json_path()
-    if not json_path.exists():
-        logger.error(f"PineScript data file not found: {json_path}")
-        raise FileNotFoundError(f"Cannot build DB: {json_path} not found")
+    entries: list[dict[str, Any]] = []
+    for json_path in _data_json_paths():
+        if not json_path.exists():
+            logger.warning(f"Data file not found, skipping: {json_path}")
+            continue
+        loaded = json.loads(json_path.read_text(encoding="utf-8"))
+        logger.info(f"Loaded {len(loaded)} entries from {json_path.name}")
+        entries.extend(loaded)
+    if not entries:
+        raise FileNotFoundError("Cannot build DB: no data JSON files found")
 
-    logger.info(f"Building ChromaDB from {json_path}...")
-    entries = json.loads(json_path.read_text(encoding="utf-8"))
-    logger.info(f"Loaded {len(entries)} entries from JSON")
+    logger.info(f"Building ChromaDB from {len(entries)} total entries...")
 
     import chromadb
     from sentence_transformers import SentenceTransformer
@@ -197,7 +209,9 @@ def build_db(force: bool = False) -> int:
             name = entry.get("name", "").lower().strip().replace(" ", "").replace("()", "").replace("`", "")
             category = entry.get("category", "unknown")
             sources = entry.get("sources", [])
-            if "user_docs" in sources or entry.get("source") == "user_docs":
+            if entry.get("category") == "guide" and entry.get("id"):
+                entry_id = entry["id"]  # manual_<part>_<section>
+            elif "user_docs" in sources or entry.get("source") == "user_docs":
                 entry_id = f"doc_{category}_{name}"
             else:
                 entry_id = f"{category}_{name}"

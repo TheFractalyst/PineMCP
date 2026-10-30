@@ -141,11 +141,18 @@ def format_entry_detail(
     rel = f" (Relevance: {relevance_pct(distance)})" if distance is not None else ""
 
     # Header line - compact
-    ns_prefix = f"{namespace}." if namespace and not name.startswith(f"{namespace}.") else ""
+    if category == "GUIDE":
+        ns_prefix = ""  # location is conveyed by the PATH line
+    else:
+        ns_prefix = f"{namespace}." if namespace and not name.startswith(f"{namespace}.") else ""
     lines.append(f"{category}: {ns_prefix}{name}{rel}")
 
     if syntax:
         lines.append(f"SYNTAX: {syntax}")
+
+    path = meta.get("path") or ""
+    if path and category == "GUIDE":
+        lines.append(f"PATH: {path}")
 
     if description:
         lines.append("DESCRIPTION:")

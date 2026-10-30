@@ -40,7 +40,7 @@ from formatters.errors import (
     safe_error,
 )
 
-_Kind = Literal["function", "variable", "type", "constant", "keyword", "operator"]
+_Kind = Literal["function", "variable", "type", "constant", "keyword", "operator", "guide"]
 
 _BUILTIN_TYPES = (
     "array, matrix, map, line, label, box, table, polyline, "
@@ -245,6 +245,43 @@ async def _lookup_function(name: str) -> str:
     return await lookup_entry(name, "function")
 
 
+async def _lookup_guide(name: str) -> str:
+    """Guide-section lookup: exact/fuzzy name match within category=guide,
+    path-tail aware ('concepts/repainting' -> 'Repainting')."""
+    await ensure_hot_cache()
+
+    # Prefix match first: error-code entries are named '<code> - <message>',
+    # and full-string fuzzy scores poorly against the long message tail.
+    guide_entries = await get_all_where_async({"category": "guide"})
+    nq = name.lower().strip()
+    best: dict | None = None
+    best_len = -1
+    for e in guide_entries:
+        ename = (e["metadata"].get("name") or "").lower().strip()
+        if ename.startswith(nq) and (best is None or len(ename) < best_len):
+            best = e
+            best_len = len(ename)
+    if best is not None:
+        return cap_response(format_entry_detail(
+            best["metadata"].get("name", name),
+            best["metadata"],
+            best["document"],
+        ))
+
+    candidates = await search_by_name_async(name, where={"category": "guide"})
+    if candidates and candidates[0][0] >= 75:
+        sim, entry = candidates[0]
+        return cap_response(format_entry_detail(
+            entry["metadata"].get("name", name),
+            entry["metadata"],
+            entry["document"],
+        ))
+    if "/" in name:
+        tail = name.rstrip("/").split("/")[-1].replace("-", " ")
+        return await lookup_entry(tail, "guide")
+    return await lookup_entry(name, "guide")
+
+
 async def _enrich_type_methods(ns: str, doc: str, formatted: str) -> str:
     """For thin type entries (<500 chars), append an AVAILABLE METHODS list
     scanned from entries sharing the same namespace."""
@@ -358,7 +395,9 @@ async def pine_lookup(
                 "auto-pick the richest doc across all kinds - best for ambiguous "
                 "names like 'color' that exist as both a type and a namespace. "
                 "Set explicitly to disambiguate when you want a specific kind: "
-                "'function' | 'variable' | 'type' | 'constant' | 'keyword' | 'operator'."
+                "'function' | 'variable' | 'type' | 'constant' | 'keyword' | "
+                "'operator' | 'guide' (user-manual section, e.g. "
+                "pine_lookup('Repainting', kind='guide'))."
             ),
         ),
     ] = None,
@@ -384,6 +423,8 @@ async def pine_lookup(
             return await _lookup_function(canonical)
         if kind == "type":
             return await _lookup_type(canonical)
+        if kind == "guide":
+            return await _lookup_guide(canonical)
         if kind in ("variable", "constant", "keyword", "operator"):
             return await lookup_entry(canonical, kind)
 

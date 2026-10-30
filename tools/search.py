@@ -321,7 +321,10 @@ async def _docs_branch(
     name_entry_ids = set()
 
     def _collect_name_hits(search_text: str, min_score: float = 70.0) -> None:
-        hits = _db.search_by_name(search_text)
+        # Category-scoped: the name boost must respect an explicit category
+        # filter, otherwise cross-category fuzzy hits leak into filtered search
+        where = {"category": category_filter} if category_filter else None
+        hits = _db.search_by_name(search_text, where=where)
         for score, entry in hits[:2]:
             if score >= min_score and entry.get("id") not in name_entry_ids:
                 name_entries.append((score, entry))
@@ -569,7 +572,8 @@ async def pine_search(
             max_length=50,
             description=(
                 "Restrict to one entry kind: 'function', 'variable', 'type', "
-                "'constant', 'keyword', 'operator'. Leave unset for all kinds."
+                "'constant', 'keyword', 'operator', or 'guide' (user-manual "
+                "sections). Leave unset for all kinds."
             ),
         ),
     ] = None,

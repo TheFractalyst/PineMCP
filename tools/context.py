@@ -164,7 +164,9 @@ async def pine_browse(
                 "'math', 'array', 'matrix', 'map', 'str', 'color', 'chart', "
                 "'line', 'label', 'box', 'table', 'request', 'ticker', "
                 "'timeframe', 'syminfo', 'input', 'runtime', 'polyline'. "
-                "Use 'global' for un-namespaced built-ins."
+                "Use 'global' for un-namespaced built-ins. Guide parts also "
+                "work: 'concepts', 'language', 'visuals', 'writing', 'faq', "
+                "'errors', 'release', 'migration'."
             ),
         ),
     ],
@@ -175,7 +177,7 @@ async def pine_browse(
             max_length=50,
             description=(
                 "Optional category filter: 'function' | 'variable' | 'type' | "
-                "'constant'. Leave unset to list every member."
+                "'constant' | 'guide'. Leave unset to list every member."
             ),
         ),
     ] = None,

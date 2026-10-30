@@ -83,11 +83,25 @@ UDTs (user-defined types), methods, enums, polylines, and improved performance.
 
 This server provides complete local PineScript v6 reference documentation
 via a ChromaDB vector store covering ALL v6 functions, variables, types,
-constants, keywords, operators, and annotations.
+constants, keywords, operators, and annotations. Also indexed: the complete
+Pine Script v6 User Manual (guide entries covering Language, Visuals,
+Concepts, Writing scripts, Errors and warnings, FAQ, Release notes, and
+Migration guides).
 
 This server ONLY supports PineScript v6. No v4 or v5 content is included.
 When migrating older scripts, use pine_repair(mode="migrate") to upgrade
 v5 code to v6.
+
+GUIDE DOCUMENTATION (user manual)
+----------------------------------
+For conceptual questions (execution model, repainting, sessions, strategies,
+style guide, debugging, limitations), query the guide entries:
+  - pine_lookup('Repainting', kind='guide')       -> full manual section
+  - pine_lookup('execution model')                -> finds the guide by name
+  - pine_search('how to avoid repainting', category='guide')
+  - pine_browse('concepts')                       -> list all concept guides
+Guide namespaces: primer, language, visuals, concepts, writing, errors,
+faq, release, migration.
 
 MANDATORY USAGE PATTERN (NON-NEGOTIABLE)
 ----------------------------------------
