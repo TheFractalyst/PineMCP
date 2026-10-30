@@ -7,9 +7,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://github.com/TheFractalyst/PineMCP/actions/workflows/test.yml/badge.svg)](https://github.com/TheFractalyst/PineMCP/actions/workflows/test.yml)
 
-Complete PineScript v6 reference documentation MCP server with 1751 entries
-covering all functions, variables, constants, types, keywords, operators, and
-annotations from the official TradingView PineScript v6 reference.
+Complete PineScript v6 reference documentation MCP server with 3067 entries:
+1751 reference entries covering all functions, variables, constants, types,
+keywords, operators, and annotations from the official TradingView PineScript
+v6 reference, plus 1316 guide entries covering every section of the official
+Pine Script v6 User Manual.
 
 [Quick Start](#quick-start) |
 [Tools](#tools) |
@@ -33,7 +35,7 @@ Subsequent runs start instantly.
 **What you get:**
 
 - 6 MCP tools for PineScript v6 docs lookup, code validation, and code generation
-- 1751 entries indexed in a local ChromaDB vector store (100% offline)
+- 2723 entries indexed in a local ChromaDB vector store (100% offline)
 - Sub-millisecond hot cache for priority lookups
 - Remote TradingView compiler integration for `pine_compile` and `pine_repair`
 - Works with Claude Desktop, Cursor, Windsurf, OpenCode, and any MCP client
@@ -55,6 +57,9 @@ PineMCP gives AI assistants **authoritative, real-time access** to the complete
 TradingView v6 reference:
 
 - **100% coverage**: 919/919 base entries from the live TradingView v6 reference
+- **User manual coverage**: every section of the official v6 User Manual
+  (Language, Visuals, Concepts, Writing scripts, Errors and warnings, FAQ,
+  Release notes, Migration guides) is queryable via `kind='guide'`
 - **Semantic search**: Vector embeddings find relevant docs by meaning, not just keywords
 - **Remote compilation**: `pine_compile` validates code against the real TradingView compiler
 - **v5 to v6 migration**: `pine_repair(mode="migrate")` applies all known v5->v6 replacements
@@ -190,11 +195,15 @@ See [HF_DEPLOY.md](HF_DEPLOY.md) to deploy your own free instance.
 
 ## Database
 
-- 1751 entries (v6 only)
+- 3067 entries shipped (v6 only); 2723 unique entries indexed
+  (344 pre-existing merged reference duplicates collapse on upsert)
 - 53 namespaces (ta, strategy, array, matrix, math, str, color, etc.)
 - 919/919 base entries from the live TradingView v6 reference (100% coverage)
 - 832 additional enrichment entries from local documentation parsing
-- Hot cache: 1447 entries preloaded in memory for sub-ms lookups
+- 1316 guide entries from the official Pine Script v6 User Manual PDF
+  (99.96% text coverage; 10 parts: primer, language, visuals, concepts,
+  writing, errors, faq, release, migration, welcome)
+- Hot cache: 1541 entries preloaded in memory for sub-ms lookups
 - Auto-built on first run from shipped JSON data (2.1MB)
 
 To rebuild the database:
@@ -220,6 +229,18 @@ python -m playwright install chromium
 python pipeline/discover_entries.py
 python pipeline/scrape_entries.py
 python pipeline/merge_and_index.py --reset
+```
+
+### Re-ingest the User Manual
+
+Download the official Pine Script v6 User Manual PDF from TradingView
+(this project does not distribute it), then:
+
+```bash
+export PINESCRIPT_MANUAL_PDF=/path/to/Pine_Script_v6_User_Manual.pdf
+python pipeline/ingest_manual.py
+python pipeline/audit_symbols.py
+.venv/bin/python -c "from core.build_db import build_db; build_db(force=True)"
 ```
 
 ## Tech Stack
