@@ -12,8 +12,8 @@ Output: dashboard/public/pine-reference.json
 """
 
 import json
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -43,10 +43,6 @@ def parse_params(raw):
         return []
 
 
-def parse_examples(raw):
-    return []  # stripped — hover fetches full docs from API
-
-
 def main():
     col = get_collection()
     total = col.count()
@@ -64,7 +60,6 @@ def main():
         ns = meta.get("namespace", "")
 
         params = parse_params(meta.get("raw_parameters", ""))
-        examples = parse_examples(meta.get("raw_examples", ""))
 
         # Build insert snippet: name(param1, param2, ...)
         # For constants/variables, just the name
@@ -128,13 +123,15 @@ def main():
         "ns": ns_index,
     }
 
-    out_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "Documents", "PineRustEngine", "dashboard", "public", "pine-reference.json"
+    # Output target: override with PINERUST_REFERENCE_OUT, otherwise the
+    # local repo-relative Documents path used by dev machines.
+    out_path = os.environ.get(
+        "PINERUST_REFERENCE_OUT",
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "Documents", "PineRustEngine", "dashboard", "public", "pine-reference.json"
+        ),
     )
-    # Fallback: direct path
-    alt_path = "/Users/fractalyst/Documents/PineRustEngine/dashboard/public/pine-reference.json"
-    out_path = alt_path if os.path.isdir(os.path.dirname(alt_path)) else out_path
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
@@ -148,7 +145,7 @@ def main():
     # Sample
     sample = entries.get("ta.sma", {})
     if sample:
-        print(f"\nSample (ta.sma):")
+        print("\nSample (ta.sma):")
         print(json.dumps(sample, indent=2)[:500])
 
 

@@ -25,7 +25,10 @@ Thumbs.db
 # Database files (ChromaDB — auto-built on first run from shipped JSON data)
 pine_db/
 pinescript_db/
+chroma_db/
 pinescript_v6/
+docs/superpowers/
+audit_manual_symbols_report.md
 *.db
 *.sqlite3
 *.sqlite3-wal
