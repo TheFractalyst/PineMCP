@@ -19,10 +19,6 @@ from loguru import logger
 
 from core.db import get_collection
 
-# -----------------------------------------------------------------------------
-# Priority namespaces and globals
-# -----------------------------------------------------------------------------
-
 _PRIORITY_NAMESPACES_DEFAULT = [
     "ta",
     "strategy",
@@ -56,9 +52,7 @@ _PRIORITY_NAMESPACES_DEFAULT = [
 ]
 _OVERRIDE_NS = os.getenv("HOT_CACHE_NAMESPACES", "")
 PRIORITY_NAMESPACES = (
-    [ns.strip() for ns in _OVERRIDE_NS.split(",") if ns.strip()]
-    if _OVERRIDE_NS
-    else _PRIORITY_NAMESPACES_DEFAULT
+    [ns.strip() for ns in _OVERRIDE_NS.split(",") if ns.strip()] if _OVERRIDE_NS else _PRIORITY_NAMESPACES_DEFAULT
 )
 
 PRIORITY_GLOBALS = [
@@ -281,10 +275,6 @@ PRIORITY_GLOBALS = [
     "map",
 ]
 
-# -----------------------------------------------------------------------------
-# Hot cache state
-# -----------------------------------------------------------------------------
-
 HOT_CACHE: dict[str, dict] = {}
 _hot_cache_built: bool = False
 _build_lock = asyncio.Lock()
@@ -316,9 +306,7 @@ async def build_hot_cache() -> bool:
                         where={"namespace": namespace},
                         include=["documents", "metadatas"],
                     )
-                    for rid, doc, meta in zip(
-                        result["ids"], result["documents"], result["metadatas"]
-                    ):
+                    for rid, doc, meta in zip(result["ids"], result["documents"], result["metadatas"]):
                         key = (meta.get("name") or "").lower().strip()
                         if key:
                             if key in HOT_CACHE:
@@ -331,9 +319,7 @@ async def build_hot_cache() -> bool:
                                 HOT_CACHE[key] = {"id": rid, "document": doc, "metadata": meta}
                             count += 1
                 except Exception as e:
-                    logger.warning(
-                        f"Hot cache: failed to load namespace '{namespace}': {e}"
-                    )
+                    logger.warning(f"Hot cache: failed to load namespace '{namespace}': {e}")
 
             # Load priority global variables
             for name in PRIORITY_GLOBALS:

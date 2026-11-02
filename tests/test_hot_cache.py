@@ -6,7 +6,6 @@ Uses mocks to avoid real ChromaDB dependencies.
 """
 
 import asyncio
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,13 +13,10 @@ import pytest
 import core.hot_cache as hot_cache_module
 from core.hot_cache import (
     HOT_CACHE,
-    PRIORITY_NAMESPACES,
-    PRIORITY_GLOBALS,
     build_hot_cache,
     cache_lookup,
     ensure_hot_cache,
 )
-
 
 # -----------------------------------------------------------------------------
 # Setup and Teardown
@@ -141,7 +137,7 @@ class TestBuildHotCacheIdempotency:
     @pytest.mark.asyncio
     async def test_build_is_idempotent(self):
         """Multiple calls to build_hot_cache should be idempotent."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_col = MagicMock()
             mock_col.get.return_value = {"ids": [], "metadatas": [], "documents": []}
             mock_get_collection.return_value = mock_col
@@ -160,7 +156,7 @@ class TestBuildHotCacheIdempotency:
     @pytest.mark.asyncio
     async def test_ensure_hot_cache_builds_once(self):
         """Multiple calls to ensure_hot_cache should build only once."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_col = MagicMock()
             mock_col.get.return_value = {"ids": [], "metadatas": [], "documents": []}
             mock_get_collection.return_value = mock_col
@@ -176,7 +172,7 @@ class TestBuildHotCacheIdempotency:
     @pytest.mark.asyncio
     async def test_concurrent_builds_are_serialized(self):
         """Concurrent calls should be serialized by lock."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_col = MagicMock()
             mock_col.get.return_value = {"ids": [], "metadatas": [], "documents": []}
             mock_get_collection.return_value = mock_col
@@ -202,7 +198,7 @@ class TestBuildHotCacheFunctionality:
     @pytest.mark.asyncio
     async def test_loads_namespace_entries(self):
         """Should load entries from priority namespaces."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_col = MagicMock()
             mock_col.get.return_value = {
                 "ids": ["id1"],
@@ -223,11 +219,12 @@ class TestBuildHotCacheFunctionality:
     @pytest.mark.asyncio
     async def test_handles_duplicate_names(self):
         """Should keep entry with richer documentation on duplicate."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_col = MagicMock()
             # First namespace returns short doc
             # Second namespace (in loop) returns longer doc
             call_count = [0]
+
             def side_effect(**kwargs):
                 call_count[0] += 1
                 if call_count[0] == 1:
@@ -257,7 +254,7 @@ class TestBuildHotCacheFunctionality:
     @pytest.mark.asyncio
     async def test_loads_global_variables(self):
         """Should load priority global variables."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_col = MagicMock()
             mock_col.get.return_value = {
                 "ids": ["id1"],
@@ -276,9 +273,10 @@ class TestBuildHotCacheFunctionality:
     @pytest.mark.asyncio
     async def test_handles_namespace_load_failure(self):
         """Should continue if one namespace fails to load."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_col = MagicMock()
             call_count = [0]
+
             def side_effect(**kwargs):
                 call_count[0] += 1
                 if call_count[0] == 1:
@@ -288,6 +286,7 @@ class TestBuildHotCacheFunctionality:
                     "metadatas": [{"name": "ema", "namespace": "ta"}],
                     "documents": ["EMA"],
                 }
+
             mock_col.get.side_effect = side_effect
             mock_get_collection.return_value = mock_col
 
@@ -301,7 +300,7 @@ class TestBuildHotCacheFunctionality:
     @pytest.mark.asyncio
     async def test_returns_false_on_total_failure(self):
         """Should return False if get_collection fails completely."""
-        with patch.object(hot_cache_module, 'get_collection') as mock_get_collection:
+        with patch.object(hot_cache_module, "get_collection") as mock_get_collection:
             mock_get_collection.side_effect = Exception("DB down")
 
             HOT_CACHE.clear()
@@ -327,6 +326,7 @@ class TestHotCacheThreadSafety:
         hot_cache_module._cache_misses = 0
 
         import threading
+
         results = []
 
         def lookup_hit():

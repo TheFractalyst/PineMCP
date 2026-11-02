@@ -50,11 +50,6 @@ def _sanitize_pine_ident(name: str) -> str:
     return clean
 
 
-# -----------------------------------------------------------------------------
-# Indicator scaffold (internal)
-# -----------------------------------------------------------------------------
-
-
 async def _scaffold_indicator(
     name: str,
     description: str,
@@ -173,13 +168,9 @@ async def _scaffold_indicator(
             "williams": "ta.wpr williams percent range",
         }
         kw = extract_indicator_keywords(description or name)
-        enriched_query = (
-            f"{description} {enrich_terms.get(kw[0], '')}" if kw else description
-        )
+        enriched_query = f"{description} {enrich_terms.get(kw[0], '')}" if kw else description
 
-        combined_results = await query_async(
-            enriched_query, 10, where={"category": "function"}
-        )
+        combined_results = await query_async(enriched_query, 10, where={"category": "function"})
         db_err = check_query_error(combined_results)
         if db_err:
             return db_err
@@ -209,15 +200,10 @@ async def _scaffold_indicator(
         if best_meta is not None:
             top_name = best_meta.get("name", "")
             strong_name_match = any(
-                kw_str in top_name.lower()
-                for kw_str in extract_indicator_keywords(description or name)
+                kw_str in top_name.lower() for kw_str in extract_indicator_keywords(description or name)
             )
             is_ta_ns = top_name.startswith("ta.")
-            accept = (
-                best_dist < 0.6
-                or (is_ta_ns and best_dist < 0.75)
-                or strong_name_match
-            )
+            accept = best_dist < 0.6 or (is_ta_ns and best_dist < 0.75) or strong_name_match
 
             if accept:
                 input_vars: list[str] = []
@@ -232,14 +218,8 @@ async def _scaffold_indicator(
                 param_names: list[str] = []
                 if raw_params:
                     try:
-                        params = (
-                            json.loads(raw_params)
-                            if isinstance(raw_params, str)
-                            else raw_params
-                        )
-                        param_names = [
-                            p.get("name", "") for p in params if isinstance(p, dict)
-                        ]
+                        params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
+                        param_names = [p.get("name", "") for p in params if isinstance(p, dict)]
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -266,17 +246,10 @@ async def _scaffold_indicator(
                     args_list = input_vars if input_vars else ["close"]
 
                 args = ", ".join(args_list) if args_list else "close"
-                calc_stub_phase2 = (
-                    f"result = {top_name}({args})\n"
-                    f'plot(result, "Result", color.orange)'
-                )
-                template_source = (
-                    f"search:{top_name} (dist={best_dist:.3f}, {best_query_label})"
-                )
+                calc_stub_phase2 = f'result = {top_name}({args})\nplot(result, "Result", color.orange)'
+                template_source = f"search:{top_name} (dist={best_dist:.3f}, {best_query_label})"
             else:
-                template_source = (
-                    f"rejected:{top_name} (dist={best_dist:.3f}, too far)"
-                )
+                template_source = f"rejected:{top_name} (dist={best_dist:.3f}, too far)"
     else:
         ta_results = await query_async(
             description or name,
@@ -311,9 +284,7 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
     for rf in relevant_func_strings:
         code += f"\n{rf}"
     if not relevant_func_strings:
-        code += (
-            "\n// (Use pine_search to find relevant functions)"
-        )
+        code += "\n// (Use pine_search to find relevant functions)"
 
     code += f"""
 {calc_stub}
@@ -334,9 +305,7 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
     ]
 
     if errors:
-        lines.append(
-            f"VALIDATION: {len(errors)} compilation issues (template may need manual fixes)"
-        )
+        lines.append(f"VALIDATION: {len(errors)} compilation issues (template may need manual fixes)")
         for err in errors:
             lines.append(
                 f"  Line {err.get('line', '?')}, Col {err.get('column', '?')}: {err.get('text', '?')} [{err.get('type', '?')}]"
@@ -355,11 +324,6 @@ indicator("{safe_name}", overlay={str(overlay).lower()}, shorttitle="{safe_name[
     result = cap_response("\n".join(lines))
     set_codegen_cache(cache_key, result)
     return result
-
-
-# -----------------------------------------------------------------------------
-# Strategy scaffold (internal)
-# -----------------------------------------------------------------------------
 
 
 async def _scaffold_strategy(
@@ -470,11 +434,6 @@ if barstate.islast
     return result
 
 
-# -----------------------------------------------------------------------------
-# TOOL: pine_scaffold - indicator or strategy template
-# -----------------------------------------------------------------------------
-
-
 @tool(
     annotations=ToolAnnotations(
         title="Scaffold PineScript Script",
@@ -530,9 +489,7 @@ async def pine_scaffold(
         bool,
         Field(
             default=False,
-            description=(
-                "[indicator only] Whether the indicator overlays the price chart."
-            ),
+            description=("[indicator only] Whether the indicator overlays the price chart."),
         ),
     ] = False,
     initial_capital: Annotated[
@@ -586,9 +543,7 @@ async def pine_scaffold(
         if kind == "indicator":
             return await _scaffold_indicator(name, description, inputs, overlay)
         if kind == "strategy":
-            return await _scaffold_strategy(
-                name, description, initial_capital, commission_pct, pyramiding
-            )
+            return await _scaffold_strategy(name, description, initial_capital, commission_pct, pyramiding)
         raise ToolError(f"Unknown kind '{kind}'. Use 'indicator' or 'strategy'.")
 
     except ToolError:

@@ -15,10 +15,6 @@ from loguru import logger
 
 from core.config import MAX_TOOL_RESPONSE_CHARS
 
-# -----------------------------------------------------------------------------
-# Fix hints - pattern -> user-friendly fix description
-# -----------------------------------------------------------------------------
-
 _FIX_HINTS: dict[str, str] = {
     # NOTE: Order matters! lookup_fix_hint() uses first-match-wins substring search.
     # Longer/more-specific patterns MUST appear before shorter/generic ones that
@@ -113,7 +109,7 @@ _FIX_HINTS: dict[str, str] = {
     "method already defined": "v6 disallows duplicate method definitions for the same type. Each type can only have one method with a given name. Rename or remove the duplicate.",
     "Library script must have": "v6 library scripts require //@version=6 and library() declaration at the top. The library() call replaces indicator()/strategy(). Use export to expose functions.",
     "order of elements in tuple": "v6 enforces strict tuple element ordering. Elements in the assignment must match the expression order exactly. Check that [a, b, c] = matches the order of [expr1, expr2, expr3].",
-    "runtime.error": "v6 runtime.error() raises a visible error on the chart. Use it to validate inputs: `if val == 0\n    runtime.error(\"msg\")`. This prevents silent failures.",
+    "runtime.error": 'v6 runtime.error() raises a visible error on the chart. Use it to validate inputs: `if val == 0\n    runtime.error("msg")`. This prevents silent failures.',
     "chart.left_visible_bar_time": "v6 chart.left/right_visible_bar_time triggers full recalculation on every scroll/zoom. Keep calculations lightweight. Create drawings with `var` and update with setters on `barstate.islast`. Use visibility guards to restrict heavy calculations. PineCoders VisibleChart pattern.",
     "timeframe.from_seconds": "v6 timeframe.from_seconds() converts a seconds count to a timeframe string. Use with timeframe.in_seconds() for dynamic TF construction: `timeframe.from_seconds(timeframe.in_seconds() * mult)`.",
     "force_overlay": "v6 force_overlay=true parameter on label.new()/bgcolor() allows pane indicators to draw on the main chart. Without it, drawings stay in the indicator pane when overlay=false.",
@@ -151,17 +147,11 @@ def extract_name_from_error(error_text: str) -> Optional[str]:
     if m:
         return m.group(1)
     # Pattern: "An argument of type 'series float'..." -> look for function name
-    m = re.search(
-        r"function\s+['\"]?([a-zA-Z_][a-zA-Z0-9_.]*)", error_text, re.IGNORECASE
-    )
+    m = re.search(r"function\s+['\"]?([a-zA-Z_][a-zA-Z0-9_.]*)", error_text, re.IGNORECASE)
     if m:
         return m.group(1)
     return None
 
-
-# -----------------------------------------------------------------------------
-# Response utilities
-# -----------------------------------------------------------------------------
 
 _PATH_PATTERN = re.compile(r"(/[\w./ -]+|[A-Z]:\\[\\\w. -]+)")
 
@@ -261,16 +251,13 @@ def error(tool: str, msg: str) -> str:
     return f"ERROR [{tool}]: {msg}"
 
 
-# -----------------------------------------------------------------------------
-# Name normalization helpers
-# -----------------------------------------------------------------------------
-
 def strip_string_literals(code: str) -> str:
     """Replace string literal contents with spaces (preserving length for offsets).
 
     Handles both "..." and '...' strings with backslash escapes.
     Used to gate regex transformations so they don't match inside strings.
     """
+
     def _replacer(m: re.Match) -> str:
         s = m.group(0)
         # Preserve quotes, replace inner chars with spaces

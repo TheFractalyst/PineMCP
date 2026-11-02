@@ -56,12 +56,13 @@ def valid_pine_code():
 @pytest.fixture
 def invalid_pine_code():
     """PineScript code with namespace error (ema without ta. prefix)."""
-    return 'ema(close, 14)'
+    return "ema(close, 14)"
 
 
 @pytest.fixture
 def example_file_path():
     """Path to an example strategy file used in benchmarks.
     Skips tests if the file is not found locally."""
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "tests", "fixtures", "example_strategy.ps")
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "fixtures", "example_strategy.ps"
+    )

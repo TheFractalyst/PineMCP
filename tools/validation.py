@@ -45,13 +45,7 @@ _EXPLAIN_LOOKUP_TIMEOUT_S = max(1, int(os.getenv("PINE_EXPLAIN_LOOKUP_TIMEOUT", 
 _EXPLAIN_MAX_DOC_LOOKUPS = max(1, int(os.getenv("PINE_EXPLAIN_MAX_DOC_LOOKUPS", "8")))
 
 
-# -----------------------------------------------------------------------------
-# File-branch helpers (internal - absorbed from old validate_file)
-# -----------------------------------------------------------------------------
-
-_PINESCRIPT_SIGNATURES = re.compile(
-    r"(//@version=6|indicator\s*\(|strategy\s*\(|library\s*\()"
-)
+_PINESCRIPT_SIGNATURES = re.compile(r"(//@version=6|indicator\s*\(|strategy\s*\(|library\s*\()")
 _PINESCRIPT_HEADER_LINES = 20
 
 
@@ -83,10 +77,7 @@ def _resolve_file(file_path: str) -> tuple[str, str]:
     try:
         resolved = os.path.realpath(file_path)
     except Exception:
-        raise ToolError(
-            "Invalid path provided. Could not resolve the file path. "
-            "Please provide a valid absolute path."
-        )
+        raise ToolError("Invalid path provided. Could not resolve the file path. Please provide a valid absolute path.")
 
     if not any(resolved.startswith(d) for d in _ALLOWED_BASE_DIRS):
         raise ToolError(
@@ -110,11 +101,6 @@ def _resolve_file(file_path: str) -> tuple[str, str]:
     return resolved, display_name
 
 
-# -----------------------------------------------------------------------------
-# Shared rendering
-# -----------------------------------------------------------------------------
-
-
 def _render_success_summary(code: str) -> str:
     """Compact post-success analysis - script type, counts, features."""
     code_lines = code.strip().splitlines()
@@ -122,12 +108,11 @@ def _render_success_summary(code: str) -> str:
     is_indicator = any("indicator(" in line for line in code_lines)
     is_library = any("library(" in line for line in code_lines)
     script_type = (
-        "strategy" if is_strategy
-        else ("indicator" if is_indicator
-              else ("library" if is_library else "unknown"))
+        "strategy" if is_strategy else ("indicator" if is_indicator else ("library" if is_library else "unknown"))
     )
     plots = sum(
-        1 for line in code_lines
+        1
+        for line in code_lines
         if line.strip().startswith("plot(")
         or line.strip().startswith("plotshape(")
         or line.strip().startswith("plotchar(")
@@ -135,14 +120,12 @@ def _render_success_summary(code: str) -> str:
     inputs = sum(1 for line in code_lines if "input." in line)
     has_request = any("request." in line for line in code_lines)
     imports = [line.strip() for line in code_lines if line.strip().startswith("import ")]
-    var_count = sum(
-        1 for line in code_lines
-        if line.strip().startswith("var ") or line.strip().startswith("varip ")
-    )
+    var_count = sum(1 for line in code_lines if line.strip().startswith("var ") or line.strip().startswith("varip "))
     has_methods = any("method " in line for line in code_lines)
     has_types = any(
-        re.search(r'(?<!\w\.)type\s+\w+', line.split("//")[0])
-        for line in code_lines if not line.strip().startswith("//")
+        re.search(r"(?<!\w\.)type\s+\w+", line.split("//")[0])
+        for line in code_lines
+        if not line.strip().startswith("//")
     )
 
     analysis = [f"Script type: {script_type}", f"Lines: {len(code_lines)}"]
@@ -199,8 +182,7 @@ async def _render_errors(errors: list, warnings: list, explain: bool) -> list[st
         # This is what pine-facade returns in the ctx object — it tells the
         # AI exactly which function/argument/value caused the error.
         if ctx and isinstance(ctx, dict):
-            ctx_parts = [f"{k}={v!r}" for k, v in ctx.items()
-                         if isinstance(v, (str, int, float, bool))]
+            ctx_parts = [f"{k}={v!r}" for k, v in ctx.items() if isinstance(v, (str, int, float, bool))]
             if ctx_parts:
                 lines.append(f"    Context: {', '.join(ctx_parts)}")
 
@@ -219,14 +201,10 @@ async def _render_errors(errors: list, warnings: list, explain: bool) -> list[st
                             lines.append(f"      {dl}")
                     else:
                         lines.append(
-                            f"    Docs lookup for '{extracted_name}': "
-                            "not found (may be misspelled or v5-only syntax)"
+                            f"    Docs lookup for '{extracted_name}': not found (may be misspelled or v5-only syntax)"
                         )
                 except asyncio.TimeoutError:
-                    lines.append(
-                        f"    Docs lookup for '{extracted_name}': timeout "
-                        f"({_EXPLAIN_LOOKUP_TIMEOUT_S}s)"
-                    )
+                    lines.append(f"    Docs lookup for '{extracted_name}': timeout ({_EXPLAIN_LOOKUP_TIMEOUT_S}s)")
                 explain_lookups_done += 1
 
         hint = lookup_fix_hint(text)
@@ -248,11 +226,6 @@ async def _render_errors(errors: list, warnings: list, explain: bool) -> list[st
         lines.append("")
 
     return lines
-
-
-# -----------------------------------------------------------------------------
-# TOOL: pine_compile - compile source or file
-# -----------------------------------------------------------------------------
 
 
 @tool(
@@ -340,8 +313,7 @@ async def pine_compile(
         )
     if code is not None and file_path is not None:
         raise ToolError(
-            "Pass exactly one input mode: either `code`, or `file_path` "
-            "(optionally with `file_content`), not both."
+            "Pass exactly one input mode: either `code`, or `file_path` (optionally with `file_content`), not both."
         )
     if code is None and file_path is None and file_content is None:
         raise ToolError("No input provided. Pass one of: `code`, `file_path`, or `file_content`.")
@@ -357,9 +329,7 @@ async def pine_compile(
                 file_size = len(file_code.encode("utf-8"))
                 line_count = file_code.count("\n") + 1
                 display_header = (
-                    f"FILE: {display_name}\n"
-                    f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
-                    + "=" * 80 + "\n"
+                    f"FILE: {display_name}\nSize: {file_size:,} bytes | Lines: {line_count:,}\n" + "=" * 80 + "\n"
                 )
                 code = file_code
             else:
@@ -385,9 +355,7 @@ async def pine_compile(
                 file_size = len(file_code.encode("utf-8"))
                 line_count = file_code.count("\n") + 1
                 display_header = (
-                    f"FILE: {display_name}\n"
-                    f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
-                    + "=" * 80 + "\n"
+                    f"FILE: {display_name}\nSize: {file_size:,} bytes | Lines: {line_count:,}\n" + "=" * 80 + "\n"
                 )
                 cache_key = (resolved, mtime_ns, fsize)
                 code = file_code
@@ -402,9 +370,7 @@ async def pine_compile(
             file_size = len(file_content.encode("utf-8"))
             line_count = file_content.count("\n") + 1
             display_header = (
-                f"FILE: {display_name}\n"
-                f"Size: {file_size:,} bytes | Lines: {line_count:,}\n"
-                + "=" * 80 + "\n"
+                f"FILE: {display_name}\nSize: {file_size:,} bytes | Lines: {line_count:,}\n" + "=" * 80 + "\n"
             )
             code = file_content
 
@@ -433,7 +399,8 @@ async def pine_compile(
         fallback_notice = (
             "NOTE: Remote compiler unavailable. Using local syntax validation.\n"
             "Full compilation may catch additional errors. Validate in TradingView's Pine Editor.\n\n"
-            if is_fallback else ""
+            if is_fallback
+            else ""
         )
 
         if success and not errors:
@@ -444,18 +411,15 @@ async def pine_compile(
             if warnings:
                 warning_lines = await _render_errors([], warnings, explain=False)
                 response = (
-                    (display_header or "")
-                    + f"VALID - Code compiles with warnings.{extra}\n"
+                    (display_header or "") + f"VALID - Code compiles with warnings.{extra}\n"
                     f"Compiler: {compiler_name}\n"
                     f"Errors: 0 | Warnings: {len(warnings)}\n\n"
                     f"{fallback_notice}"
-                    f"Code Analysis:\n{analysis_block}\n\n"
-                    + "\n".join(warning_lines)
+                    f"Code Analysis:\n{analysis_block}\n\n" + "\n".join(warning_lines)
                 )
             else:
                 response = (
-                    (display_header or "")
-                    + f"VALID - Code compiles successfully.{extra}\n"
+                    (display_header or "") + f"VALID - Code compiles successfully.{extra}\n"
                     f"Compiler: {compiler_name}\n"
                     f"Errors: 0 | Warnings: 0\n\n"
                     f"{fallback_notice}"
@@ -526,37 +490,32 @@ async def pine_compile(
         raise ToolError(safe_error(e, "pine_compile"))
 
 
-# -----------------------------------------------------------------------------
-# pine_repair: mode="targeted" implementation (absorbed from fix_and_validate)
-# -----------------------------------------------------------------------------
-
-
 def _find_toplevel_when(body: str) -> tuple[int, int] | None:
     """Find ', when=' at top level (depth 0) in a call body."""
     depth = 0
     i = 0
     while i < len(body):
         ch = body[i]
-        if ch == '(':
+        if ch == "(":
             depth += 1
             i += 1
-        elif ch == ')':
+        elif ch == ")":
             depth -= 1
             i += 1
-        elif depth == 0 and ch == ',':
-            m = re.match(r',\s*when\s*=', body[i:])
+        elif depth == 0 and ch == ",":
+            m = re.match(r",\s*when\s*=", body[i:])
             if m:
                 val_pos = i + m.end()
                 val_depth = 0
                 while val_pos < len(body):
                     c = body[val_pos]
-                    if c == '(':
+                    if c == "(":
                         val_depth += 1
-                    elif c == ')':
+                    elif c == ")":
                         if val_depth == 0:
                             break
                         val_depth -= 1
-                    elif c == ',' and val_depth == 0:
+                    elif c == "," and val_depth == 0:
                         break
                     val_pos += 1
                 return (i, val_pos)
@@ -572,21 +531,21 @@ def _remove_when_param(code: str) -> str:
     Handles multiple calls and avoids matching when= inside nested function
     arguments (e.g., calcQty(when=true) inside a strategy call)."""
     removals: list[tuple[int, int]] = []
-    call_re = re.compile(r'strategy\.(entry|exit|close)\s*\(')
+    call_re = re.compile(r"strategy\.(entry|exit|close)\s*\(")
     for call_match in call_re.finditer(code):
         open_end = call_match.end()
         depth = 1
         pos = open_end
         while pos < len(code) and depth > 0:
-            if code[pos] == '(':
+            if code[pos] == "(":
                 depth += 1
-            elif code[pos] == ')':
+            elif code[pos] == ")":
                 depth -= 1
             pos += 1
         if depth != 0:
             continue
 
-        body = code[open_end:pos - 1]
+        body = code[open_end : pos - 1]
         when_info = _find_toplevel_when(body)
         if when_info is None:
             continue
@@ -634,9 +593,7 @@ async def _repair_targeted(code: str, context: str) -> str:
                         break
             if cached_entry:
                 doc = cached_entry.get("document", "")
-                doc_context = (
-                    f"\nDOC REFERENCE for '{identifier}':\n{doc[:300]}"
-                )
+                doc_context = f"\nDOC REFERENCE for '{identifier}':\n{doc[:300]}"
             elif _db._name_index_built:
                 key = identifier.lower()
                 hits = _db._name_index.get(key)
@@ -646,10 +603,7 @@ async def _repair_targeted(code: str, context: str) -> str:
                         if hits:
                             break
                 if hits:
-                    doc_context = (
-                        f"\nDOC REFERENCE for '{identifier}':\n"
-                        f"{hits[0]['document'][:300]}"
-                    )
+                    doc_context = f"\nDOC REFERENCE for '{identifier}':\n{hits[0]['document'][:300]}"
         except Exception as e:
             logger.debug(f"Doc lookup for fix failed: {e}")
 
@@ -658,20 +612,22 @@ async def _repair_targeted(code: str, context: str) -> str:
     fixes_list: list[str] = []
 
     bare_fn_pattern = re.compile(
-        r'(?<!\.)\b(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|'
-        r'crossunder|highest|lowest|barssince|valuewhen|linreg|mom|'
-        r'cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\('
+        r"(?<!\.)\b(ema|sma|rsi|macd|atr|bb|stoch|wma|hma|vwap|crossover|"
+        r"crossunder|highest|lowest|barssince|valuewhen|linreg|mom|"
+        r"cum|change|pivothigh|pivotlow|supertrend|correlation)\s*\("
     )
     if bare_fn_pattern.search(strip_string_literals(fixed_code)):
-        fixed_code = bare_fn_pattern.sub(r'ta.\1(', fixed_code)
+        fixed_code = bare_fn_pattern.sub(r"ta.\1(", fixed_code)
         fixes_list.append("Added ta. namespace prefix to unqualified TA functions")
 
-    transp_pattern = re.compile(r',\s*transp\s*=\s*\d+')
+    transp_pattern = re.compile(r",\s*transp\s*=\s*\d+")
     if transp_pattern.search(strip_string_literals(fixed_code)):
-        fixed_code = transp_pattern.sub('', fixed_code)
+        fixed_code = transp_pattern.sub("", fixed_code)
         fixes_list.append("Removed transp= parameter (v6: use color.new() instead)")
 
-    if re.search(r'strategy\.(entry|exit|close)\s*\(', strip_string_literals(fixed_code)) and re.search(r',\s*when\s*=', strip_string_literals(fixed_code)):
+    if re.search(r"strategy\.(entry|exit|close)\s*\(", strip_string_literals(fixed_code)) and re.search(
+        r",\s*when\s*=", strip_string_literals(fixed_code)
+    ):
         prev = fixed_code
         fixed_code = _remove_when_param(fixed_code)
         if fixed_code != prev:
@@ -680,14 +636,14 @@ async def _repair_targeted(code: str, context: str) -> str:
     if "strategy.entry" in fixed_code and "strategy(" not in fixed_code:
         fixes_list.append("strategy.entry() requires strategy() declaration, not indicator()")
 
-    implicit_bool_pattern = re.compile(r'\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])')
+    implicit_bool_pattern = re.compile(r"\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])")
     if implicit_bool_pattern.search(strip_string_literals(fixed_code)):
-        fixed_code = implicit_bool_pattern.sub(r'if \1\2 > 0', fixed_code)
+        fixed_code = implicit_bool_pattern.sub(r"if \1\2 > 0", fixed_code)
         fixes_list.append("Added explicit > 0 comparison (v6: implicit bool casting removed)")
 
-    bool_na_pattern = re.compile(r'\bbool\s+(\w+)\s*=\s*na\b')
+    bool_na_pattern = re.compile(r"\bbool\s+(\w+)\s*=\s*na\b")
     if bool_na_pattern.search(strip_string_literals(fixed_code)):
-        fixed_code = bool_na_pattern.sub(r'var bool \1 = false', fixed_code)
+        fixed_code = bool_na_pattern.sub(r"var bool \1 = false", fixed_code)
         fixes_list.append("Changed 'bool x = na' to 'var bool x = false' (v6: bool can't be na)")
 
     if fixes_list:
@@ -707,9 +663,8 @@ async def _repair_targeted(code: str, context: str) -> str:
             else:
                 errs = fix_validation.get("errors", [])
                 if errs:
-                    validation_result = (
-                        f"[!] Fixed code still has {len(errs)} error(s):\n" +
-                        "\n".join(f"  Line {e.get('line', '?')}: {e.get('text', '?')}" for e in errs[:3])
+                    validation_result = f"[!] Fixed code still has {len(errs)} error(s):\n" + "\n".join(
+                        f"  Line {e.get('line', '?')}: {e.get('text', '?')}" for e in errs[:3]
                     )
                 else:
                     validation_result = "[OK] Fixed code compiles successfully"
@@ -736,11 +691,6 @@ async def _repair_targeted(code: str, context: str) -> str:
     return cap_response("\n".join(lines))
 
 
-# -----------------------------------------------------------------------------
-# pine_repair: mode="migrate" implementation (absorbed from lookup_and_correct)
-# -----------------------------------------------------------------------------
-
-
 async def _repair_migrate(code: str, context: str) -> str:
     """Bulk v5->v6 migration + intent-aware doc context."""
     from core.db import query_async
@@ -764,9 +714,7 @@ async def _repair_migrate(code: str, context: str) -> str:
         fixed_code = bool_na.sub(r"var bool \1 = false", fixed_code)
         changes_made.append("Changed 'bool x = na' to 'var bool x = false' (v6)")
 
-    implicit_bool = re.compile(
-        r"\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])"
-    )
+    implicit_bool = re.compile(r"\bif\s+(volume|close|open|high|low)(\[\d+\])?\b(?!\s*[<>=!])")
     code_stripped = strip_string_literals(fixed_code)
     if implicit_bool.search(code_stripped):
         fixed_code = implicit_bool.sub(r"if \1\2 > 0", fixed_code)
@@ -811,9 +759,7 @@ async def _repair_migrate(code: str, context: str) -> str:
             line_num = err.get("line", "?")
             col_num = err.get("column", "?")
             err_type = err.get("type", "error")
-            lines.append(
-                f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}"
-            )
+            lines.append(f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}")
         if len(errors) > 3:
             lines.append(f"  ... and {len(errors) - 3} more issues")
         lines.append("")
@@ -837,9 +783,7 @@ async def _repair_migrate(code: str, context: str) -> str:
             line_num = err.get("line", "?")
             col_num = err.get("column", "?")
             err_type = err.get("type", "error")
-            lines.append(
-                f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}"
-            )
+            lines.append(f"  Issue {i} (Line {line_num}, Col {col_num} [{err_type}]): {text}")
         if len(errors_after) > 3:
             lines.append(f"  ... and {len(errors_after) - 3} more issues")
         lines.append("")
@@ -879,11 +823,6 @@ async def _repair_migrate(code: str, context: str) -> str:
         lines.append("```")
 
     return cap_response("\n".join(lines))
-
-
-# -----------------------------------------------------------------------------
-# TOOL: pine_repair - targeted fix OR bulk v5->v6 migration
-# -----------------------------------------------------------------------------
 
 
 @tool(
@@ -953,9 +892,7 @@ async def pine_repair(
         if not code_stripped:
             raise ToolError("No code provided. Pass the PineScript v6 source to repair.")
         if not context_stripped:
-            raise ToolError(
-                "No context provided. Describe the error or the code's intent."
-            )
+            raise ToolError("No context provided. Describe the error or the code's intent.")
 
         if mode == "migrate":
             return await _repair_migrate(code_stripped, context_stripped)
@@ -967,5 +904,6 @@ async def pine_repair(
         logger.error(f"[pine_repair] {e}")
         if _db._chroma_breaker.is_open():
             from formatters.errors import circuit_breaker_msg
+
             return circuit_breaker_msg()
         raise ToolError(safe_error(e, "pine_repair"))

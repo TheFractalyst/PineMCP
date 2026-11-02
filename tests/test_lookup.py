@@ -12,8 +12,8 @@ import pytest
 
 from tools.lookup import pine_lookup
 
-
 # -- function kind ------------------------------------------------------------
+
 
 class TestLookupFunction:
     @pytest.mark.asyncio
@@ -54,6 +54,7 @@ class TestLookupFunction:
 
 # -- variable kind ------------------------------------------------------------
 
+
 class TestLookupVariable:
     @pytest.mark.asyncio
     async def test_close(self):
@@ -73,6 +74,7 @@ class TestLookupVariable:
 
 
 # -- type kind ----------------------------------------------------------------
+
 
 class TestLookupType:
     @pytest.mark.asyncio
@@ -99,6 +101,7 @@ class TestLookupType:
 
 # -- constant kind ------------------------------------------------------------
 
+
 class TestLookupConstant:
     @pytest.mark.asyncio
     async def test_color_red(self):
@@ -119,6 +122,7 @@ class TestLookupConstant:
 
 # -- keyword kind -------------------------------------------------------------
 
+
 class TestLookupKeyword:
     @pytest.mark.asyncio
     async def test_var(self):
@@ -138,6 +142,7 @@ class TestLookupKeyword:
 
 
 # -- operator kind ------------------------------------------------------------
+
 
 class TestLookupOperator:
     @pytest.mark.asyncio

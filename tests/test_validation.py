@@ -12,10 +12,9 @@ import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from fastmcp.exceptions import ToolError
-from tools.validation import pine_compile, pine_repair
 
+from tools.validation import pine_compile, pine_repair
 
 # -- Shared mock compiler responses ------------------------------------------
 
@@ -38,9 +37,7 @@ _FACADE_ERRORS = {
 _FACADE_WARNINGS = {
     "success": True,
     "errors": [],
-    "warnings": [
-        {"line": 1, "column": 1, "text": "Unused variable 'x'", "type": "warning"}
-    ],
+    "warnings": [{"line": 1, "column": 1, "text": "Unused variable 'x'", "type": "warning"}],
     "meta": {},
     "raw_response": {},
 }

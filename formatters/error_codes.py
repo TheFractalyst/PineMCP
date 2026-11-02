@@ -13,24 +13,36 @@ CE = Compile Error, CW = Compile Warning.
 
 # Error code -> (category, description, common_cause)
 ERROR_CODES: dict[str, tuple[str, str, str]] = {
-    # --- Syntax errors (CE100xx) ---
     "CE10015": ("syntax", "Missing closing parenthesis", "Unclosed '(' — check for missing ')'"),
     "CE10016": ("syntax", "Extra closing parenthesis", "Unmatched ')' — check for extra ')'"),
     "CE10095": ("syntax", "Variable redeclaration", "Variable already declared — use ':=' to reassign, not '='"),
-    # --- Statement errors (CE101xx) ---
-    "CE10115": ("args", "Too many arguments", "Function called with more args than expected — check signature with pine_lookup"),
+    "CE10115": (
+        "args",
+        "Too many arguments",
+        "Function called with more args than expected — check signature with pine_lookup",
+    ),
     "CE10123": ("type", "Type mismatch", "Wrong argument type — check parameter types with pine_lookup"),
     "CE10156": ("syntax", "Syntax error at input", "Unexpected token — check for incomplete expressions or operators"),
     "CE10161": ("syntax", "Invalid for statement", "Missing 'to <expression>' in for loop"),
-    "CE10165": ("args", "Missing required parameter", "No value assigned to required parameter — check function signature"),
-    # --- Reference errors (CE102xx) ---
-    "CE10271": ("reference", "Unknown function or variable", "Name not found — check spelling, namespace, or use pine_search"),
+    "CE10165": (
+        "args",
+        "Missing required parameter",
+        "No value assigned to required parameter — check function signature",
+    ),
+    "CE10271": (
+        "reference",
+        "Unknown function or variable",
+        "Name not found — check spelling, namespace, or use pine_search",
+    ),
     "CE10272": ("reference", "Undeclared identifier", "Variable used before declaration — declare with '=' first"),
 }
 
 # Warning codes
 WARNING_CODES: dict[str, tuple[str, str]] = {
-    "CW10002": ("conditional", "Function call in conditional may skip historical bars — assign to a global variable first"),
+    "CW10002": (
+        "conditional",
+        "Function call in conditional may skip historical bars — assign to a global variable first",
+    ),
 }
 
 

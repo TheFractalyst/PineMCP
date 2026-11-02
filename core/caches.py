@@ -22,10 +22,6 @@ from loguru import logger
 
 from core.config import VALIDATION_CACHE_MAX_SIZE, VALIDATION_CACHE_TTL
 
-# -----------------------------------------------------------------------------
-# Validation result cache - keyed on xxhash of source code
-# -----------------------------------------------------------------------------
-
 _VALIDATION_CACHE: OrderedDict[str, tuple[str, float]] = OrderedDict()
 _VALIDATION_CACHE_LOCK = threading.Lock()
 
@@ -55,10 +51,6 @@ def set_cached_validation(code: str, result: str) -> None:
         while len(_VALIDATION_CACHE) > VALIDATION_CACHE_MAX_SIZE:
             _VALIDATION_CACHE.popitem(last=False)
 
-
-# -----------------------------------------------------------------------------
-# File validation cache - keyed on (resolved_path, mtime_ns, size)
-# -----------------------------------------------------------------------------
 
 _FILE_VALIDATION_CACHE: OrderedDict[tuple[str, int, int], tuple[str, float]] = OrderedDict()
 _FILE_VALIDATION_CACHE_LOCK = threading.Lock()
@@ -96,19 +88,11 @@ def set_cached_file_validation(file_path: str, mtime_ns: int, file_size: int, re
             _FILE_VALIDATION_CACHE.popitem(last=False)
 
 
-# -----------------------------------------------------------------------------
-# L1 query result cache - avoids re-embedding identical ChromaDB queries
-# -----------------------------------------------------------------------------
-
 _QUERY_RESULT_CACHE: OrderedDict[str, tuple[dict, float]] = OrderedDict()
 _QUERY_CACHE_LOCK = threading.Lock()
 _QUERY_CACHE_TTL = 600.0  # seconds - L1 ChromaDB query result cache (10 min)
-_QUERY_CACHE_MAX = 500    # max entries before eviction
+_QUERY_CACHE_MAX = 500  # max entries before eviction
 
-
-# -----------------------------------------------------------------------------
-# Code generation cache - avoids re-compiling identical indicator/strategy templates
-# -----------------------------------------------------------------------------
 
 _CODEGEN_CACHE: OrderedDict[str, tuple[str, float]] = OrderedDict()
 _CODEGEN_CACHE_LOCK = threading.Lock()

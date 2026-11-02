@@ -20,10 +20,6 @@ def _safe_int(env_var: str, default: int, min_val: int = 0) -> int:
         return default
 
 
-# -----------------------------------------------------------------------------
-# Runtime configuration (env-var overridable)
-# -----------------------------------------------------------------------------
-
 DB_PATH = os.getenv(
     "PINESCRIPT_DB_PATH",
     os.path.join(os.path.expanduser("~"), ".pinescript_mcp", "db"),
@@ -43,17 +39,10 @@ VALIDATION_CACHE_MAX_SIZE = _safe_int("VALIDATION_CACHE_SIZE", 500)
 MAX_TOOL_RESPONSE_CHARS = 80000
 MAX_FUZZY_SCAN_ENTRIES = 5000
 
-# -----------------------------------------------------------------------------
-# Search / lookup thresholds (previously magic numbers in tool code)
-# -----------------------------------------------------------------------------
-FUZZY_MATCH_THRESHOLD = 85        # search.py: minimum similarity % for fuzzy hit
+FUZZY_MATCH_THRESHOLD = 85  # search.py: minimum similarity % for fuzzy hit
 SEMANTIC_DISTANCE_THRESHOLD = 0.35  # search.py/lookup.py: distance for semantic hit
-RELEVANCE_DISTANCE_CUTOFF = 0.7   # search.py: discard results beyond this distance
-TYPE_REJECTION_DISTANCE = 0.65    # lookup.py: reject type lookup beyond this distance
-
-# -----------------------------------------------------------------------------
-# Internal persistence controls (server-side only, HTTP transport only)
-# -----------------------------------------------------------------------------
+RELEVANCE_DISTANCE_CUTOFF = 0.7  # search.py: discard results beyond this distance
+TYPE_REJECTION_DISTANCE = 0.65  # lookup.py: reject type lookup beyond this distance
 
 _TRANSPORT = os.getenv("TRANSPORT", "stdio").lower().strip()
 
@@ -66,10 +55,6 @@ _ALLOWED_BASE_DIRS = [
     os.path.realpath(os.path.expanduser("~/repos")),
     os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
 ]
-
-# -----------------------------------------------------------------------------
-# Server instructions (shown to AI agents connecting to this MCP server)
-# -----------------------------------------------------------------------------
 
 INSTRUCTIONS = """\
 You are connected to the complete PineScript v6 reference documentation server.

@@ -17,7 +17,6 @@ See docs/tradingview-endpoints.md sections 30.3, 31.1-31.8 for details.
 from __future__ import annotations
 
 import json
-import re
 from typing import Annotated, Literal
 
 from fastmcp.exceptions import ToolError
@@ -28,20 +27,12 @@ from pydantic import Field
 
 from core.pine_facade import get_facade_client
 
-# -----------------------------------------------------------------------------
-# Constants
-# -----------------------------------------------------------------------------
-
 _FACADE_BASE = "https://pine-facade.tradingview.com/pine-facade"
 _PUBSCRIPTS_URL = "https://www.tradingview.com/pubscripts-suggest-json"
 _MAX_COMMUNITY_RESULTS = 20
 _MAX_BUILTIN_RESULTS = 50
 _MAX_SOURCE_CHARS = 30000  # truncate long community script sources
 
-
-# -----------------------------------------------------------------------------
-# Helper: encode script ID for URL path
-# -----------------------------------------------------------------------------
 
 def _encode_script_id(script_id: str) -> str:
     """Encode a script ID for use in a URL path.
@@ -51,17 +42,13 @@ def _encode_script_id(script_id: str) -> str:
     return script_id.replace("%", "%25").replace(" ", "%25")
 
 
-# -----------------------------------------------------------------------------
-# Helper: parse JSON from text/plain response (pine-facade quirk)
-# -----------------------------------------------------------------------------
-
 async def _facade_get(url: str, *, timeout: float = 15.0) -> dict | list:
     """GET a pine-facade endpoint and parse JSON (handles text/plain quirk)."""
     client = get_facade_client()
     resp = await client.get(url, timeout=timeout)
 
     if resp.status_code == 404:
-        raise ToolError(f"Script not found (404). Check the script ID and try again.")
+        raise ToolError("Script not found (404). Check the script ID and try again.")
     if resp.status_code != 200:
         raise ToolError(f"pine-facade returned HTTP {resp.status_code}: {resp.text[:200]}")
 
@@ -90,11 +77,6 @@ async def _facade_post(url: str, *, data: dict, timeout: float = 15.0) -> dict:
             return json.loads(resp.text)
         except json.JSONDecodeError as e:
             raise ToolError(f"Failed to parse pine-facade response as JSON: {e}")
-
-
-# -----------------------------------------------------------------------------
-# TOOL 1: pine_get_script — fetch full Pine source by script ID
-# -----------------------------------------------------------------------------
 
 
 @tool(
@@ -209,11 +191,6 @@ async def pine_get_script(
     return "\n".join(lines)
 
 
-# -----------------------------------------------------------------------------
-# TOOL 2: pine_search_community — search community scripts by keyword
-# -----------------------------------------------------------------------------
-
-
 @tool(
     annotations=ToolAnnotations(
         title="Search Community Scripts",
@@ -286,12 +263,7 @@ async def pine_search_community(
         raise ToolError(f"Failed to search community scripts: {e}")
 
     # Response shape: {"results": [...]} or {"suggestions": [...]}
-    results = (
-        data.get("results", [])
-        if isinstance(data, dict)
-        else data if isinstance(data, list)
-        else []
-    )
+    results = data.get("results", []) if isinstance(data, dict) else data if isinstance(data, list) else []
 
     if not results:
         return f"No community scripts found for '{query}'."
@@ -336,11 +308,6 @@ async def pine_search_community(
         lines.append("")
 
     return "\n".join(lines)
-
-
-# -----------------------------------------------------------------------------
-# TOOL 3: pine_list_builtins — list TradingView built-in indicators
-# -----------------------------------------------------------------------------
 
 
 @tool(
@@ -438,11 +405,6 @@ async def pine_list_builtins(
         lines.append(f"(showing {limit} of {len(data)} — increase limit to see more)")
 
     return "\n".join(lines)
-
-
-# -----------------------------------------------------------------------------
-# TOOL 4: pine_get_metadata — full study metadata (inputs, plots, styles)
-# -----------------------------------------------------------------------------
 
 
 @tool(
@@ -614,11 +576,6 @@ async def pine_get_metadata(
     return "\n".join(lines)
 
 
-# -----------------------------------------------------------------------------
-# TOOL 5: pine_eval — evaluate a script with inputs
-# -----------------------------------------------------------------------------
-
-
 @tool(
     annotations=ToolAnnotations(
         title="Evaluate Pine Script",
@@ -646,7 +603,7 @@ async def pine_eval(
             description=(
                 "Input overrides as JSON key-value pairs. Keys are input names "
                 "(not IDs), values are the input values. Example: "
-                "'{\"length\": 21, \"source\": \"close\"}'. Leave empty to use "
+                '\'{"length": 21, "source": "close"}\'. Leave empty to use '
                 "default input values."
             ),
         ),
@@ -678,7 +635,7 @@ async def pine_eval(
             if not isinstance(inputs_dict, dict):
                 raise ValueError("inputs must be a JSON object")
         except (json.JSONDecodeError, ValueError) as e:
-            raise ToolError(f'Invalid inputs JSON: {e}. Example: \'{{"length": 21}}\'')
+            raise ToolError(f"Invalid inputs JSON: {e}. Example: '{{\"length\": 21}}'")
 
     url = f"{_FACADE_BASE}/eval_pine_ex/"
     form_data = {"source": code}
@@ -725,11 +682,6 @@ async def pine_eval(
         lines.append("No root values returned (script may not produce output values).")
 
     return "\n".join(lines)
-
-
-# -----------------------------------------------------------------------------
-# TOOL 6: pine_list_libraries — list published Pine libraries
-# -----------------------------------------------------------------------------
 
 
 @tool(

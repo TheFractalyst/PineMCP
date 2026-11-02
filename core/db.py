@@ -37,10 +37,6 @@ from core.config import (
 )
 from core.embeddings import get_model
 
-# -----------------------------------------------------------------------------
-# ChromaDB circuit breaker
-# -----------------------------------------------------------------------------
-
 
 class ChromaDBCircuitBreaker:
     def __init__(self, threshold: int = 3, cooldown: int = 30):
@@ -61,9 +57,7 @@ class ChromaDBCircuitBreaker:
     def record_failure(self, exc: Exception) -> None:
         with self._lock:
             self.failures += 1
-            logger.warning(
-                f"ChromaDB failure {self.failures}/{self.threshold}: {type(exc).__name__}"
-            )
+            logger.warning(f"ChromaDB failure {self.failures}/{self.threshold}: {type(exc).__name__}")
             if self.failures >= self.threshold:
                 self.open_until = time.time() + self.cooldown
                 logger.error(f"ChromaDB circuit OPEN - cooldown {self.cooldown}s")
@@ -76,10 +70,6 @@ class ChromaDBCircuitBreaker:
 
 
 _chroma_breaker = ChromaDBCircuitBreaker(threshold=3, cooldown=30)
-
-# -----------------------------------------------------------------------------
-# Singletons + locks
-# -----------------------------------------------------------------------------
 
 _collection = None
 _db_init_lock = threading.Lock()
@@ -129,10 +119,6 @@ _COMMON_PARAM_NAMES = frozenset(
     }
 )
 
-# -----------------------------------------------------------------------------
-# Collection initialization
-# -----------------------------------------------------------------------------
-
 
 def _reset_caches() -> None:
     """Reset name index and query caches after collection reconnects.
@@ -155,6 +141,7 @@ def _reset_caches() -> None:
     # so the next ensure_hot_cache() call rebuilds it.
     try:
         import core.hot_cache as _hc
+
         _hc._hot_cache_built = False
         _hc.HOT_CACHE.clear()
     except Exception:
@@ -172,9 +159,7 @@ def get_collection() -> chromadb.Collection:
     """
     global _collection
     if _chroma_breaker.is_open():
-        raise RuntimeError(
-            "ChromaDB circuit breaker is open (cooldown). Please wait and try again."
-        )
+        raise RuntimeError("ChromaDB circuit breaker is open (cooldown). Please wait and try again.")
     # Fast path: already initialized (no lock needed for read)
     if _collection is not None:
         try:
@@ -188,9 +173,7 @@ def get_collection() -> chromadb.Collection:
         except Exception as e:
             err_name = type(e).__name__
             if "NotFound" in err_name or "not exist" in str(e).lower():
-                logger.warning(
-                    f"Stale ChromaDB collection detected ({err_name}), reconnecting"
-                )
+                logger.warning(f"Stale ChromaDB collection detected ({err_name}), reconnecting")
                 _collection = None
                 _reset_caches()
                 # Fall through to re-initialize below
@@ -233,11 +216,6 @@ def get_collection() -> chromadb.Collection:
             raise
 
 
-# -----------------------------------------------------------------------------
-# Name index
-# -----------------------------------------------------------------------------
-
-
 def build_name_index() -> None:
     """Build in-memory name->entry index for O(1) exact lookups."""
     global _name_index, _name_index_built
@@ -249,9 +227,7 @@ def build_name_index() -> None:
             col = get_collection()
             total = col.count()
             result = col.get(include=["metadatas", "documents"], limit=total)
-            for rid, meta, doc in zip(
-                result["ids"], result["metadatas"], result["documents"]
-            ):
+            for rid, meta, doc in zip(result["ids"], result["metadatas"], result["documents"]):
                 key = (meta.get("name") or "").lower().strip()
                 if key:
                     entry = {"id": rid, "metadata": meta, "document": doc}
@@ -259,16 +235,9 @@ def build_name_index() -> None:
                         _name_index[key] = []
                     _name_index[key].append(entry)
             _name_index_built = True
-            logger.info(
-                f"Name index built: {len(_name_index)} unique names from {total} entries"
-            )
+            logger.info(f"Name index built: {len(_name_index)} unique names from {total} entries")
         except Exception as e:
             logger.error(f"Failed to build name index: {e}")
-
-
-# -----------------------------------------------------------------------------
-# Query helpers
-# -----------------------------------------------------------------------------
 
 
 def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
@@ -321,10 +290,7 @@ def _query(query_text: str, n: int, where: Optional[dict] = None) -> dict:
         return result
     except Exception as e:
         error_type = type(e).__name__
-        logger.error(
-            f"_query() failed | type={error_type} | where={where} | "
-            f"query={query_text[:80]}"
-        )
+        logger.error(f"_query() failed | type={error_type} | where={where} | query={query_text[:80]}")
         # Propagate error signal so callers distinguish "no results" from "DB down"
         return {
             "ids": [[]],
@@ -396,9 +362,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                                 "document": doc,
                             },
                         )
-                        for rid, meta, doc in zip(
-                            exact["ids"], exact["metadatas"], exact["documents"]
-                        )
+                        for rid, meta, doc in zip(exact["ids"], exact["metadatas"], exact["documents"])
                     ]
             except Exception as e:
                 logger.warning(f"Qualified lookup failed, falling through: {e}")
@@ -425,9 +389,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                                 "document": doc,
                             },
                         )
-                        for rid, meta, doc in zip(
-                            typed["ids"], typed["metadatas"], typed["documents"]
-                        )
+                        for rid, meta, doc in zip(typed["ids"], typed["metadatas"], typed["documents"])
                     ]
             except Exception as e:
                 logger.warning(f"Typed lookup failed, returning empty: {e}")
@@ -447,11 +409,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                     hits = [h for h in hits if h["metadata"].get("category") == cat]
                 for clause in where.get("$and", []):
                     if "category" in clause:
-                        hits = [
-                            h
-                            for h in hits
-                            if h["metadata"].get("category") == clause["category"]
-                        ]
+                        hits = [h for h in hits if h["metadata"].get("category") == clause["category"]]
             if hits:
                 return [(100.0, copy.deepcopy(h)) for h in hits]
 
@@ -465,9 +423,8 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                 if cat:
                     existing_clauses = where.get("$and", [where])
                     exact_where = {
-                        "$and": [{"name": {"$in": name_variants}}, {"category": cat}] + [
-                            c for c in existing_clauses if "category" not in c
-                        ]
+                        "$and": [{"name": {"$in": name_variants}}, {"category": cat}]
+                        + [c for c in existing_clauses if "category" not in c]
                     }
             exact = col.get(where=exact_where, include=["metadatas", "documents"])
             if exact["ids"]:
@@ -480,9 +437,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
                             "document": doc,
                         },
                     )
-                    for rid, meta, doc in zip(
-                        exact["ids"], exact["metadatas"], exact["documents"]
-                    )
+                    for rid, meta, doc in zip(exact["ids"], exact["metadatas"], exact["documents"])
                 ]
         except Exception as e:
             logger.debug(f"Exact unqualified lookup failed: {e}")
@@ -496,9 +451,7 @@ def search_by_name(name: str, where: Optional[dict] = None) -> list[tuple[float,
         if not result["ids"]:
             return []
         candidates: list[tuple[float, dict]] = []
-        for meta, doc, rid in zip(
-            result["metadatas"], result["documents"], result["ids"]
-        ):
+        for meta, doc, rid in zip(result["metadatas"], result["documents"], result["ids"]):
             entry_name = (meta.get("name") or "").lower().replace("()", "").strip()
             ratio = fuzz.ratio(name_lower, entry_name)
             candidates.append((ratio, {"id": rid, "metadata": meta, "document": doc}))
@@ -517,15 +470,11 @@ def get_all_where(where: dict | None, limit: int | None = None) -> list[dict]:
             limit = col.count()
         # Handle empty where clause - ChromaDB doesn't accept {} as where
         if where:
-            result = col.get(
-                where=where, include=["metadatas", "documents"], limit=limit
-            )
+            result = col.get(where=where, include=["metadatas", "documents"], limit=limit)
         else:
             result = col.get(include=["metadatas", "documents"], limit=limit)
         entries = []
-        for rid, meta, doc in zip(
-            result["ids"], result["metadatas"], result["documents"]
-        ):
+        for rid, meta, doc in zip(result["ids"], result["metadatas"], result["documents"]):
             entries.append({"id": rid, "metadata": meta, "document": doc})
         return entries
     except Exception as e:
@@ -533,17 +482,13 @@ def get_all_where(where: dict | None, limit: int | None = None) -> list[dict]:
         return []
 
 
-async def search_by_name_async(
-    name: str, where: Optional[dict] = None
-) -> list[tuple[float, dict]]:
+async def search_by_name_async(name: str, where: Optional[dict] = None) -> list[tuple[float, dict]]:
     """Async wrapper for search_by_name - avoids blocking event loop."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, search_by_name, name, where)
 
 
-async def get_all_where_async(
-    where: dict | None, limit: int | None = None
-) -> list[dict]:
+async def get_all_where_async(where: dict | None, limit: int | None = None) -> list[dict]:
     """Async wrapper for get_all_where - avoids blocking event loop."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, get_all_where, where, limit)
@@ -553,9 +498,7 @@ def get_by_names(names: list[str]) -> dict:
     """Synchronous: fetch entries by exact name list using $in filter. Returns ChromaDB get() result."""
     try:
         col = get_collection()
-        return col.get(
-            where={"name": {"$in": names}}, include=["metadatas", "documents"]
-        )
+        return col.get(where={"name": {"$in": names}}, include=["metadatas", "documents"])
     except Exception as e:
         logger.debug(f"get_by_names failed: {e}")
         return {"ids": [], "metadatas": [], "documents": []}

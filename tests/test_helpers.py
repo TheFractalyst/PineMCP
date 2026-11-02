@@ -4,7 +4,6 @@ test_helpers.py - Unit tests for internal helper functions.
 Tests formatting, sanitization, caching, circuit breaker, and error handling.
 """
 
-
 import core.db as _core_db
 from core.db import ChromaDBCircuitBreaker
 from core.hot_cache import HOT_CACHE, cache_lookup
@@ -57,6 +56,7 @@ _name_index_built = _core_db._name_index_built
 
 # -- Name normalization --------------------------------------------------------
 
+
 class TestNormName:
     def test_strip(self):
         assert _norm_name("  ta.ema  ") == "ta.ema"
@@ -81,6 +81,7 @@ class TestNormNs:
 
 # -- Relevance percentage ------------------------------------------------------
 
+
 class TestRelevancePct:
     def test_perfect_match(self):
         assert _relevance_pct(0.0) == "100%"
@@ -94,6 +95,7 @@ class TestRelevancePct:
 
 
 # -- Sanitization --------------------------------------------------------------
+
 
 class TestSanitizeText:
     def test_null_bytes(self):
@@ -130,6 +132,7 @@ class TestSanitizePineString:
 
 # -- Fix hints -----------------------------------------------------------------
 
+
 class TestLookupFixHint:
     def test_undeclared_identifier(self):
         hint = _lookup_fix_hint("Undeclared identifier 'ema'")
@@ -158,6 +161,7 @@ class TestExtractNameFromError:
 
 # -- Response capping ----------------------------------------------------------
 
+
 class TestCapResponse:
     def test_short_text(self):
         text = "hello"
@@ -177,6 +181,7 @@ class TestCapResponse:
 
 # -- Example deduplication -----------------------------------------------------
 
+
 class TestDedupExamples:
     def test_removes_duplicates(self):
         examples = ["plot(close)", "plot(close)"]
@@ -195,6 +200,7 @@ class TestDedupExamples:
 
 # -- Query error check ---------------------------------------------------------
 
+
 class TestCheckQueryError:
     def test_valid_result(self):
         assert _check_query_error({"ids": [[]], "documents": [[]]}) is None
@@ -208,6 +214,7 @@ class TestCheckQueryError:
 
 
 # -- Safe error ----------------------------------------------------------------
+
 
 class TestSafeError:
     def test_path_removal(self):
@@ -229,6 +236,7 @@ class TestSafeError:
 
 # -- Cache lookup --------------------------------------------------------------
 
+
 class TestCacheLookup:
     def test_case_insensitive(self):
         if "close" in HOT_CACHE or "close" in {e.lower() for e in HOT_CACHE}:
@@ -247,6 +255,7 @@ class TestCacheLookup:
 
 
 # -- Circuit breakers ----------------------------------------------------------
+
 
 class TestChromaDBCircuitBreaker:
     def test_initial_state(self):
@@ -292,14 +301,13 @@ class TestPineFacadeCircuitBreaker:
 
 # -- Format helpers ------------------------------------------------------------
 
+
 class TestFormatParamsText:
     def test_empty(self):
         assert _format_params_text({}) == ""
 
     def test_with_params(self):
-        meta = {
-            "raw_parameters": '[{"name":"source","type":"series float","description":"Source"}]'
-        }
+        meta = {"raw_parameters": '[{"name":"source","type":"series float","description":"Source"}]'}
         result = _format_params_text(meta)
         assert "source" in result.lower()
         assert "PARAMETERS" in result

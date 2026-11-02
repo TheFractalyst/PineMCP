@@ -9,9 +9,7 @@ import contextvars
 import hashlib
 import re
 
-_current_rid: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "_current_rid", default="local"
-)
+_current_rid: contextvars.ContextVar[str] = contextvars.ContextVar("_current_rid", default="local")
 
 
 _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]")

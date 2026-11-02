@@ -23,9 +23,7 @@ from core.config import EMBED_MODEL
 
 # -- Non-blocking embedding model loader ------------------------------------
 
-_model_executor = ThreadPoolExecutor(
-    max_workers=4, thread_name_prefix="embedding"
-)
+_model_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="embedding")
 _embedding_model_ready = asyncio.Event()
 _embed_model = None
 _model_init_lock = threading.Lock()

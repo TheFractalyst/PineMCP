@@ -76,11 +76,6 @@ def _return_type_matches(query_type: str, field_type: str) -> bool:
     return False
 
 
-# -----------------------------------------------------------------------------
-# Internal branches (kept private - unified under pine_search)
-# -----------------------------------------------------------------------------
-
-
 async def _short_query_search(
     query: str,
     n_results: int,
@@ -157,17 +152,13 @@ async def _examples_branch(query: str, n_results: int) -> str:
         rel = relevance_pct(dist)
 
         output_lines.append("---")
-        output_lines.append(
-            f"EXAMPLES from: {ns}{name} ({category}) - Relevance: {rel}"
-        )
+        output_lines.append(f"EXAMPLES from: {ns}{name} ({category}) - Relevance: {rel}")
 
         ex_text = format_examples_text(meta)
         if ex_text:
             output_lines.append(ex_text)
         else:
-            output_lines.append(
-                "  (Examples referenced but not stored in metadata)"
-            )
+            output_lines.append("  (Examples referenced but not stored in metadata)")
 
     output_lines.append("---")
     return cap_response("\n".join(output_lines))
@@ -209,9 +200,7 @@ async def _return_type_branch(return_type: str, n_results: int) -> str:
     if has_direct:
         matched = direct_matches + [s for s in semantic_matches if s[2] < 0.4]
     else:
-        matched = [
-            (m, d, dist, False) for m, d, dist in all_results[:5] if dist < 0.6
-        ]
+        matched = [(m, d, dist, False) for m, d, dist in all_results[:5] if dist < 0.6]
 
     if not matched:
         return (
@@ -234,9 +223,7 @@ async def _return_type_branch(return_type: str, n_results: int) -> str:
         returns = meta.get("returns") or ""
         namespace = meta.get("namespace") or ""
         ns = f"{namespace}." if namespace and not name.startswith(f"{namespace}.") else ""
-        match_type = (
-            "direct match" if is_direct else f"semantic ({relevance_pct(dist)})"
-        )
+        match_type = "direct match" if is_direct else f"semantic ({relevance_pct(dist)})"
 
         output_lines.append(f"  {ns}{name}")
         if returns:
@@ -249,9 +236,7 @@ async def _return_type_branch(return_type: str, n_results: int) -> str:
     return cap_response("\n".join(output_lines))
 
 
-async def _suggest_branch(
-    context: str, current_line: str | None, n_results: int
-) -> str:
+async def _suggest_branch(context: str, current_line: str | None, n_results: int) -> str:
     """`current_line` branch: context-aware function suggestions."""
     query_text = context
     if current_line:
@@ -310,9 +295,7 @@ async def _docs_branch(
 ) -> str:
     """Default semantic search across all categories."""
     if len(query) <= 3:
-        return await _short_query_search(
-            query, n_results, category_filter, namespace_filter
-        )
+        return await _short_query_search(query, n_results, category_filter, namespace_filter)
 
     # Name-index boost: try full query, aliases, then key terms.
     # Results are sorted by score descending so high-confidence alias matches
@@ -339,13 +322,54 @@ async def _docs_branch(
                 _collect_name_hits(alias, min_score=60.0)
 
     # Extract key terms for secondary matching
-    _STOP_WORDS = {"how", "the", "a", "an", "of", "in", "on", "to", "for", "is", "it", "my", "me",
-                   "from", "and", "or", "with", "by", "at", "do", "does", "can", "what", "which",
-                   "that", "this", "get", "use", "using", "show", "find", "check", "make", "create",
-                   "draw", "plot", "calculate", "compute", "return", "into", "two", "between", "if"}
+    _STOP_WORDS = {
+        "how",
+        "the",
+        "a",
+        "an",
+        "of",
+        "in",
+        "on",
+        "to",
+        "for",
+        "is",
+        "it",
+        "my",
+        "me",
+        "from",
+        "and",
+        "or",
+        "with",
+        "by",
+        "at",
+        "do",
+        "does",
+        "can",
+        "what",
+        "which",
+        "that",
+        "this",
+        "get",
+        "use",
+        "using",
+        "show",
+        "find",
+        "check",
+        "make",
+        "create",
+        "draw",
+        "plot",
+        "calculate",
+        "compute",
+        "return",
+        "into",
+        "two",
+        "between",
+        "if",
+    }
     words = [w for w in re.findall(r"\w{2,}", query.lower()) if w not in _STOP_WORDS]
     for i in range(len(words) - 1):
-        _collect_name_hits(f"{words[i]} {words[i+1]}", min_score=65.0)
+        _collect_name_hits(f"{words[i]} {words[i + 1]}", min_score=65.0)
     for w in words:
         _collect_name_hits(w, min_score=75.0)
 
@@ -389,18 +413,24 @@ async def _docs_branch(
                 existing_ids = set(results["ids"][0])
                 func_entries = []
                 for rid, meta, doc, dist in zip(
-                    supp["ids"][0], supp["metadatas"][0],
-                    supp["documents"][0], supp["distances"][0],
+                    supp["ids"][0],
+                    supp["metadatas"][0],
+                    supp["documents"][0],
+                    supp["distances"][0],
                 ):
                     if rid not in existing_ids:
                         func_entries.append((rid, meta, doc, dist))
                         existing_ids.add(rid)
                 # Interleave: place top function result at position 1, rest after
                 if func_entries:
-                    all_entries = list(zip(
-                        results["ids"][0], results["metadatas"][0],
-                        results["documents"][0], results["distances"][0],
-                    ))
+                    all_entries = list(
+                        zip(
+                            results["ids"][0],
+                            results["metadatas"][0],
+                            results["documents"][0],
+                            results["distances"][0],
+                        )
+                    )
                     # Keep top guide/doc, then insert function entries, then rest
                     top_guide = [all_entries[0]] if all_entries else []
                     rest = all_entries[1:]
@@ -459,11 +489,7 @@ async def _docs_branch(
                 supp["documents"][0],
                 supp["distances"][0],
             ):
-                if (
-                    rid not in existing_ids
-                    and meta.get("category") != "function"
-                    and is_function_like(meta)
-                ):
+                if rid not in existing_ids and meta.get("category") != "function" and is_function_like(meta):
                     meta = {**meta, "category": "function"}
                     results["ids"][0].append(rid)
                     results["metadatas"][0].append(meta)
@@ -518,9 +544,7 @@ async def _docs_branch(
         desc = meta.get("raw_description", "")
         if desc:
             first_para = desc.split("\n\n")[0]
-            snippet = (
-                first_para[:300] + "..." if len(first_para) > 300 else first_para
-            )
+            snippet = first_para[:300] + "..." if len(first_para) > 300 else first_para
             output_lines.append(f"  {snippet}")
 
         param_text = format_params_text(meta)
@@ -537,11 +561,6 @@ async def _docs_branch(
 
     output_lines.append("---")
     return cap_response("\n".join(output_lines))
-
-
-# -----------------------------------------------------------------------------
-# TOOL: pine_search - unified discovery
-# -----------------------------------------------------------------------------
 
 
 @tool(

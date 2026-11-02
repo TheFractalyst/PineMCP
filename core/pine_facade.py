@@ -25,10 +25,6 @@ from loguru import logger
 from core.caches import get_cached_validation, set_cached_validation
 from core.config import PINE_FACADE_FALLBACK_ENABLED, PINE_FACADE_TIMEOUT, PINE_FACADE_URL
 
-# -----------------------------------------------------------------------------
-# Pine-facade circuit breaker
-# -----------------------------------------------------------------------------
-
 
 class PineFacadeCircuitBreaker:
     """Circuit breaker for pine-facade API calls.
@@ -63,7 +59,7 @@ class PineFacadeCircuitBreaker:
         if self.network_failures >= self.threshold:
             # Exponential backoff: base * 2^(failure_count - threshold)
             backoff_power = min(self.network_failures - self.threshold, 5)
-            base_cooldown = self.cooldown * (2 ** backoff_power)
+            base_cooldown = self.cooldown * (2**backoff_power)
             # Cap at 10 minutes
             base_cooldown = min(base_cooldown, 600)
             # +/-15% jitter to avoid thundering herd
@@ -107,10 +103,6 @@ class PineFacadeCircuitBreaker:
 
 
 pine_cb = PineFacadeCircuitBreaker()
-
-# -----------------------------------------------------------------------------
-# Shared HTTP client
-# -----------------------------------------------------------------------------
 
 _facade_http_client: Optional[httpx.AsyncClient] = None
 _facade_client_lock = threading.Lock()
@@ -190,10 +182,6 @@ def shutdown_http_client() -> None:
 
 atexit.register(shutdown_http_client)
 
-# -----------------------------------------------------------------------------
-# Response normalization
-# -----------------------------------------------------------------------------
-
 
 def normalize_facade_response(raw: dict) -> dict:
     """Normalize /compile API response."""
@@ -219,9 +207,6 @@ def normalize_facade_response(raw: dict) -> dict:
 
     def normalize_error(e: dict) -> dict:
         text = e.get("text") or e.get("message") or e.get("msg") or str(e)
-        # TradingView pine-facade returns template variables like {funId}, {argDisplayName}, etc.
-        # The actual values are in the "ctx" sub-object, not at the top level.
-        # Step 1: Resolve from ctx fields (the primary source of placeholder values)
         ctx = e.get("ctx") or {}
         if isinstance(ctx, dict):
             for key, val in ctx.items():
@@ -229,22 +214,28 @@ def normalize_facade_response(raw: dict) -> dict:
                     placeholder = f"{{{key}}}"
                     if placeholder in text:
                         text = text.replace(placeholder, str(val))
-        # Step 2: Resolve from top-level error fields (fallback for non-ctx responses)
         for key, val in e.items():
-            if isinstance(val, (str, int, float)) and key not in ("line", "column", "col",
-                "lineNumber", "type", "severity", "start", "end", "code", "ctx", "message"):
+            if isinstance(val, (str, int, float)) and key not in (
+                "line",
+                "column",
+                "col",
+                "lineNumber",
+                "type",
+                "severity",
+                "start",
+                "end",
+                "code",
+                "ctx",
+                "message",
+            ):
                 placeholder = f"{{{key}}}"
                 if placeholder in text:
                     text = text.replace(placeholder, str(val))
         start = e.get("start") or {}
         end = e.get("end") or {}
         return {
-            "line": e.get("line")
-            or e.get("lineNumber")
-            or (start.get("line", 0) if isinstance(start, dict) else 0),
-            "column": e.get("column")
-            or e.get("col")
-            or (start.get("column", 0) if isinstance(start, dict) else 0),
+            "line": e.get("line") or e.get("lineNumber") or (start.get("line", 0) if isinstance(start, dict) else 0),
+            "column": e.get("column") or e.get("col") or (start.get("column", 0) if isinstance(start, dict) else 0),
             "end_line": end.get("line", 0) if isinstance(end, dict) else 0,
             "end_col": end.get("column", 0) if isinstance(end, dict) else 0,
             "code": e.get("code", ""),
@@ -327,36 +318,79 @@ def enrich_error_with_code(errors: list[dict], code: str) -> list[dict]:
     return errors
 
 
-# -----------------------------------------------------------------------------
-# Local syntax validation (fallback when facade is unavailable)
-# -----------------------------------------------------------------------------
+_V4_COLORS = frozenset(
+    {
+        "red",
+        "green",
+        "blue",
+        "white",
+        "black",
+        "yellow",
+        "orange",
+        "purple",
+        "gray",
+        "silver",
+        "lime",
+        "maroon",
+        "navy",
+        "teal",
+        "olive",
+        "aqua",
+        "fuchsia",
+    }
+)
 
-_V4_COLORS = frozenset({
-    'red', 'green', 'blue', 'white', 'black', 'yellow', 'orange',
-    'purple', 'gray', 'silver', 'lime', 'maroon', 'navy', 'teal',
-    'olive', 'aqua', 'fuchsia',
-})
-
-_V5_TA_FUNCTIONS = frozenset({
-    'ema', 'sma', 'rsi', 'macd', 'atr', 'bb', 'stoch', 'wma', 'hma',
-    'vwap', 'crossover', 'crossunder', 'highest', 'lowest', 'barssince',
-    'valuewhen', 'linreg', 'mom', 'cum', 'change', 'pivothigh', 'pivotlow',
-    'supertrend', 'correlation', 'percentrank', 'dmi', 'stdev', 'variance',
-    'rising', 'falling', 'alma', 'kama', 'swma',
-})
+_V5_TA_FUNCTIONS = frozenset(
+    {
+        "ema",
+        "sma",
+        "rsi",
+        "macd",
+        "atr",
+        "bb",
+        "stoch",
+        "wma",
+        "hma",
+        "vwap",
+        "crossover",
+        "crossunder",
+        "highest",
+        "lowest",
+        "barssince",
+        "valuewhen",
+        "linreg",
+        "mom",
+        "cum",
+        "change",
+        "pivothigh",
+        "pivotlow",
+        "supertrend",
+        "correlation",
+        "percentrank",
+        "dmi",
+        "stdev",
+        "variance",
+        "rising",
+        "falling",
+        "alma",
+        "kama",
+        "swma",
+    }
+)
 
 
 def _clean_code(code: str) -> str:
     """Strip string literals and comments for syntax analysis."""
     from formatters.errors import strip_string_literals
+
     stripped = strip_string_literals(code)
     lines = []
     for line in stripped.splitlines():
-        idx = line.find('//')
+        idx = line.find("//")
         if idx >= 0:
             line = line[:idx]
         lines.append(line)
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def local_syntax_check(code: str) -> dict:
@@ -372,182 +406,233 @@ def local_syntax_check(code: str) -> dict:
     clean_lines = cleaned.splitlines()
 
     # 1. Missing //@version=6 header
-    has_v6 = any('//@version=6' in line for line in raw_lines[:10])
+    has_v6 = any("//@version=6" in line for line in raw_lines[:10])
     other_v: tuple[int, str] | None = None
     for i, line in enumerate(raw_lines[:10], 1):
-        m = re.match(r'//@version=(\d)', line.strip())
+        m = re.match(r"//@version=(\d)", line.strip())
         if m:
-            if m.group(1) != '6':
+            if m.group(1) != "6":
                 other_v = (i, m.group(1))
             break
     if not has_v6:
         if other_v:
-            errors.append({
-                "line": other_v[0], "column": 0,
-                "text": f"Version {other_v[1]} detected. This server requires //@version=6",
-                "type": "error",
-                "code": "LOCAL_VERSION",
-            })
+            errors.append(
+                {
+                    "line": other_v[0],
+                    "column": 0,
+                    "text": f"Version {other_v[1]} detected. This server requires //@version=6",
+                    "type": "error",
+                    "code": "LOCAL_VERSION",
+                }
+            )
         else:
-            errors.append({
-                "line": 1, "column": 0,
-                "text": "Missing //@version=6 header. First line must be //@version=6",
-                "type": "error",
-                "code": "LOCAL_VERSION",
-            })
+            errors.append(
+                {
+                    "line": 1,
+                    "column": 0,
+                    "text": "Missing //@version=6 header. First line must be //@version=6",
+                    "type": "error",
+                    "code": "LOCAL_VERSION",
+                }
+            )
 
     # 2. v5 syntax: study() instead of indicator()
     for i, line in enumerate(clean_lines, 1):
-        if re.search(r'\bstudy\s*\(', line):
-            errors.append({
-                "line": i, "column": 0,
-                "text": "study() is v5 syntax. Use indicator() in v6",
-                "type": "error",
-                "code": "LOCAL_V5_STUDY",
-            })
+        if re.search(r"\bstudy\s*\(", line):
+            errors.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": "study() is v5 syntax. Use indicator() in v6",
+                    "type": "error",
+                    "code": "LOCAL_V5_STUDY",
+                }
+            )
             break
 
     # 3. Bare v4 color constants (red instead of color.red)
     for i, line in enumerate(clean_lines, 1):
-        m = re.search(r'\bcolor\s*=\s*(\w+)', line)
+        m = re.search(r"\bcolor\s*=\s*(\w+)", line)
         if m and m.group(1) in _V4_COLORS:
-            errors.append({
-                "line": i, "column": 0,
-                "text": f"Bare color '{m.group(1)}' is v4 syntax. Use color.{m.group(1)} in v6",
-                "type": "error",
-                "code": "LOCAL_V4_COLOR",
-            })
-        m2 = re.search(r'\bbgcolor\s*\(\s*(\w+)', line)
+            errors.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": f"Bare color '{m.group(1)}' is v4 syntax. Use color.{m.group(1)} in v6",
+                    "type": "error",
+                    "code": "LOCAL_V4_COLOR",
+                }
+            )
+        m2 = re.search(r"\bbgcolor\s*\(\s*(\w+)", line)
         if m2 and m2.group(1) in _V4_COLORS:
-            errors.append({
-                "line": i, "column": 0,
-                "text": f"Bare color '{m2.group(1)}' is v4 syntax. Use color.{m2.group(1)} in v6",
-                "type": "error",
-                "code": "LOCAL_V4_COLOR",
-            })
+            errors.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": f"Bare color '{m2.group(1)}' is v4 syntax. Use color.{m2.group(1)} in v6",
+                    "type": "error",
+                    "code": "LOCAL_V4_COLOR",
+                }
+            )
 
     # 4. Unclosed parentheses / brackets (overall balance)
     paren_depth = 0
     bracket_depth = 0
     for i, line in enumerate(clean_lines, 1):
         for char in line:
-            if char == '(':
+            if char == "(":
                 paren_depth += 1
-            elif char == ')':
+            elif char == ")":
                 paren_depth -= 1
-            elif char == '[':
+            elif char == "[":
                 bracket_depth += 1
-            elif char == ']':
+            elif char == "]":
                 bracket_depth -= 1
             if paren_depth < 0:
-                errors.append({
-                    "line": i, "column": 0,
-                    "text": "Unmatched closing parenthesis ')'",
-                    "type": "error",
-                    "code": "CE10016",
-                })
+                errors.append(
+                    {
+                        "line": i,
+                        "column": 0,
+                        "text": "Unmatched closing parenthesis ')'",
+                        "type": "error",
+                        "code": "CE10016",
+                    }
+                )
                 paren_depth = 0
             if bracket_depth < 0:
-                errors.append({
-                    "line": i, "column": 0,
-                    "text": "Unmatched closing bracket ']'",
-                    "type": "error",
-                    "code": "LOCAL_BRACKET",
-                })
+                errors.append(
+                    {
+                        "line": i,
+                        "column": 0,
+                        "text": "Unmatched closing bracket ']'",
+                        "type": "error",
+                        "code": "LOCAL_BRACKET",
+                    }
+                )
                 bracket_depth = 0
     if paren_depth > 0:
-        errors.append({
-            "line": len(raw_lines), "column": 0,
-            "text": f"Unclosed parenthesis - {paren_depth} '(' without matching ')'",
-            "type": "error",
-            "code": "CE10015",
-        })
+        errors.append(
+            {
+                "line": len(raw_lines),
+                "column": 0,
+                "text": f"Unclosed parenthesis - {paren_depth} '(' without matching ')'",
+                "type": "error",
+                "code": "CE10015",
+            }
+        )
     if bracket_depth > 0:
-        errors.append({
-            "line": len(raw_lines), "column": 0,
-            "text": f"Unclosed bracket - {bracket_depth} '[' without matching ']'",
-            "type": "error",
-            "code": "LOCAL_BRACKET",
-        })
+        errors.append(
+            {
+                "line": len(raw_lines),
+                "column": 0,
+                "text": f"Unclosed bracket - {bracket_depth} '[' without matching ']'",
+                "type": "error",
+                "code": "LOCAL_BRACKET",
+            }
+        )
 
     # 5. := assignment on first declaration (should use =)
     declared: set[str] = set()
     for i, line in enumerate(clean_lines, 1):
-        decl = re.match(r'\s*(?:var\s+|varip\s+)?(?:\w+\s+)?(\w+)\s*=(?![=>])', line)
+        decl = re.match(r"\s*(?:var\s+|varip\s+)?(?:\w+\s+)?(\w+)\s*=(?![=>])", line)
         if decl:
             declared.add(decl.group(1))
-        reassign = re.match(r'\s*(\w+)\s*:=', line)
+        reassign = re.match(r"\s*(\w+)\s*:=", line)
         if reassign and reassign.group(1) not in declared:
-            errors.append({
-                "line": i, "column": 0,
-                "text": f"'{reassign.group(1)}' uses := before being declared with =. Use = for first declaration",
-                "type": "error",
-                "code": "LOCAL_REASSIGN",
-            })
+            errors.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": f"'{reassign.group(1)}' uses := before being declared with =. Use = for first declaration",
+                    "type": "error",
+                    "code": "LOCAL_REASSIGN",
+                }
+            )
 
     # 6. na comparison with == instead of na() function
     for i, line in enumerate(clean_lines, 1):
-        if re.search(r'==\s*na\b', line) or re.search(r'\bna\s*==', line):
-            errors.append({
-                "line": i, "column": 0,
-                "text": "Use na(x) instead of x == na for na comparison",
-                "type": "error",
-                "code": "LOCAL_NA_CMP",
-            })
-        if re.search(r'!=\s*na\b', line) or re.search(r'\bna\s*!=', line):
-            errors.append({
-                "line": i, "column": 0,
-                "text": "Use not na(x) instead of x != na for na comparison",
-                "type": "error",
-            })
+        if re.search(r"==\s*na\b", line) or re.search(r"\bna\s*==", line):
+            errors.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": "Use na(x) instead of x == na for na comparison",
+                    "type": "error",
+                    "code": "LOCAL_NA_CMP",
+                }
+            )
+        if re.search(r"!=\s*na\b", line) or re.search(r"\bna\s*!=", line):
+            errors.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": "Use not na(x) instead of x != na for na comparison",
+                    "type": "error",
+                }
+            )
 
     # 7. array.get without bounds check (warning)
     for i, line in enumerate(clean_lines, 1):
-        if re.search(r'array\.get\s*\(', line):
-            warnings.append({
-                "line": i, "column": 0,
-                "text": "array.get() without bounds check may cause runtime error. Check index < array.size() first",
-                "type": "warning",
-            })
+        if re.search(r"array\.get\s*\(", line):
+            warnings.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": "array.get() without bounds check may cause runtime error. Check index < array.size() first",
+                    "type": "warning",
+                }
+            )
 
     # 8. varip misuse (warning) - varip is for input() values
     for i, line in enumerate(clean_lines, 1):
-        m = re.match(r'\s*varip\s+(\w+)\s*=\s*(.+)', line)
-        if m and 'input(' not in m.group(2):
-            warnings.append({
-                "line": i, "column": 0,
-                "text": "varip is designed for input() values. Complex expressions may not work correctly",
-                "type": "warning",
-            })
+        m = re.match(r"\s*varip\s+(\w+)\s*=\s*(.+)", line)
+        if m and "input(" not in m.group(2):
+            warnings.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": "varip is designed for input() values. Complex expressions may not work correctly",
+                    "type": "warning",
+                }
+            )
 
     # 9. strategy.* functions without strategy() declaration
-    has_strategy_decl = bool(re.search(r'\bstrategy\s*\(', cleaned))
-    has_strategy_call = bool(re.search(r'\bstrategy\.(entry|exit|close|order|cancel)', cleaned))
+    has_strategy_decl = bool(re.search(r"\bstrategy\s*\(", cleaned))
+    has_strategy_call = bool(re.search(r"\bstrategy\.(entry|exit|close|order|cancel)", cleaned))
     if has_strategy_call and not has_strategy_decl:
-        errors.append({
-            "line": 0, "column": 0,
-            "text": "strategy.* functions used without strategy() declaration. Use strategy() instead of indicator()",
-            "type": "error",
-        })
+        errors.append(
+            {
+                "line": 0,
+                "column": 0,
+                "text": "strategy.* functions used without strategy() declaration. Use strategy() instead of indicator()",
+                "type": "error",
+            }
+        )
 
     # 10. transp= parameter (v5, removed in v6)
     for i, line in enumerate(clean_lines, 1):
-        if re.search(r',\s*transp\s*=', line):
-            warnings.append({
-                "line": i, "column": 0,
-                "text": "transp= parameter removed in v6. Use color.new(color, transparency) instead",
-                "type": "warning",
-            })
+        if re.search(r",\s*transp\s*=", line):
+            warnings.append(
+                {
+                    "line": i,
+                    "column": 0,
+                    "text": "transp= parameter removed in v6. Use color.new(color, transparency) instead",
+                    "type": "warning",
+                }
+            )
 
     # 11. Bare TA functions without ta. namespace (v5 syntax)
     for i, line in enumerate(clean_lines, 1):
         for fn in _V5_TA_FUNCTIONS:
-            if re.search(rf'(?<![\w.])\b{fn}\s*\(', line):
-                errors.append({
-                    "line": i, "column": 0,
-                    "text": f"Bare '{fn}()' is v5 syntax. Use ta.{fn}() in v6",
-                    "type": "error",
-                })
+            if re.search(rf"(?<![\w.])\b{fn}\s*\(", line):
+                errors.append(
+                    {
+                        "line": i,
+                        "column": 0,
+                        "text": f"Bare '{fn}()' is v5 syntax. Use ta.{fn}() in v6",
+                        "type": "error",
+                    }
+                )
                 break
 
     return {
@@ -588,11 +673,6 @@ async def check_facade_health() -> dict:
             "circuit_open": pine_cb.is_open(),
             "error": f"{type(e).__name__}: {e}",
         }
-
-
-# -----------------------------------------------------------------------------
-# Main facade call
-# -----------------------------------------------------------------------------
 
 
 async def call_pine_facade(code: str) -> dict:
@@ -666,10 +746,7 @@ async def call_pine_facade(code: str) -> dict:
         )
 
         if resp.status_code == 403:
-            logger.warning(
-                f"pine-facade 403 - headers: {dict(resp.headers)} | "
-                f"body: {resp.text[:200]}"
-            )
+            logger.warning(f"pine-facade 403 - headers: {dict(resp.headers)} | body: {resp.text[:200]}")
             if PINE_FACADE_FALLBACK_ENABLED:
                 result = local_syntax_check(code)
                 set_cached_validation(code, json.dumps(result))
@@ -756,10 +833,7 @@ async def call_pine_facade(code: str) -> dict:
         try:
             data = resp.json()
         except json.JSONDecodeError:
-            logger.error(
-                f"pine-facade returned non-JSON (HTTP {resp.status_code}): "
-                f"{resp.text[:200]}"
-            )
+            logger.error(f"pine-facade returned non-JSON (HTTP {resp.status_code}): {resp.text[:200]}")
             return {
                 "success": False,
                 "errors": [

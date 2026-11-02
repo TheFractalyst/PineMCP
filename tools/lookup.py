@@ -42,15 +42,7 @@ from formatters.errors import (
 
 _Kind = Literal["function", "variable", "type", "constant", "keyword", "operator", "guide"]
 
-_BUILTIN_TYPES = (
-    "array, matrix, map, line, label, box, table, polyline, "
-    "color, string, int, float, bool"
-)
-
-
-# -----------------------------------------------------------------------------
-# Internal helpers (preserved from the old per-kind tools)
-# -----------------------------------------------------------------------------
+_BUILTIN_TYPES = "array, matrix, map, line, label, box, table, polyline, color, string, int, float, bool"
 
 
 def _pick_best_version(result: dict) -> tuple:
@@ -114,34 +106,28 @@ async def lookup_entry(name: str, category: str | None) -> str:
             name_variants = list({name_preserved, name_lower})
             all_versions = await get_by_names_async(name_variants)
             if all_versions["ids"]:
-                for meta, doc in zip(
-                    all_versions["metadatas"], all_versions["documents"]
-                ):
+                for meta, doc in zip(all_versions["metadatas"], all_versions["documents"]):
                     if not category or meta.get("category") == category:
                         return cap_response(format_entry_detail(meta.get("name", name), meta, doc))
                 best_meta, best_doc = _pick_best_version(all_versions)
                 if best_meta:
-                    return cap_response(format_entry_detail(
-                        best_meta.get("name", name), best_meta, best_doc
-                    ))
+                    return cap_response(format_entry_detail(best_meta.get("name", name), best_meta, best_doc))
         except Exception as e:
             logger.debug(f"Cross-category lookup failed: {e}")
 
-        candidates = await search_by_name_async(
-            name, where={"category": category} if category else None
-        )
+        candidates = await search_by_name_async(name, where={"category": category} if category else None)
 
         if candidates and candidates[0][0] >= 85:
             best_sim, best_entry = candidates[0]
-            return cap_response(format_entry_detail(
-                best_entry["metadata"].get("name", name),
-                best_entry["metadata"],
-                best_entry["document"],
-            ))
+            return cap_response(
+                format_entry_detail(
+                    best_entry["metadata"].get("name", name),
+                    best_entry["metadata"],
+                    best_entry["document"],
+                )
+            )
 
-        results = await query_async(
-            name, 5, where={"category": category} if category else None
-        )
+        results = await query_async(name, 5, where={"category": category} if category else None)
         db_err = check_query_error(results)
         if db_err:
             return db_err
@@ -150,16 +136,16 @@ async def lookup_entry(name: str, category: str | None) -> str:
             top_dist = results["distances"][0][0]
             top_name = top_meta.get("name", "").lower().replace("()", "").strip()
             search_name = name.lower().replace("()", "").strip()
-            name_match = search_name == top_name or (
-                len(search_name) >= 3 and search_name in top_name
-            )
+            name_match = search_name == top_name or (len(search_name) >= 3 and search_name in top_name)
             if name_match or top_dist < 0.35:
-                return cap_response(format_entry_detail(
-                    top_meta.get("name", name),
-                    top_meta,
-                    results["documents"][0][0],
-                    top_dist,
-                ))
+                return cap_response(
+                    format_entry_detail(
+                        top_meta.get("name", name),
+                        top_meta,
+                        results["documents"][0][0],
+                        top_dist,
+                    )
+                )
 
         results = await query_async(name, 5)
         if results["ids"] and results["ids"][0]:
@@ -167,41 +153,30 @@ async def lookup_entry(name: str, category: str | None) -> str:
             top_dist = results["distances"][0][0]
             top_name = top_meta.get("name", "").lower().replace("()", "").strip()
             search_name = name.lower().replace("()", "").strip()
-            name_match_broad = search_name == top_name or (
-                len(search_name) >= 3 and search_name in top_name
-            )
-            if name_match_broad or (
-                top_dist < 0.35 and top_meta.get("category") == category
-            ):
-                return cap_response(format_entry_detail(
-                    top_meta.get("name", name),
-                    top_meta,
-                    results["documents"][0][0],
-                    top_dist,
-                ))
+            name_match_broad = search_name == top_name or (len(search_name) >= 3 and search_name in top_name)
+            if name_match_broad or (top_dist < 0.35 and top_meta.get("category") == category):
+                return cap_response(
+                    format_entry_detail(
+                        top_meta.get("name", name),
+                        top_meta,
+                        results["documents"][0][0],
+                        top_dist,
+                    )
+                )
 
         suggestions: list[str] = []
         if candidates:
             for sim, entry in candidates[:5]:
-                suggestions.append(
-                    f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)"
-                )
+                suggestions.append(f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)")
         else:
             all_candidates = await search_by_name_async(name)
             for sim, entry in all_candidates[:5]:
-                suggestions.append(
-                    f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)"
-                )
+                suggestions.append(f"  - {entry['metadata'].get('name', '?')} (similarity: {sim:.0f}%)")
 
         cat_label = (category or "ENTRY").upper()
         if suggestions:
-            return (
-                f"{cat_label} '{name}' not found in the database.\n\n"
-                f"Did you mean:\n" + "\n".join(suggestions)
-            )
-        return (
-            f"{cat_label} '{name}' not found. Try pine_search() for a broader search."
-        )
+            return f"{cat_label} '{name}' not found in the database.\n\nDid you mean:\n" + "\n".join(suggestions)
+        return f"{cat_label} '{name}' not found. Try pine_search() for a broader search."
 
     except ToolError:
         raise
@@ -236,9 +211,7 @@ async def _lookup_function(name: str) -> str:
         if all_versions["ids"]:
             best_meta, best_doc = _pick_best_version(all_versions)
             if best_meta:
-                return cap_response(format_entry_detail(
-                    best_meta.get("name", name), best_meta, best_doc
-                ))
+                return cap_response(format_entry_detail(best_meta.get("name", name), best_meta, best_doc))
     except Exception as e:
         logger.debug(f"Exact name match failed: {e}")
 
@@ -262,20 +235,24 @@ async def _lookup_guide(name: str) -> str:
             best = e
             best_len = len(ename)
     if best is not None:
-        return cap_response(format_entry_detail(
-            best["metadata"].get("name", name),
-            best["metadata"],
-            best["document"],
-        ))
+        return cap_response(
+            format_entry_detail(
+                best["metadata"].get("name", name),
+                best["metadata"],
+                best["document"],
+            )
+        )
 
     candidates = await search_by_name_async(name, where={"category": "guide"})
     if candidates and candidates[0][0] >= 75:
         sim, entry = candidates[0]
-        return cap_response(format_entry_detail(
-            entry["metadata"].get("name", name),
-            entry["metadata"],
-            entry["document"],
-        ))
+        return cap_response(
+            format_entry_detail(
+                entry["metadata"].get("name", name),
+                entry["metadata"],
+                entry["document"],
+            )
+        )
     if "/" in name:
         tail = name.rstrip("/").split("/")[-1].replace("-", " ")
         return await lookup_entry(tail, "guide")
@@ -321,9 +298,7 @@ async def _lookup_type(name: str) -> str:
         if result["ids"]:
             best_meta = result["metadatas"][0]
             best_doc = result["documents"][0]
-            formatted = format_entry_detail(
-                best_meta.get("name", name), best_meta, best_doc
-            )
+            formatted = format_entry_detail(best_meta.get("name", name), best_meta, best_doc)
             ns = best_meta.get("namespace", "") or name_lower
             formatted = await _enrich_type_methods(ns, best_doc, formatted)
             return cap_response(formatted)
@@ -341,28 +316,15 @@ async def _lookup_type(name: str) -> str:
     if results["ids"] and results["ids"][0] and results["documents"][0]:
         top_dist = results["distances"][0][0]
         if top_dist > 0.65:
-            return (
-                f"Type '{name}' not found in docs.\n"
-                f"Available types: {_BUILTIN_TYPES}"
-            )
+            return f"Type '{name}' not found in docs.\nAvailable types: {_BUILTIN_TYPES}"
         top_meta = results["metadatas"][0][0]
         top_doc = results["documents"][0][0]
-        formatted = format_entry_detail(
-            top_meta.get("name", name), top_meta, top_doc, top_dist
-        )
+        formatted = format_entry_detail(top_meta.get("name", name), top_meta, top_doc, top_dist)
         ns = top_meta.get("name", "").lower().split(".")[0]
         formatted = await _enrich_type_methods(ns, top_doc, formatted)
         return cap_response(formatted)
 
-    return (
-        f"Type '{name}' not found in docs.\n"
-        f"Available types: {_BUILTIN_TYPES}"
-    )
-
-
-# -----------------------------------------------------------------------------
-# TOOL: pine_lookup - unified lookup by name
-# -----------------------------------------------------------------------------
+    return f"Type '{name}' not found in docs.\nAvailable types: {_BUILTIN_TYPES}"
 
 
 @tool(

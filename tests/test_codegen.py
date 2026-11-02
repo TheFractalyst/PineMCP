@@ -8,10 +8,9 @@ generate_strategy (kind="strategy"). Mocks the remote compiler.
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from fastmcp.exceptions import ToolError
-from tools.codegen import pine_scaffold
 
+from tools.codegen import pine_scaffold
 
 _FACADE_SUCCESS = {
     "success": True,

@@ -6,20 +6,15 @@ Uses mocks to avoid real ChromaDB dependencies where possible.
 """
 
 import time
-import threading
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from core.db import (
     ChromaDBCircuitBreaker,
-    _query,
-    search_by_name,
-    _reset_caches,
-    _name_index,
     _name_index_built,
+    _query,
+    _reset_caches,
+    search_by_name,
 )
-
 
 # -----------------------------------------------------------------------------
 # ChromaDBCircuitBreaker Tests
@@ -101,7 +96,7 @@ class TestL1QueryCache:
     @patch("core.db.get_collection")
     def test_cache_hit_returns_without_embedding(self, mock_get_collection, mock_get_model):
         """Cache hit should return result without calling embedding model."""
-        from core.caches import _QUERY_RESULT_CACHE, _QUERY_CACHE_LOCK
+        from core.caches import _QUERY_CACHE_LOCK, _QUERY_RESULT_CACHE
 
         # Clear cache first
         with _QUERY_CACHE_LOCK:
@@ -115,6 +110,7 @@ class TestL1QueryCache:
             "distances": [[0.1, 0.2]],
         }
         import xxhash
+
         cache_key = xxhash.xxh64("test_query|5|None".encode()).hexdigest()
         with _QUERY_CACHE_LOCK:
             _QUERY_RESULT_CACHE[cache_key] = (cached_result, time.time())
@@ -134,7 +130,7 @@ class TestL1QueryCache:
     @patch("core.db.get_collection")
     def test_cache_miss_calls_embedding(self, mock_get_collection, mock_get_model):
         """Cache miss should call embedding model and ChromaDB."""
-        from core.caches import _QUERY_RESULT_CACHE, _QUERY_CACHE_LOCK
+        from core.caches import _QUERY_CACHE_LOCK, _QUERY_RESULT_CACHE
 
         # Clear cache
         with _QUERY_CACHE_LOCK:
@@ -168,7 +164,7 @@ class TestL1QueryCache:
     @patch("core.db.get_collection")
     def test_cache_ttl_expiration(self, mock_get_collection, mock_get_model):
         """Cached entries should expire after TTL."""
-        from core.caches import _QUERY_RESULT_CACHE, _QUERY_CACHE_LOCK, _QUERY_CACHE_TTL
+        from core.caches import _QUERY_CACHE_LOCK, _QUERY_CACHE_TTL, _QUERY_RESULT_CACHE
 
         # Clear cache
         with _QUERY_CACHE_LOCK:
@@ -182,6 +178,7 @@ class TestL1QueryCache:
             "distances": [[0.1]],
         }
         import xxhash
+
         cache_key = xxhash.xxh64("expired_query|5|None".encode()).hexdigest()
         with _QUERY_CACHE_LOCK:
             _QUERY_RESULT_CACHE[cache_key] = (cached_result, time.time() - _QUERY_CACHE_TTL - 1)
@@ -209,7 +206,7 @@ class TestL1QueryCache:
     @patch("core.db.get_collection")
     def test_cache_eviction_at_max_size(self, mock_get_collection, mock_get_model):
         """Cache should evict oldest entries when max size reached."""
-        from core.caches import _QUERY_RESULT_CACHE, _QUERY_CACHE_LOCK, _QUERY_CACHE_MAX
+        from core.caches import _QUERY_CACHE_LOCK, _QUERY_CACHE_MAX, _QUERY_RESULT_CACHE
 
         # Clear cache
         with _QUERY_CACHE_LOCK:
@@ -229,7 +226,7 @@ class TestL1QueryCache:
         mock_get_collection.return_value = mock_col
 
         # Add entries up to max + 1
-        import xxhash
+
         for i in range(_QUERY_CACHE_MAX + 2):
             _query(f"query_{i}", 5)
 
@@ -309,7 +306,10 @@ class TestSearchByNameUnqualified:
         assert result == []
         # Note: get_collection may be called by other fixtures, don't assert on it
 
-    @patch("core.db._name_index", {"ema": [{"id": "id1", "metadata": {"name": "ema", "category": "function"}, "document": "doc1"}]})
+    @patch(
+        "core.db._name_index",
+        {"ema": [{"id": "id1", "metadata": {"name": "ema", "category": "function"}, "document": "doc1"}]},
+    )
     @patch("core.db._name_index_built", True)
     def test_name_index_lookup(self):
         """Should use name index if available."""
@@ -318,12 +318,15 @@ class TestSearchByNameUnqualified:
         assert len(result) == 1
         assert result[0][0] == 100.0
 
-    @patch("core.db._name_index", {
-        "ema": [
-            {"id": "id1", "metadata": {"name": "ema", "category": "function"}, "document": "doc1"},
-            {"id": "id2", "metadata": {"name": "ema", "category": "variable"}, "document": "doc2"},
-        ]
-    })
+    @patch(
+        "core.db._name_index",
+        {
+            "ema": [
+                {"id": "id1", "metadata": {"name": "ema", "category": "function"}, "document": "doc1"},
+                {"id": "id2", "metadata": {"name": "ema", "category": "variable"}, "document": "doc2"},
+            ]
+        },
+    )
     @patch("core.db._name_index_built", True)
     @patch("core.db.get_collection")
     def test_name_index_with_where_filter(self, mock_get_collection):

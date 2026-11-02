@@ -96,13 +96,11 @@ async def discover_entries(headful: bool = False, debug: bool = False) -> list[d
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-                       "Chrome/124.0.0.0 Safari/537.36",
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36",
         )
 
-        await context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
+        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         page = await context.new_page()
         logger.info(f"Navigating to {BASE_URL}")
@@ -159,9 +157,7 @@ async def discover_entries(headful: bool = False, debug: bool = False) -> list[d
 
         if scroll_target:
             for offset in range(0, 12000, 300):
-                await page.evaluate(
-                    f"document.querySelector('{scroll_target}')?.scrollTo(0, {offset})"
-                )
+                await page.evaluate(f"document.querySelector('{scroll_target}')?.scrollTo(0, {offset})")
                 await asyncio.sleep(0.1)
         else:
             logger.warning("Could not find sidebar element to scroll.")
@@ -300,35 +296,33 @@ def verify_counts(entries: list[dict[str, Any]]) -> bool:
 
     if total < 850:
         logger.warning(
-            f"Low count ({total}). Sidebar may not have fully rendered. "
-            f"Expected 900-1000+ documented entries."
+            f"Low count ({total}). Sidebar may not have fully rendered. Expected 900-1000+ documented entries."
         )
         return False
 
     if total < 700:
-        logger.error(
-            f"Discovery severely incomplete ({total}). "
-            f"Check site structure manually."
-        )
+        logger.error(f"Discovery severely incomplete ({total}). Check site structure manually.")
         return False
 
     return all_ok
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Discover all PineScript v6 entries from TradingView"
-    )
+    parser = argparse.ArgumentParser(description="Discover all PineScript v6 entries from TradingView")
     parser.add_argument(
-        "--output", type=Path, default=Path("data/tv_entry_index.json"),
+        "--output",
+        type=Path,
+        default=Path("data/tv_entry_index.json"),
         help="Output file path (default: data/tv_entry_index.json)",
     )
     parser.add_argument(
-        "--headful", action="store_true",
+        "--headful",
+        action="store_true",
         help="Show browser window during discovery",
     )
     parser.add_argument(
-        "--debug", action="store_true",
+        "--debug",
+        action="store_true",
         help="Save full page HTML to debug_sidebar.html",
     )
     args = parser.parse_args()

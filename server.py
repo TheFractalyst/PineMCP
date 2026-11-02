@@ -39,9 +39,6 @@ logger.add(
     level=os.getenv("LOG_LEVEL", "INFO"),
 )
 
-# -----------------------------------------------------------------------------
-# HTTP transport runtime setup (stderr + daily rotating file)
-# -----------------------------------------------------------------------------
 from core.config import _TRANSPORT  # noqa: E402
 
 _LOG_DIR = os.getenv("LOG_DIR", os.path.join(os.path.expanduser("~"), ".pinescript_mcp", "logs"))
@@ -49,17 +46,18 @@ _LOG_DIR = os.getenv("LOG_DIR", os.path.join(os.path.expanduser("~"), ".pinescri
 if _TRANSPORT in ("http", "sse"):
     try:
         from pathlib import Path as _P
+
         _log_path = _P(_LOG_DIR)
         _log_path.mkdir(parents=True, exist_ok=True)
         logger.add(
             str(_log_path / "server_{time:YYYY-MM-DD}.log"),
             format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {name}:{function}:{line} | {message}",
             level=os.getenv("LOG_LEVEL", "INFO"),
-            rotation="00:00",          # daily rotation at midnight
-            retention="30 days",       # keep 30 days of logs
-            compression="gz",          # compress old logs
+            rotation="00:00",  # daily rotation at midnight
+            retention="30 days",  # keep 30 days of logs
+            compression="gz",  # compress old logs
             encoding="utf-8",
-            enqueue=True,              # thread-safe, non-blocking
+            enqueue=True,  # thread-safe, non-blocking
             backtrace=True,
             diagnose=False,
         )
@@ -87,10 +85,6 @@ from core.pine_facade import shutdown_http_client_async  # noqa: E402
 from core import _rtstate  # noqa: E402
 
 # _TRANSPORT is already set above (line 39) for file-logging setup.
-
-# -----------------------------------------------------------------------------
-# Composable lifespans
-# -----------------------------------------------------------------------------
 
 
 @lifespan
@@ -146,16 +140,6 @@ async def cache_lifespan(server):
     _model_executor.shutdown(wait=False)
 
 
-# -----------------------------------------------------------------------------
-# Response caching middleware (complementary to internal LRU caches)
-#
-# Two-tier MCP-level caching:
-#   1. Lookup middleware (1h TTL): deterministic, stable doc entries
-#   2. Search middleware (5m TTL): same query = same result within a session
-#
-# Validation/codegen tools are EXCLUDED - unique code on nearly every call.
-# -----------------------------------------------------------------------------
-
 _lookup_cache_mw = ResponseCachingMiddleware(
     call_tool_settings={
         "ttl": 3600,
@@ -177,10 +161,6 @@ _search_cache_mw = ResponseCachingMiddleware(
     },
 )
 
-# -----------------------------------------------------------------------------
-# FastMCP server instance with FileSystemProvider auto-discovery
-# -----------------------------------------------------------------------------
-
 _mcp_dir = Path(__file__).parent / "tools"
 
 mcp = FastMCP(
@@ -193,12 +173,9 @@ mcp = FastMCP(
         _lookup_cache_mw,
         _search_cache_mw,
         ResponseLimitingMiddleware(max_size=MAX_TOOL_RESPONSE_CHARS + 10_000),
-    ] + ([DetailedTimingMiddleware()] if os.getenv("LOG_LEVEL", "INFO") == "DEBUG" else []),
+    ]
+    + ([DetailedTimingMiddleware()] if os.getenv("LOG_LEVEL", "INFO") == "DEBUG" else []),
 )
-
-# -----------------------------------------------------------------------------
-# API key loading (supports hot-reload from api_keys.json)
-# -----------------------------------------------------------------------------
 
 _key_container: list[dict[str, dict]] = [{}]
 
@@ -229,11 +206,6 @@ def _reload_keys() -> int:
     """Hot-reload API keys from api_keys.json. Returns new key count."""
     _key_container[0] = _load_key_map()
     return len(_key_container[0])
-
-
-# -----------------------------------------------------------------------------
-# Health check endpoint (no auth required)
-# -----------------------------------------------------------------------------
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -271,21 +243,21 @@ async def admin_stats(request: Request) -> JSONResponse:
     except Exception:
         entries = -1
     import core.hot_cache as _hc
-    return JSONResponse({
-        "status": "ok",
-        "entries": entries,
-        "api_keys": len(_key_container[0]),
-        "key_names": [v.get("name", "?") for v in _key_container[0].values()],
-        "cache": {
-            "hot_cache_size": len(_hc.HOT_CACHE),
-            "hot_cache_hits": _hc._cache_hits,
-            "hot_cache_misses": _hc._cache_misses,
-        },
-    })
 
-# -----------------------------------------------------------------------------
-# REST adapter for PineRustEngine backend (simple HTTP, no MCP protocol needed)
-# -----------------------------------------------------------------------------
+    return JSONResponse(
+        {
+            "status": "ok",
+            "entries": entries,
+            "api_keys": len(_key_container[0]),
+            "key_names": [v.get("name", "?") for v in _key_container[0].values()],
+            "cache": {
+                "hot_cache_size": len(_hc.HOT_CACHE),
+                "hot_cache_hits": _hc._cache_hits,
+                "hot_cache_misses": _hc._cache_misses,
+            },
+        }
+    )
+
 
 @mcp.custom_route("/api/tools/call", methods=["POST"])
 async def rest_call_tool(request: Request) -> JSONResponse:
@@ -321,18 +293,16 @@ async def rest_list_tools(request: Request) -> JSONResponse:
         tools = await mcp.list_tools()
         tool_list = []
         for t in tools:
-            tool_list.append({
-                "name": t.name,
-                "description": t.description,
-                "parameters": t.parameters or {},
-            })
+            tool_list.append(
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters or {},
+                }
+            )
         return JSONResponse({"tools": tool_list})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
-
-# -----------------------------------------------------------------------------
-# Entry point
-# -----------------------------------------------------------------------------
 
 
 def main():
@@ -411,9 +381,16 @@ def main():
                     entry = _key_container[0].get(raw_key)
                     if entry is None:
                         body = b'{"error":"unauthorized"}'
-                        await send({"type": "http.response.start", "status": 401,
-                                     "headers": [[b"content-type", b"application/json"],
-                                                  [b"content-length", str(len(body)).encode()]]})
+                        await send(
+                            {
+                                "type": "http.response.start",
+                                "status": 401,
+                                "headers": [
+                                    [b"content-type", b"application/json"],
+                                    [b"content-length", str(len(body)).encode()],
+                                ],
+                            }
+                        )
                         await send({"type": "http.response.body", "body": body})
                         return
                     _rtstate.bind_rid(entry.get("name", "unknown"))

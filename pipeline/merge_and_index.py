@@ -69,6 +69,7 @@ def normalize_key(entry: dict[str, Any]) -> str:
 def deduplicate_examples(examples: list[str]) -> list[str]:
     """Deduplicate example code blocks by content hash (deterministic)."""
     import hashlib
+
     seen: set[str] = set()
     result: list[str] = []
     for ex in examples:
@@ -123,24 +124,17 @@ def merge_entries(
             if len(local_doc) > len(live_doc):
                 for field in ("description", "syntax", "remarks", "returns"):
                     if local_entry.get(field) and (
-                        not live_entry.get(field)
-                        or len(local_entry[field]) > len(live_entry.get(field, ""))
+                        not live_entry.get(field) or len(local_entry[field]) > len(live_entry.get(field, ""))
                     ):
                         merged_entry[field] = local_entry[field]
 
             # Examples: concatenate and deduplicate
             local_examples = local_entry.get("examples", [])
             live_examples = live_entry.get("examples", [])
-            merged_entry["examples"] = deduplicate_examples(
-                local_examples + live_examples
-            )
+            merged_entry["examples"] = deduplicate_examples(local_examples + live_examples)
 
             # Parameters: prefer live (more accurate types)
-            merged_entry["parameters"] = (
-                live_entry.get("parameters")
-                or local_entry.get("parameters")
-                or []
-            )
+            merged_entry["parameters"] = live_entry.get("parameters") or local_entry.get("parameters") or []
 
             # See also: union
             local_see = local_entry.get("see_also", [])
@@ -148,11 +142,7 @@ def merge_entries(
             merged_entry["see_also"] = list(set(local_see + live_see))
 
             # Overloads: prefer live
-            merged_entry["overloads"] = (
-                live_entry.get("overloads")
-                or local_entry.get("overloads")
-                or []
-            )
+            merged_entry["overloads"] = live_entry.get("overloads") or local_entry.get("overloads") or []
 
             merged_entry["sources"] = ["local_docs", "tradingview_live"]
             merged_entry["id"] = f"merged_{key}"
@@ -196,6 +186,7 @@ def enrich_truncated_syntax(entries: list[dict[str, Any]]) -> list[dict[str, Any
     """
     # Group by base name
     from collections import defaultdict
+
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for entry in entries:
         base = _base_name(entry.get("name", ""))
@@ -412,12 +403,8 @@ def _upsert_with_split(
         logger.warning(
             f"Upsert split {len(ids)}->{mid}+{len(ids) - mid} ({batch_hint}): {e}",
         )
-        a = _upsert_with_split(
-            collection, ids[:mid], docs[:mid], metas[:mid], embeddings[:mid], batch_hint
-        )
-        b = _upsert_with_split(
-            collection, ids[mid:], docs[mid:], metas[mid:], embeddings[mid:], batch_hint
-        )
+        a = _upsert_with_split(collection, ids[:mid], docs[:mid], metas[:mid], embeddings[:mid], batch_hint)
+        b = _upsert_with_split(collection, ids[mid:], docs[mid:], metas[mid:], embeddings[mid:], batch_hint)
         return a + b
 
 
@@ -429,12 +416,14 @@ def index_to_chromadb(
     """Index merged entries into ChromaDB."""
     logger.info(f"Loading embedding model: {EMBED_MODEL}")
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer(EMBED_MODEL)
     logger.info("Embedding model loaded")
 
     logger.info(f"Connecting to ChromaDB at {db_path}")
     logger.info(f"Index batch size: {BATCH_SIZE} (override with PINESCRIPT_INDEX_BATCH_SIZE)")
     import chromadb
+
     client = chromadb.PersistentClient(path=str(db_path))
 
     if reset:
@@ -617,31 +606,39 @@ def verify_index(db_path: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Merge local + live PineScript docs and index into ChromaDB"
-    )
+    parser = argparse.ArgumentParser(description="Merge local + live PineScript docs and index into ChromaDB")
     parser.add_argument(
-        "--local", type=Path, default=DEFAULT_LOCAL,
+        "--local",
+        type=Path,
+        default=DEFAULT_LOCAL,
         help=f"Local chunks file (default: {DEFAULT_LOCAL})",
     )
     parser.add_argument(
-        "--live", type=Path, default=DEFAULT_LIVE,
+        "--live",
+        type=Path,
+        default=DEFAULT_LIVE,
         help=f"Live scrape file (default: {DEFAULT_LIVE})",
     )
     parser.add_argument(
-        "--docs", type=Path, default=DEFAULT_DOCS,
+        "--docs",
+        type=Path,
+        default=DEFAULT_DOCS,
         help=f"User docs chunks file (default: {DEFAULT_DOCS})",
     )
     parser.add_argument(
-        "--db", type=Path, default=DEFAULT_DB,
+        "--db",
+        type=Path,
+        default=DEFAULT_DB,
         help=f"ChromaDB path (default: {DEFAULT_DB})",
     )
     parser.add_argument(
-        "--reset", action="store_true",
+        "--reset",
+        action="store_true",
         help="Wipe collection and re-index from scratch",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Print merge stats without writing to DB",
     )
     args = parser.parse_args()

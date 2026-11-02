@@ -13,8 +13,8 @@ import pytest
 
 from tools.search import pine_search
 
-
 # -- default docs search -----------------------------------------------------
+
 
 class TestSearchDocs:
     @pytest.mark.asyncio
@@ -49,6 +49,7 @@ class TestSearchDocs:
 
 # -- has_examples branch -----------------------------------------------------
 
+
 class TestSearchExamples:
     @pytest.mark.asyncio
     async def test_moving_average(self):
@@ -58,9 +59,7 @@ class TestSearchExamples:
 
     @pytest.mark.asyncio
     async def test_strategy_entry(self):
-        result = await pine_search(
-            query="strategy entry with stop loss", has_examples=True
-        )
+        result = await pine_search(query="strategy entry with stop loss", has_examples=True)
         assert "example" in result.lower()
 
     @pytest.mark.asyncio
@@ -70,6 +69,7 @@ class TestSearchExamples:
 
 
 # -- return_type branch ------------------------------------------------------
+
 
 class TestSearchByReturnType:
     @pytest.mark.asyncio
@@ -91,6 +91,7 @@ class TestSearchByReturnType:
 
 # -- current_line branch (suggestions) ---------------------------------------
 
+
 class TestSuggestFunctions:
     @pytest.mark.asyncio
     async def test_suggest_moving_average(self):
@@ -102,7 +103,5 @@ class TestSuggestFunctions:
 
     @pytest.mark.asyncio
     async def test_suggest_nonsense(self):
-        result = await pine_search(
-            query="xyznonexistent12345", current_line=""
-        )
+        result = await pine_search(query="xyznonexistent12345", current_line="")
         assert "no" in result.lower()

@@ -43,6 +43,7 @@ async def get_stats() -> str:
     except Exception as e:
         logger.error(f"[get_stats] {e}")
         from formatters.errors import safe_error
+
         return json.dumps(
             {
                 "error": safe_error(e, "get_stats"),

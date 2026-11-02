@@ -9,8 +9,8 @@ import pytest
 
 from tools.context import pine_browse
 
-
 # -- style="list" ------------------------------------------------------------
+
 
 class TestBrowseList:
     @pytest.mark.asyncio
@@ -43,13 +43,11 @@ class TestBrowseList:
     @pytest.mark.asyncio
     async def test_with_category_filter(self):
         result = await pine_browse(namespace="ta", category="function")
-        assert (
-            ("function" in result.lower() and "ta" in result.lower())
-            or "no entries" in result.lower()
-        )
+        assert ("function" in result.lower() and "ta" in result.lower()) or "no entries" in result.lower()
 
 
 # -- style="cheatsheet" ------------------------------------------------------
+
 
 class TestBrowseCheatsheet:
     @pytest.mark.asyncio
@@ -74,9 +72,7 @@ class TestBrowseCheatsheet:
 
     @pytest.mark.asyncio
     async def test_nonexistent(self):
-        result = await pine_browse(
-            namespace="nonexistent_namespace_xyz", style="cheatsheet"
-        )
+        result = await pine_browse(namespace="nonexistent_namespace_xyz", style="cheatsheet")
         assert "no entries" in result.lower()
 
     @pytest.mark.asyncio

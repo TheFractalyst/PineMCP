@@ -145,6 +145,7 @@ def db_exists() -> bool:
     """Check if a usable ChromaDB collection exists at DB_PATH."""
     try:
         import chromadb
+
         client = chromadb.PersistentClient(path=DB_PATH)
         col = client.get_collection(name=COLLECTION)
         return col.count() > 0

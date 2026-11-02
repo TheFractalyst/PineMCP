@@ -41,18 +41,14 @@ _CATEGORY_ORDER = [
 ]
 
 
-def _render_list(
-    ns: str, groups: dict[str, list[dict]], total: int
-) -> str:
+def _render_list(ns: str, groups: dict[str, list[dict]], total: int) -> str:
     """Plain-text, category-grouped listing (old list_namespace format)."""
     output_lines: list[str] = [f"NAMESPACE: {ns} ({total} entries)", ""]
 
     for cat in _CATEGORY_ORDER:
         if cat not in groups:
             continue
-        cat_entries = sorted(
-            groups[cat], key=lambda e: e["metadata"].get("name", "")
-        )
+        cat_entries = sorted(groups[cat], key=lambda e: e["metadata"].get("name", ""))
         output_lines.append(f"{cat.upper()}S ({len(cat_entries)}):")
 
         for entry in cat_entries:
@@ -77,9 +73,7 @@ def _render_list(
     remaining = {k: v for k, v in groups.items() if k not in shown_cats}
     if remaining:
         for cat in sorted(remaining):
-            cat_entries = sorted(
-                remaining[cat], key=lambda e: e["metadata"].get("name", "")
-            )
+            cat_entries = sorted(remaining[cat], key=lambda e: e["metadata"].get("name", ""))
             output_lines.append(f"{cat.upper()}S ({len(cat_entries)}):")
             for entry in cat_entries:
                 name = entry["metadata"].get("name", "?")
@@ -90,9 +84,7 @@ def _render_list(
     return "\n".join(output_lines)
 
 
-def _render_cheatsheet(
-    ns: str, groups: dict[str, list[dict]], total: int
-) -> str:
+def _render_cheatsheet(ns: str, groups: dict[str, list[dict]], total: int) -> str:
     """Box-drawn compact cheatsheet (old get_namespace_cheatsheet format)."""
     for cat in groups:
         groups[cat].sort(key=lambda e: e["metadata"].get("name", ""))
@@ -138,11 +130,6 @@ def _render_cheatsheet(
 
     lines.append(f"Total: {total} entries in namespace '{ns}'")
     return "\n".join(lines)
-
-
-# -----------------------------------------------------------------------------
-# TOOL: pine_browse - enumerate namespace members
-# -----------------------------------------------------------------------------
 
 
 @tool(
@@ -224,10 +211,7 @@ async def pine_browse(
 
         entries = await get_all_where_async(where)
         if not entries:
-            return (
-                f"No entries found for namespace '{ns}'. "
-                f"Check the namespace name and try again."
-            )
+            return f"No entries found for namespace '{ns}'. Check the namespace name and try again."
 
         groups: dict[str, list[dict]] = {}
         for entry in entries:

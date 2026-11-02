@@ -73,10 +73,6 @@ def detect_namespace(name: str) -> str | None:
     return None
 
 
-# ===============================================================================
-# Extraction helpers - operate on raw JS-returned item dicts
-# ===============================================================================
-
 def extract_name(item_data: dict[str, Any], fallback: str) -> str:
     """Get the entry name from the h3 header."""
     header = item_data.get("header", "")
@@ -139,13 +135,15 @@ def extract_parameters(item_data: dict[str, Any]) -> list[dict[str, Any]]:
             if default_match:
                 default_val = default_match.group(1).strip().rstrip(".")
 
-            parameters.append({
-                "name": param_name,
-                "type": param_type,
-                "description": param_desc,
-                "optional": is_optional,
-                "default": default_val,
-            })
+            parameters.append(
+                {
+                    "name": param_name,
+                    "type": param_type,
+                    "description": param_desc,
+                    "optional": is_optional,
+                    "default": default_val,
+                }
+            )
 
     return parameters
 
@@ -194,10 +192,6 @@ def detect_deprecated(item_data: dict[str, Any]) -> bool:
     return any(marker in all_text for marker in deprecated_markers)
 
 
-# ===============================================================================
-# Page loading and item extraction
-# ===============================================================================
-
 async def load_and_extract_all(headful: bool = False, debug: bool = False) -> list[dict[str, Any]]:
     """Load the reference page and extract all items via JavaScript."""
     from playwright.async_api import async_playwright
@@ -221,9 +215,7 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
         )
-        await context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
+        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         page = await context.new_page()
         logger.info(f"Navigating to {BASE_URL}")
@@ -263,9 +255,7 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
 
         if scroll_target:
             for offset in range(0, 50000, 500):
-                await page.evaluate(
-                    f"document.querySelector('{scroll_target}')?.scrollTo(0, {offset})"
-                )
+                await page.evaluate(f"document.querySelector('{scroll_target}')?.scrollTo(0, {offset})")
                 await asyncio.sleep(0.05)
         else:
             logger.warning("Could not find content container to scroll.")
@@ -280,9 +270,7 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
                 el = await page.query_selector(sel)
                 if el:
                     for offset in range(0, 15000, 300):
-                        await page.evaluate(
-                            f"document.querySelector('{sel}')?.scrollTo(0, {offset})"
-                        )
+                        await page.evaluate(f"document.querySelector('{sel}')?.scrollTo(0, {offset})")
                         await asyncio.sleep(0.05)
                     break
             except Exception:
@@ -586,10 +574,6 @@ def parse_raw_items(
     return entries
 
 
-# ===============================================================================
-# Verification and reporting
-# ===============================================================================
-
 def print_verification(entries: list[dict[str, Any]], discovered_count: int) -> dict[str, Any]:
     """Print and return scrape verification report."""
     cat_counts: dict[str, int] = Counter(e["category"] for e in entries)
@@ -647,36 +631,39 @@ def print_verification(entries: list[dict[str, Any]], discovered_count: int) -> 
     return report
 
 
-# ===============================================================================
-# Main
-# ===============================================================================
-
 def main():
-    parser = argparse.ArgumentParser(
-        description="Scrape all PineScript v6 entries from TradingView"
-    )
+    parser = argparse.ArgumentParser(description="Scrape all PineScript v6 entries from TradingView")
     parser.add_argument(
-        "--index", type=Path, default=Path("data/tv_entry_index.json"),
+        "--index",
+        type=Path,
+        default=Path("data/tv_entry_index.json"),
         help="Input index file (default: data/tv_entry_index.json)",
     )
     parser.add_argument(
-        "--output", type=Path, default=Path("data/tv_scraped_entries.json"),
+        "--output",
+        type=Path,
+        default=Path("data/tv_scraped_entries.json"),
         help="Output file path (default: data/tv_scraped_entries.json)",
     )
     parser.add_argument(
-        "--headful", action="store_true",
+        "--headful",
+        action="store_true",
         help="Show browser window",
     )
     parser.add_argument(
-        "--debug", action="store_true",
+        "--debug",
+        action="store_true",
         help="Save full page HTML to debug_scrape.html",
     )
     parser.add_argument(
-        "--entry", type=str, default=None,
+        "--entry",
+        type=str,
+        default=None,
         help="Scrape single entry by fragment id",
     )
     parser.add_argument(
-        "--retry-failed", action="store_true",
+        "--retry-failed",
+        action="store_true",
         help="Retry only previously failed entries",
     )
     args = parser.parse_args()
@@ -715,10 +702,12 @@ def main():
 
     # -- Scrape --------------------------------------------------------------
     logger.info("Loading TradingView reference page...")
-    raw_items = asyncio.run(load_and_extract_all(
-        headful=args.headful,
-        debug=args.debug,
-    ))
+    raw_items = asyncio.run(
+        load_and_extract_all(
+            headful=args.headful,
+            debug=args.debug,
+        )
+    )
 
     # Parse into structured entries
     entries = parse_raw_items(raw_items, index_map)

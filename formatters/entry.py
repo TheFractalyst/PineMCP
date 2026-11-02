@@ -60,7 +60,7 @@ def format_params_text(meta: dict) -> str:
 def dedup_examples(examples: list[str]) -> list[str]:
     seen: dict[str, str] = {}
     for ex in examples:
-        key = re.sub(r'\s+', '', ex).lower()[:120]
+        key = re.sub(r"\s+", "", ex).lower()[:120]
         existing = seen.get(key)
         if existing is None:
             seen[key] = ex
@@ -120,9 +120,7 @@ def format_type_info(meta: dict) -> str:
     return ""
 
 
-def format_entry_detail(
-    name: str, meta: dict, doc: str, distance: Optional[float] = None
-) -> str:
+def format_entry_detail(name: str, meta: dict, doc: str, distance: Optional[float] = None) -> str:
     if not meta:
         meta = {}
 

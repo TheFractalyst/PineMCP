@@ -31,13 +31,15 @@ def parse_params(raw):
         for item in p:
             if not isinstance(item, dict):
                 continue
-            out.append({
-                "name": item.get("name", ""),
-                "type": item.get("type", ""),
-                "desc": item.get("description", ""),
-                "opt": bool(item.get("optional", False)),
-                "default": item.get("default"),
-            })
+            out.append(
+                {
+                    "name": item.get("name", ""),
+                    "type": item.get("type", ""),
+                    "desc": item.get("description", ""),
+                    "opt": bool(item.get("optional", False)),
+                    "default": item.get("default"),
+                }
+            )
         return out
     except (json.JSONDecodeError, TypeError):
         return []
@@ -69,17 +71,17 @@ def main():
             for i, p in enumerate(params, 1):
                 pdef = p["name"]
                 if p["default"] is not None:
-                    pdef = f'{p["name"]}=${{{i}:{json.dumps(p["default"])}}}'
+                    pdef = f"{p['name']}=${{{i}:{json.dumps(p['default'])}}}"
                 elif p["type"]:
-                    pdef = f'${{{i}:{p["name"]}}}'
+                    pdef = f"${{{i}:{p['name']}}}"
                 else:
-                    pdef = f'${{{i}:{p["name"]}}}'
+                    pdef = f"${{{i}:{p['name']}}}"
                 snippet_parts.append(pdef)
-            insert = f'{name}({", ".join(snippet_parts)})'
+            insert = f"{name}({', '.join(snippet_parts)})"
         elif cat in ("function",) and meta.get("syntax", "") and "(" in meta.get("syntax", ""):
-            insert = f'{name}(${{1}})'
+            insert = f"{name}(${{1}})"
         elif cat == "type" and "." not in name:
-            insert = f'{name}(${{1:...}})'
+            insert = f"{name}(${{1:...}})"
         else:
             insert = name
 
@@ -129,7 +131,11 @@ def main():
         "PINERUST_REFERENCE_OUT",
         os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "Documents", "PineRustEngine", "dashboard", "public", "pine-reference.json"
+            "Documents",
+            "PineRustEngine",
+            "dashboard",
+            "public",
+            "pine-reference.json",
         ),
     )
 
@@ -139,7 +145,7 @@ def main():
 
     size = os.path.getsize(out_path)
     print(f"Exported {len(entries)} entries to {out_path}")
-    print(f"Size: {size:,} bytes ({size/1024:.1f} KB)")
+    print(f"Size: {size:,} bytes ({size / 1024:.1f} KB)")
     print(f"Namespaces: {len(ns_index)}")
 
     # Sample

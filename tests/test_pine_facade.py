@@ -14,16 +14,15 @@ import pytest
 
 from core.pine_facade import (
     PineFacadeCircuitBreaker,
-    normalize_facade_response,
-    enrich_error_with_code,
-    call_pine_facade,
-    get_facade_client,
-    shutdown_http_client,
-    pine_cb,
     _facade_http_client,
+    call_pine_facade,
+    enrich_error_with_code,
+    get_facade_client,
     local_syntax_check,
+    normalize_facade_response,
+    pine_cb,
+    shutdown_http_client,
 )
-
 
 # -----------------------------------------------------------------------------
 # Setup
@@ -103,7 +102,7 @@ class TestPineFacadeCircuitBreakerStates:
         cb.record_network_failure()
         cb.record_network_failure()  # Opens here
         first_backoff_power = 0  # failures - threshold = 0
-        first_expected = 60 * (2 ** first_backoff_power)
+        first_expected = 60 * (2**first_backoff_power)
         first_cooldown = cb.open_until - time.time()
         assert first_cooldown >= first_expected * 0.85  # -15% jitter
 
@@ -116,7 +115,7 @@ class TestPineFacadeCircuitBreakerStates:
             cb.record_network_failure()
 
         second_backoff_power = min(4 - 2, 5)  # cap at 5
-        second_expected = 60 * (2 ** second_backoff_power)  # 240s
+        second_expected = 60 * (2**second_backoff_power)  # 240s
         second_cooldown = cb.open_until - time.time()
 
         # Second cooldown should be significantly longer (exponential)
@@ -174,7 +173,7 @@ class TestNormalizeFacadeResponse:
             "result": {
                 "errors": [],
                 "variables": {},
-            }
+            },
         }
         result = normalize_facade_response(raw)
 
@@ -186,11 +185,7 @@ class TestNormalizeFacadeResponse:
         """Failed compilation should return success=False with errors."""
         raw = {
             "success": True,
-            "result": {
-                "errors": [
-                    {"line": 5, "column": 10, "text": "Undeclared identifier 'ema'", "type": "error"}
-                ]
-            }
+            "result": {"errors": [{"line": 5, "column": 10, "text": "Undeclared identifier 'ema'", "type": "error"}]},
         }
         result = normalize_facade_response(raw)
 
@@ -201,11 +196,7 @@ class TestNormalizeFacadeResponse:
 
     def test_rejection_shape(self):
         """Handle rejection with reason but no result."""
-        raw = {
-            "success": False,
-            "reason": "Compilation timeout",
-            "result": None
-        }
+        raw = {"success": False, "reason": "Compilation timeout", "result": None}
         result = normalize_facade_response(raw)
 
         assert result["success"] is False
@@ -214,13 +205,7 @@ class TestNormalizeFacadeResponse:
 
     def test_errors_at_top_level(self):
         """Handle errors at top level instead of in result."""
-        raw = {
-            "success": True,
-            "result": None,
-            "errors": [
-                {"line": 1, "column": 0, "text": "Syntax error"}
-            ]
-        }
+        raw = {"success": True, "result": None, "errors": [{"line": 1, "column": 0, "text": "Syntax error"}]}
         result = normalize_facade_response(raw)
 
         assert result["success"] is False
@@ -230,11 +215,7 @@ class TestNormalizeFacadeResponse:
         """Handle error with 'message' instead of 'text'."""
         raw = {
             "success": True,
-            "result": {
-                "errors": [
-                    {"line": 2, "column": 5, "message": "Type mismatch", "type": "error"}
-                ]
-            }
+            "result": {"errors": [{"line": 2, "column": 5, "message": "Type mismatch", "type": "error"}]},
         }
         result = normalize_facade_response(raw)
 
@@ -244,11 +225,7 @@ class TestNormalizeFacadeResponse:
         """Handle error with nested start object for position."""
         raw = {
             "success": True,
-            "result": {
-                "errors": [
-                    {"start": {"line": 3, "column": 8}, "text": "Error here", "type": "error"}
-                ]
-            }
+            "result": {"errors": [{"start": {"line": 3, "column": 8}, "text": "Error here", "type": "error"}]},
         }
         result = normalize_facade_response(raw)
 
@@ -265,7 +242,7 @@ class TestNormalizeFacadeResponse:
                     {"line": 2, "text": "Warning 1", "type": "warning"},
                     {"line": 3, "text": "Error 2", "type": "error"},
                 ]
-            }
+            },
         }
         result = normalize_facade_response(raw)
 
@@ -281,7 +258,7 @@ class TestNormalizeFacadeResponse:
                 "errors": [
                     {"line": 1, "text": "Expected {kind} but got {fullName}", "kind": "int", "fullName": "float"}
                 ]
-            }
+            },
         }
         result = normalize_facade_response(raw)
 
@@ -298,7 +275,7 @@ class TestNormalizeFacadeResponse:
                 "variables": {"x": "int"},
                 "functions": {"f": "void"},
                 "types": {"T": "type"},
-            }
+            },
         }
         result = normalize_facade_response(raw)
 
@@ -308,12 +285,7 @@ class TestNormalizeFacadeResponse:
 
     def test_non_dict_error_item(self):
         """Handle non-dict items in errors list."""
-        raw = {
-            "success": True,
-            "result": {
-                "errors": ["plain string error"]
-            }
-        }
+        raw = {"success": True, "result": {"errors": ["plain string error"]}}
         result = normalize_facade_response(raw)
 
         assert result["errors"][0]["text"] == "plain string error"
@@ -330,7 +302,7 @@ class TestEnrichErrorWithCode:
     def test_resolves_identifier_placeholder(self):
         """Should resolve {identifier} from code context."""
         errors = [{"line": 3, "column": 6, "text": "Undeclared {identifier}"}]
-        code = "//@version=6\nindicator(\"test\")\nplot(xyz)"
+        code = '//@version=6\nindicator("test")\nplot(xyz)'
 
         result = enrich_error_with_code(errors, code)
 
@@ -417,7 +389,7 @@ class TestCallPineFacadeCircuitBreaker:
         """Should fall back to local syntax check when circuit breaker is open."""
         pine_cb.open_until = time.time() + 60  # Force open
 
-        result = await call_pine_facade("//@version=6\nindicator(\"test\")")
+        result = await call_pine_facade('//@version=6\nindicator("test")')
 
         assert result["meta"].get("fallback") == "syntax_check"
         assert result["success"] is True  # Valid code passes syntax check
@@ -427,7 +399,7 @@ class TestCallPineFacadeCircuitBreaker:
         """Syntax check fallback should catch PineScript errors."""
         pine_cb.open_until = time.time() + 60  # Force open
 
-        result = await call_pine_facade("//@version=5\nstudy(\"test\")\nplot(close)")
+        result = await call_pine_facade('//@version=5\nstudy("test")\nplot(close)')
 
         assert result["meta"].get("fallback") == "syntax_check"
         assert result["success"] is False
@@ -677,6 +649,7 @@ class TestGetFacadeClient:
     def test_creates_new_if_closed(self):
         """Should create new client if existing one is closed."""
         import asyncio
+
         client1 = get_facade_client()
 
         # Close the async client properly
@@ -699,7 +672,7 @@ class TestShutdownHttpClient:
         shutdown_http_client()
 
         # Client should be None after shutdown
-        from core.pine_facade import _facade_http_client
+
         assert _facade_http_client is None
 
 
@@ -785,7 +758,9 @@ class TestLocalSyntaxCheck:
 
     def test_array_get_warning(self):
         """array.get() should produce a bounds-check warning."""
-        result = local_syntax_check('//@version=6\nindicator("test")\narr = array.from(1, 2, 3)\nplot(array.get(arr, 0))')
+        result = local_syntax_check(
+            '//@version=6\nindicator("test")\narr = array.from(1, 2, 3)\nplot(array.get(arr, 0))'
+        )
         assert any("array.get" in w["text"].lower() for w in result["warnings"])
 
     def test_varip_misuse_warning(self):
@@ -796,12 +771,12 @@ class TestLocalSyntaxCheck:
     def test_proper_code_no_false_positives(self):
         """Properly written v6 code should not produce false positives."""
         code = (
-            '//@version=6\n'
+            "//@version=6\n"
             'indicator("My Indicator", overlay=true)\n'
             'src = input(close, "Source")\n'
             'len = input.int(14, "Length")\n'
-            'myEma = ta.ema(src, len)\n'
-            'plot(myEma, color=color.blue)\n'
+            "myEma = ta.ema(src, len)\n"
+            "plot(myEma, color=color.blue)\n"
         )
         result = local_syntax_check(code)
         assert result["success"] is True
@@ -809,28 +784,24 @@ class TestLocalSyntaxCheck:
 
     def test_string_literals_not_analyzed(self):
         """String literals should not be analyzed for syntax errors."""
-        code = (
-            '//@version=6\n'
-            'indicator("test(unclosed")\n'
-            'plot(close, color=color.red)\n'
-        )
+        code = '//@version=6\nindicator("test(unclosed")\nplot(close, color=color.red)\n'
         result = local_syntax_check(code)
         assert result["success"] is True  # The ( in string should not break paren count
 
     def test_comments_not_analyzed(self):
         """Comments should not be analyzed for syntax errors."""
         code = (
-            '//@version=6\n'
+            "//@version=6\n"
             'indicator("test")\n'
-            '// plot(close, color=red) - this is a comment\n'
-            'plot(close, color=color.red)\n'
+            "// plot(close, color=red) - this is a comment\n"
+            "plot(close, color=color.red)\n"
         )
         result = local_syntax_check(code)
         assert result["success"] is True  # The red in comment should not trigger error
 
     def test_returns_correct_format(self):
         """Result should match call_pine_facade format."""
-        result = local_syntax_check("//@version=6\nindicator(\"test\")\nplot(close)")
+        result = local_syntax_check('//@version=6\nindicator("test")\nplot(close)')
         assert "success" in result
         assert "errors" in result
         assert "warnings" in result
