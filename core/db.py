@@ -116,6 +116,10 @@ _COMMON_PARAM_NAMES = frozenset(
         "style",
         "width",
         "transparency",
+        "active",
+        "linestyle",
+        "sort_field",
+        "timeframe_bars_back",
     }
 )
 

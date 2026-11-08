@@ -73,19 +73,29 @@ def detect_namespace(name: str) -> str | None:
     return None
 
 
+_GENERIC_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*)<[^<>]*>$")
+
+
+def canonical_name(header: str) -> str:
+    """Canonical symbol name from the h3 header.
+
+    'ta.sma(source, length)' -> 'ta.sma'
+    'array.new<type>()'      -> 'array.new'  (generic tag lives on in syntax)
+    '<' / '[]' / '?:'        -> unchanged    (operators)
+    """
+    name = header.strip()
+    paren_idx = name.find("(")
+    if paren_idx > 0:
+        name = name[:paren_idx].strip()
+    m = _GENERIC_RE.match(name)
+    if m:
+        name = m.group(1)
+    return name
+
+
 def extract_name(item_data: dict[str, Any], fallback: str) -> str:
-    """Get the entry name from the h3 header."""
-    header = item_data.get("header", "")
-    if header:
-        # Header is like "ta.sma(source, length)" - extract just the name
-        paren_idx = header.find("(")
-        if paren_idx > 0:
-            return header[:paren_idx].strip()
-        bracket_idx = header.find("<")
-        if bracket_idx > 0:
-            return header[:bracket_idx].strip()
-        return header.strip()
-    return fallback
+    """Get the canonical entry name from the h3 header."""
+    return canonical_name(item_data.get("header", "")) or fallback
 
 
 def extract_syntax_blocks(item_data: dict[str, Any]) -> list[str]:
@@ -149,11 +159,11 @@ def extract_parameters(item_data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def extract_returns(item_data: dict[str, Any]) -> str | None:
-    """Get the returns section text."""
+    """Get the returns section text; fall back to the entry's declared Type."""
     returns = item_data.get("returns_text", "")
     if returns and returns.strip():
         return returns.strip()
-    return None
+    return item_data.get("type_text") or None
 
 
 def extract_remarks(item_data: dict[str, Any]) -> str | None:
@@ -187,7 +197,10 @@ def extract_type_info(item_data: dict[str, Any]) -> dict[str, Any]:
 
 def detect_deprecated(item_data: dict[str, Any]) -> bool:
     """Check if the entry is marked as deprecated."""
-    all_text = item_data.get("all_text", "").lower()
+    all_text = item_data.get("all_text", "")
+    if isinstance(all_text, list):
+        all_text = " ".join(all_text)
+    all_text = (all_text or "").lower()
     deprecated_markers = ["deprecated", "obsolete", "no longer supported", "removed in"]
     return any(marker in all_text for marker in deprecated_markers)
 
@@ -329,6 +342,7 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
                 const parameterLines = [];
                 let returnsText = '';
                 let remarksText = '';
+                let typeText = '';
                 const exampleBlocks = [];
                 const seeAlso = [];
                 const typeFields = [];
@@ -358,7 +372,8 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
                             currentSection = 'fields';
                         } else if (headerText.includes('method')) {
                             currentSection = 'methods';
-                        } else if (headerText.includes('type') && currentSection === '') {
+                        } else if (headerText.includes('type')) {
+                            // Declared type of variables/constants ("Type: simple string")
                             currentSection = 'type';
                         } else {
                             // Keep previous section or default to description
@@ -384,8 +399,9 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
 
                     // Example blocks (pre)
                     if (cls.includes('example') && child.tagName === 'PRE') {
-                        const code = child.querySelector('code');
-                        exampleBlocks.push(code ? code.textContent : child.textContent);
+                        const code = child.querySelector('code') || child;
+                        // innerText keeps the rendered <br> line breaks; textContent would not.
+                        exampleBlocks.push((code.innerText || code.textContent || '').replace(/\u00a0/g, ' '));
                         continue;
                     }
 
@@ -410,6 +426,9 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
                             case 'remarks':
                                 if (remarksText) remarksText += '\\n' + text;
                                 else remarksText = text;
+                                break;
+                            case 'type':
+                                typeText = typeText ? typeText + ' ' + text : text;
                                 break;
                             case 'fields':
                                 typeFields.push(text);
@@ -443,28 +462,27 @@ async def load_and_extract_all(headful: bool = False, debug: bool = False) -> li
                     }
                 }
 
-                // Get the fragment id from any anchor or data attribute
-                const anchor = item.querySelector('a[href*="#"]');
-                let fragment = '';
-                if (anchor) {
-                    const href = anchor.getAttribute('href') || '';
-                    fragment = href.replace(/^.*#/, '');
-                }
-
-                // Also try the item's own id
+                // Prefer the item's own id (stable, no overload -N suffix);
+                // overload anchor links inside the item would give 'fun_x-0'.
+                let fragment = item.id || '';
                 if (!fragment) {
-                    fragment = item.id || '';
+                    const anchor = item.querySelector('a[href*="#"]');
+                    if (anchor) {
+                        const href = anchor.getAttribute('href') || '';
+                        fragment = href.replace(/^.*#/, '').replace(/-\\d+$/, '');
+                    }
                 }
 
                 results.push({
+                    id: fragment,
                     header: header,
                     section: sectionH2,
-                    fragment: fragment,
                     syntax_blocks: syntaxBlocks,
                     descriptions: descriptions,
                     parameter_lines: parameterLines,
                     returns_text: returnsText,
                     remarks_text: remarksText,
+                    type_text: typeText,
                     example_blocks: exampleBlocks,
                     see_also: seeAlso,
                     type_fields: parsedTypeFields,
@@ -500,8 +518,8 @@ def parse_raw_items(
         if not name:
             continue
 
-        # Determine category from fragment prefix, section heading, or index
-        fragment = raw.get("fragment", "")
+        # Determine category from the item id, section heading, or index
+        fragment = raw.get("id", "") or raw.get("fragment", "")
         section = raw.get("section", "")
 
         category = categorize_fragment(fragment)
@@ -545,7 +563,7 @@ def parse_raw_items(
         type_info = extract_type_info(raw)
         deprecated = detect_deprecated(raw)
 
-        # Build ID
+        # Build ID - dedupe across overload anchors
         entry_id = fragment if fragment else f"{category}_{name.lower().replace('.', '_').replace(' ', '_')}"
 
         entry: dict[str, Any] = {
@@ -554,7 +572,7 @@ def parse_raw_items(
             "category": category,
             "namespace": namespace,
             "syntax": syntax,
-            "overloads": syntax_blocks[1:] if len(syntax_blocks) > 1 else [],
+            "overloads": [s for s in syntax_blocks[1:] if s != syntax],
             "description": description,
             "parameters": parameters,
             "returns": returns,
@@ -564,14 +582,22 @@ def parse_raw_items(
             "examples": examples,
             "see_also": see_also,
             "deprecated": deprecated,
-            "url": f"{BASE_URL}#{fragment}" if fragment else None,
+            "url": f"{BASE_URL}#{entry_id}" if entry_id else None,
             "scraped_at": datetime.now(timezone.utc).isoformat(),
             "source": "tradingview_live",
             "scrape_error": None,
         }
         entries.append(entry)
 
-    return entries
+    # Last-write-wins per canonical name: overload variants of one symbol
+    # collapse onto the richest variant instead of producing duplicate rows.
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for entry in entries:
+        key = (entry["name"].lower(), entry["category"])
+        prev = by_key.get(key)
+        if prev is None or len(entry.get("examples", [])) > len(prev.get("examples", [])):
+            by_key[key] = entry
+    return sorted(by_key.values(), key=lambda e: (e["category"], e["name"]))
 
 
 def print_verification(entries: list[dict[str, Any]], discovered_count: int) -> dict[str, Any]:

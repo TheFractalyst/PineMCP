@@ -19,12 +19,17 @@ from core.config import COLLECTION, DB_PATH, EMBED_MODEL
 
 
 def _data_json_paths() -> list[Path]:
-    """All shipped data files: reference entries + user manual guides."""
+    """Shipped data files: reference entries + user manual guides.
+
+    Guides come from the live docs site (scrape_docs.py). The legacy
+    PDF-derived file is used as a fallback when no web scrape is present.
+    """
     data_dir = Path(__file__).resolve().parent.parent / "data"
-    return [
-        data_dir / "pine_merged_entries.json",
+    guides = [
+        data_dir / "pine_docs_entries.json",
         data_dir / "pine_manual_entries.json",
     ]
+    return [data_dir / "pine_merged_entries.json", next(p for p in guides if p.exists())]
 
 
 def _extract_return_type(syntax: str) -> str:

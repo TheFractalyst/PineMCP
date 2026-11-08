@@ -23,7 +23,7 @@ logger.remove()
 logger.add(sys.stderr, format="{time:HH:mm:ss} | {level:<8} | {message}", level="INFO")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MANUAL_JSON = PROJECT_ROOT / "data" / "pine_manual_entries.json"
+MANUAL_JSON = (PROJECT_ROOT / "data" / "pine_docs_entries.json") if (PROJECT_ROOT / "data" / "pine_docs_entries.json").exists() else (PROJECT_ROOT / "data" / "pine_manual_entries.json")
 REF_JSON = PROJECT_ROOT / "data" / "pine_merged_entries.json"
 REPORT = PROJECT_ROOT / "audit_manual_symbols_report.md"
 

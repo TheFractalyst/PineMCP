@@ -94,6 +94,24 @@ def format_examples_text(meta: dict) -> str:
     return "\n".join(lines)
 
 
+def format_overloads_text(meta: dict) -> str:
+    """Render alternate overload signatures (stored as raw_overloads)."""
+    raw = meta.get("raw_overloads", "")
+    if not raw or not isinstance(raw, str):
+        return ""
+    try:
+        overloads = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(overloads, list) or not overloads:
+        return ""
+    lines = [f"OVERLOADS ({len(overloads)}):"]
+    for o in overloads:
+        if isinstance(o, str) and o.strip():
+            lines.append(f"  {o.strip()}")
+    return "\n".join(lines)
+
+
 def format_type_info(meta: dict) -> str:
     raw_fields = meta.get("raw_type_fields", "")
     if not raw_fields:
@@ -147,6 +165,10 @@ def format_entry_detail(name: str, meta: dict, doc: str, distance: Optional[floa
 
     if syntax:
         lines.append(f"SYNTAX: {syntax}")
+
+    overload_text = format_overloads_text(meta)
+    if overload_text:
+        lines.append(overload_text)
 
     path = meta.get("path") or ""
     if path and category == "GUIDE":

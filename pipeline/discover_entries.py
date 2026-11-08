@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,13 +48,13 @@ FRAGMENT_PREFIX_MAP: dict[str, str] = {
 }
 
 EXPECTED_RANGES: dict[str, tuple[int, int]] = {
-    "function": (470, 520),
-    "variable": (150, 180),
-    "constant": (180, 220),
-    "type": (15, 25),
-    "keyword": (15, 25),
-    "operator": (15, 20),
-    "annotation": (5, 10),
+    "function": (450, 530),
+    "variable": (140, 190),
+    "constant": (210, 280),
+    "type": (12, 30),
+    "keyword": (12, 30),
+    "operator": (12, 30),
+    "annotation": (5, 15),
 }
 
 
@@ -194,6 +195,10 @@ async def discover_entries(headful: bool = False, debug: bool = False) -> list[d
             if category == "unknown":
                 continue
 
+            # Overload anchors repeat a base symbol as '-0', '-1', ... - keep the base only
+            if re.search(r"-\d+$", fragment):
+                continue
+
             display_name = a_tag.get_text(strip=True)
 
             if fragment not in bs_entries:
@@ -234,6 +239,10 @@ async def discover_entries(headful: bool = False, debug: bool = False) -> list[d
 
             category = categorize_fragment(fragment)
             if category == "unknown":
+                continue
+
+            # Overload anchors repeat a base symbol as '-0', '-1', ... - keep the base only
+            if re.search(r"-\d+$", fragment):
                 continue
 
             if fragment not in js_entries:

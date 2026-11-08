@@ -7,11 +7,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://github.com/TheFractalyst/PineMCP/actions/workflows/test.yml/badge.svg)](https://github.com/TheFractalyst/PineMCP/actions/workflows/test.yml)
 
-Complete PineScript v6 reference documentation MCP server with 3067 entries:
-1751 reference entries covering all functions, variables, constants, types,
-keywords, operators, and annotations from the official TradingView PineScript
-v6 reference, plus 1316 guide entries covering every section of the official
-Pine Script v6 User Manual.
+Complete PineScript v6 reference documentation MCP server with 2263 entries:
+951 reference entries covering every function, variable, constant, type,
+keyword, operator, and annotation on the official TradingView PineScript v6
+reference page (with all overload signatures), plus 1312 guide entries from
+the official Pine Script v6 User Manual website.
 
 [Quick Start](#quick-start) |
 [Tools](#tools) |
@@ -35,7 +35,7 @@ Subsequent runs start instantly.
 **What you get:**
 
 - 6 MCP tools for PineScript v6 docs lookup, code validation, and code generation
-- 2723 entries indexed in a local ChromaDB vector store (100% offline)
+- 2263 entries indexed in a local ChromaDB vector store (100% offline)
 - Sub-millisecond hot cache for priority lookups
 - Remote TradingView compiler integration for `pine_compile` and `pine_repair`
 - Works with Claude Desktop, Cursor, Windsurf, OpenCode, and any MCP client
@@ -221,27 +221,28 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-### Re-scrape from TradingView
+### Refresh the data from TradingView
 
 ```bash
 pip install -e ".[pipeline]"
 python -m playwright install chromium
-python pipeline/discover_entries.py
-python pipeline/scrape_entries.py
-python pipeline/merge_and_index.py --reset
-```
 
-### Re-ingest the User Manual
+# Reference (functions, variables, constants, keywords, operators, annotations):
+python pipeline/discover_entries.py            # index check (~945 symbols)
+python pipeline/scrape_entries.py              # live scrape -> data/tv_scraped_entries.json
+python pipeline/merge_reference.py             # merge into data/pine_merged_entries.json
 
-Download the official Pine Script v6 User Manual PDF from TradingView
-(this project does not distribute it), then:
+# Guides (user manual, FAQ, release notes, error pages):
+python pipeline/scrape_docs.py                 # docs site -> data/pine_docs_entries.json
 
-```bash
-export PINESCRIPT_MANUAL_PDF=/path/to/Pine_Script_v6_User_Manual.pdf
-python pipeline/ingest_manual.py
+# Rebuild the vector store and re-run audits:
+pinemcp build
 python pipeline/audit_symbols.py
-.venv/bin/python -c "from core.build_db import build_db; build_db(force=True)"
+pytest tests/test_data_freshness.py -q
 ```
+
+Both scrapers verify their own output (counts, required symbols, coverage)
+and exit non-zero on drift, so a partial scrape never reaches `data/`.
 
 ## Tech Stack
 
