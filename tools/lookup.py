@@ -14,6 +14,7 @@ Handles every named entity kind in one call:
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Literal
 
 from fastmcp.exceptions import ToolError
@@ -389,6 +390,10 @@ async def pine_lookup(
             return await _lookup_guide(canonical)
         if kind in ("variable", "constant", "keyword", "operator"):
             return await lookup_entry(canonical, kind)
+
+        # Auto-detect compiler error/warning codes (CE*, CW*, RE*) or manual guide paths
+        if re.match(r'^(?:CE|CW|RE)\d{4,5}$', canonical, re.IGNORECASE) or canonical.startswith("errors/"):
+            return await _lookup_guide(canonical)
 
         return await _lookup_function(canonical)
 
